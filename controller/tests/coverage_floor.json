@@ -37,6 +37,7 @@
  "em_http.py": 99.0,
  "em_ingressauth.py": 99.0,
  "em_identify.py": 99.0,
+ "em_incubator_proto.py": 99.0,
  "em_labels.py": 99.0,
  "em_limiter.py": 90.0,
  "em_linkauth.py": 99.0,
