@@ -60,8 +60,9 @@ FRAME_BYTES = int(MIC_RATE * FRAME_S) * 2
 _handed_out: dict[int, str] = {}
 
 # The satellite range a scenario can reach: one listener per Echo from the
-# base, BLE proxies BLE_PORT_OFFSET (1000) above (em_db).
-SATELLITE_SPAN = tuple(range(9)) + tuple(range(1000, 1009))
+# base, BLE proxies BLE_PORT_OFFSET (1000) above (em_db), Voice Incubator
+# satellites PORT_OFFSET (2000) above (em_incubator).
+SATELLITE_SPAN = tuple(range(9)) + tuple(range(1000, 1009)) + tuple(range(2000, 2009))
 
 
 def _bindable(port: int) -> bool:
@@ -560,3 +561,95 @@ class FakeHA:
         self.event("TTS_START", {"text": reply_text})
         self.event("TTS_END", {"url": tts_url})
         self.event("RUN_END")
+
+
+# ── The Voice Incubator app ──────────────────────────────────────────────────
+
+class FakeIncubatorApp:
+    """OHF-Voice's Voice Incubator app, as its satellite protocol says it
+    behaves (firmware-voice-incubator PROTOCOL.md, protocol 2), from the
+    app's side: connect, read HELLO, then whatever a scenario scripts.
+
+    Framing written here from the spec, not imported from em_incubator_proto,
+    so a scenario holds the controller to the spec rather than to its own
+    reading of it: uint8 type, uint16 big-endian length (<= 4096), payload;
+    audio is 16 kHz 16-bit mono, everything else a JSON object.
+    """
+
+    HELLO, CALL_START, AUDIO_IN, CALL_END = 0x01, 0x02, 0x03, 0x04
+    PLAYBACK_DRAINED, DEVICE_EVENT = 0x06, 0x09
+    AUDIO_OUT, AUDIO_OUT_END, EVENT, HANGUP = 0x10, 0x11, 0x12, 0x13
+
+    def __init__(self, port: int):
+        self.port = port
+        self.hello: dict | None = None
+        self.frames: list[tuple[int, bytes]] = []
+        self.audio_in = bytearray()
+
+    async def connect(self, timeout: float = 10.0) -> None:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                self.reader, self.writer = await asyncio.open_connection("127.0.0.1", self.port)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise AssertionError(f"no Voice Incubator satellite on {self.port} "
+                                         f"(handed out for: {port_owner(self.port)})")
+                await asyncio.sleep(0.2)
+        kind, payload = await self._read()
+        assert kind == self.HELLO, f"first frame 0x{kind:02X}, not HELLO"
+        self.hello = json.loads(payload)
+        self._task = asyncio.create_task(self._pump())
+
+    async def close(self) -> None:
+        if getattr(self, "_task", None):
+            self._task.cancel()
+        if getattr(self, "writer", None):
+            self.writer.close()
+
+    async def _read(self) -> tuple[int, bytes]:
+        head = await self.reader.readexactly(3)
+        kind, length = head[0], struct.unpack(">H", head[1:])[0]
+        assert length <= 4096, f"0x{kind:02X} declares {length} bytes"
+        return kind, (await self.reader.readexactly(length) if length else b"")
+
+    async def _pump(self) -> None:
+        with contextlib.suppress(asyncio.IncompleteReadError, ConnectionError):
+            while True:
+                kind, payload = await self._read()
+                if kind == self.AUDIO_IN:
+                    self.audio_in += payload
+                self.frames.append((kind, payload))
+
+    def got(self, kind: int) -> list[dict]:
+        return [json.loads(p) if p else {} for k, p in self.frames if k == kind]
+
+    async def until(self, kind: int, timeout: float = 10.0, after: int = 0) -> dict:
+        """The (after+1)-th frame of `kind`, as JSON."""
+        await wait_for(lambda: len(self.got(kind)) > after, timeout, f"frame 0x{kind:02X}")
+        return self.got(kind)[after]
+
+    def send(self, kind: int, payload: bytes = b"") -> None:
+        self.writer.write(bytes([kind]) + struct.pack(">H", len(payload)) + payload)
+
+    def send_json(self, kind: int, obj: dict) -> None:
+        self.send(kind, json.dumps(obj).encode())
+
+    def event(self, kind: str, **data) -> None:
+        self.send_json(self.EVENT, {"type": kind, "data": data})
+
+    def say(self, pcm: bytes) -> None:
+        for i in range(0, len(pcm), 4096):
+            self.send(self.AUDIO_OUT, pcm[i:i + 4096])
+        self.send(self.AUDIO_OUT_END)
+
+    async def paced(self, pcm: bytes, stop: asyncio.Event) -> None:
+        """Audio at real time, as the app sends its ring, until `stop`."""
+        step = 4096 / (MIC_RATE * 2)
+        while not stop.is_set():
+            for i in range(0, len(pcm), 4096):
+                if stop.is_set():
+                    return
+                self.send(self.AUDIO_OUT, pcm[i:i + 4096])
+                await asyncio.sleep(step)
