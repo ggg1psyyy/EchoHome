@@ -186,3 +186,104 @@ def test_an_announcement_from_the_app_plays_and_is_answered(scenario):
             ons = [m for m in echo.sent("duck") if m.get("on")]
             assert len(ons) == 1, f"music ducked {len(ons)} times for one announcement"
     scenario(body)
+
+
+def test_a_button_turn_through_the_voice_incubator(scenario):
+    async def body(ctl):
+        async with incubator_room(ctl) as (echo, app, _port):
+            echo.turn_speech.append(SPEECH)
+            await echo.send({"type": "button", "clickType": 138, "down": False,
+                             "heldMs": 80, "muted": False})
+            start = await app.until(App.CALL_START)
+            assert start == {"wake_word": "manual", "preroll_bytes": 0}
+            # Silence while the Echo's VAD waits, then the speech itself.
+            await wait_for(lambda: echo.turn_streams == 1, 5, "the Echo's turn stream")
+            # The speech itself, untouched and in one piece -- not merely as
+            # many bytes, which the silence padding alone would supply.
+            await wait_for(lambda: SPEECH in bytes(app.audio_in), 10,
+                           "the command to reach the app")
+            app.event("listening", stage="listening")
+            app.event("processing")
+            reply = harness.tone(0.5, harness.MIC_RATE, hz=330)
+            app.say(reply)
+            await app.until(App.PLAYBACK_DRAINED)
+            app.send_json(App.HANGUP, {"reason": "done"})
+            assert len(echo.voice) >= 3 * len(reply)
+            row = (await wait_for(lambda: _turns(ctl, echo), 10, "the turn row"))[-1]
+            assert row["outcome"] == "ok" and row["trigger_type"] == "button"
+    scenario(body)
+
+
+def test_a_question_asked_back_is_answered_without_the_wake_word(scenario):
+    async def body(ctl):
+        async with incubator_room(ctl) as (echo, app, _port):
+            echo.turn_speech.append(SPEECH)  # the answer, said after the question
+            await echo.wake(SPEECH)
+            await app.until(App.CALL_START)
+            app.event("listening", stage="listening")
+            app.event("processing")
+            app.say(harness.tone(0.5, harness.MIC_RATE, hz=330))  # "which room?"
+            await app.until(App.PLAYBACK_DRAINED)
+            app.send_json(App.HANGUP, {"reason": "asked", "listen": True})
+
+            # The Echo opens its microphone again, and the app hears the
+            # answer as a call of its own, with no wake word and no pre-roll.
+            follow = await app.until(App.CALL_START, after=1)
+            assert follow == {"wake_word": "follow_up", "preroll_bytes": 0}
+            before = len(app.audio_in)
+            await wait_for(lambda: SPEECH in bytes(app.audio_in[before:]), 10,
+                           "the answer to reach the app")
+            app.event("listening", stage="listening")
+            app.event("processing")
+            app.say(harness.tone(0.3, harness.MIC_RATE, hz=440))
+            await app.until(App.PLAYBACK_DRAINED, after=1)
+            app.send_json(App.HANGUP, {"reason": "done"})
+            rows = await wait_for(lambda: len(_turns(ctl, echo)) >= 2 and _turns(ctl, echo),
+                                  10, "both turn rows")
+            assert [r["outcome"] for r in rows[-2:]] == ["ok", "ok"]
+            assert rows[-1]["trigger_type"] == "continuation"
+    scenario(body)
+
+
+def test_a_tap_during_the_reply_cancels_the_call(scenario):
+    async def body(ctl):
+        async with incubator_room(ctl) as (echo, app, _port):
+            sid = await echo.wake(SPEECH)
+            await app.until(App.CALL_START)
+            app.event("listening", stage="listening")
+            app.event("processing")
+            await wait_for(lambda: echo.closed(sid), 5, "the session to close at end of speech")
+            stop = asyncio.Event()
+            reply = asyncio.create_task(app.paced(harness.tone(1.0, harness.MIC_RATE, hz=330), stop))
+            await wait_for(lambda: len(echo.voice) > 0, 10, "the reply to play on the Echo")
+            flushes = len(echo.sent("speaker_flush"))
+
+            # The real button handler's cancel branch, not em_voice called directly.
+            await echo.send({"type": "button", "clickType": 138, "down": False,
+                             "heldMs": 80, "muted": False})
+            end = await app.until(App.CALL_END)
+            stop.set()
+            await reply
+            assert end.get("reason") == "cancelled", end
+            assert len(echo.sent("speaker_flush")) > flushes, "the reply was not cut"
+            row = (await wait_for(lambda: _turns(ctl, echo), 10, "the turn row"))[-1]
+            assert row["outcome"] == "cancelled", row["outcome"]
+    scenario(body)
+
+
+def test_a_tap_while_the_app_is_still_listening_cancels_the_call(scenario):
+    async def body(ctl):
+        async with incubator_room(ctl) as (echo, app, _port):
+            await echo.wake(SPEECH)
+            await app.until(App.CALL_START)
+            app.event("listening", stage="listening")
+            # No reply yet: the call is still streaming the command. The
+            # button handler sets cancel_event (which the call loop watches)
+            # and cancels through em_voice; either alone ends the call.
+            await echo.send({"type": "button", "clickType": 138, "down": False,
+                             "heldMs": 80, "muted": False})
+            end = await app.until(App.CALL_END)
+            assert end.get("reason") == "cancelled", end
+            row = (await wait_for(lambda: _turns(ctl, echo), 10, "the turn row"))[-1]
+            assert row["outcome"] == "cancelled", row["outcome"]
+    scenario(body)

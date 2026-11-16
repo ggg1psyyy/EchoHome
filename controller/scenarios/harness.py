@@ -262,6 +262,12 @@ class FakeEcho:
     # None: shell_open is ignored, as before.
     fs_root: Path | None = None
     restarts: int = 0
+    # What is said into the next VAD-gated turn stream (mic_start with
+    # lock_mic: a button turn, a follow-up), one entry per turn. Empty: the
+    # room stays quiet and no stream comes, as the Echo sends nothing until
+    # its VAD hears speech.
+    turn_speech: list[bytes] = field(default_factory=list)
+    turn_streams: int = 0
 
     async def connect(self) -> None:
         url = f"ws://127.0.0.1:{self.controller.port}"
@@ -296,6 +302,8 @@ class FakeEcho:
         async for raw in self._ctl:
             msg = json.loads(raw)
             self.control.append(msg)
+            if msg.get("type") == "mic_start" and msg.get("lock_mic") and self.turn_speech:
+                self._tasks.append(asyncio.create_task(self._turn_stream(self.turn_speech.pop(0))))
             if msg.get("type") == "shell_open" and self.fs_root is not None:
                 self._tasks.append(asyncio.create_task(self._shell_session()))
             if msg.get("type") == "ping":
@@ -402,6 +410,21 @@ class FakeEcho:
                 # controller's turn waits on it to stop "speaking".
                 await self.send({"type": "playback_stats", "periods": 1,
                                  "underruns": 0, "stats": {}})
+
+    async def _turn_stream(self, speech: bytes) -> None:
+        """A lock_mic turn stream, as device/internal/client/data.go sends
+        it: nothing until its VAD opens (here: a moment), then 0x01 frames
+        ([0x01][seq u16 BE][PCM]), then the VAD-end sentinel as a 0x01 frame
+        whose payload is the single byte 0x04."""
+        self.turn_streams += 1
+        await asyncio.sleep(0.3)
+        seq = 0
+        for i in range(0, len(speech), FRAME_BYTES):
+            await self._data.send(bytes([0x01]) + struct.pack(">H", seq & 0xFFFF)
+                                  + speech[i:i + FRAME_BYTES])
+            seq += 1
+            await asyncio.sleep(FRAME_S)
+        await self._data.send(bytes([0x01]) + struct.pack(">H", seq & 0xFFFF) + bytes([0x04]))
 
     def sent(self, kind: str) -> list[dict]:
         return [m for m in self.control if m.get("type") == kind]
