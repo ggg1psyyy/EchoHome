@@ -642,9 +642,11 @@ def test_an_abandoned_stream_is_cut_when_the_app_stops_its_timer(world, outside)
             await asyncio.sleep(0.01)
         app.send_json(proto.Message.EVENT, {"type": "timer_stopped", "data": {}})
         for _ in range(100):
-            if player.released:
+            if player.released and {"type": "speaker_flush"} in dev.sent:
                 break
             await asyncio.sleep(0.01)
+        # Flushed even though the playback ended at once: what was already
+        # sent would otherwise ring on from the Echo's buffer.
         assert player.released == 1 and {"type": "speaker_flush"} in dev.sent
         assert not em_voice.app_timer_ringing(DEV)
         # A fresh stream afterwards plays and is answered.
@@ -773,5 +775,199 @@ def test_two_cuts_at_once_cut_once(world, outside):
         assert sorted(results) == [False, True]
         assert player.released == 1
         assert dev.sent.count({"type": "speaker_flush"}) == 1
+        app.writer.close()
+    asyncio.run(run())
+
+
+@pytest.fixture
+def owners(monkeypatch):
+    """em_player's ownership calls, as the ring makes them."""
+    calls = []
+
+    async def interrupt(device_id):
+        calls.append("interrupt")
+
+    async def resume(device_id):
+        calls.append("resume")
+
+    monkeypatch.setattr(inc.em_player, "interrupt", interrupt)
+    monkeypatch.setattr(inc.em_player, "resume_interrupted", resume)
+    return calls
+
+
+def test_the_ring_holds_the_music_down_from_first_ring_to_stop(world, outside, owners):
+    # Each ring is its own stream, ~1 s apart; music must not pump up in the
+    # gaps. One hold from timer_ringing to timer_stopped.
+    player, _dev = outside
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        for _ in range(3):
+            _ring(app, 0.1)
+            await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert owners == ["interrupt"]
+        app.send_json(proto.Message.EVENT, {"type": "timer_stopped", "data": {}})
+        for _ in range(100):
+            if owners == ["interrupt", "resume"]:
+                break
+            await asyncio.sleep(0.01)
+        assert owners == ["interrupt", "resume"]
+        assert player.streams == 3
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_the_ring_hold_is_released_by_the_button_and_by_the_app_going(world, outside, owners):
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        _ring(app, 0.5, end=False)
+        while not outside[0].played:
+            await asyncio.sleep(0.01)
+        await em_voice.stop_app_timer(DEV)
+        assert owners == ["interrupt", "resume"]
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        while owners.count("interrupt") < 2:
+            await asyncio.sleep(0.01)
+        app.writer.close()
+        for _ in range(200):
+            if owners.count("resume") == 2:
+                break
+            await asyncio.sleep(0.01)
+        assert owners == ["interrupt", "resume", "interrupt", "resume"]
+    asyncio.run(run())
+
+
+def test_a_wake_between_two_rings_is_still_a_wake_over_the_ring(world, outside, owners):
+    player, dev = outside
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        _ring(app, 0.1)
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        conn = inc._satellites[DEV].app
+        assert not conn.playing_outside_call  # the gap: nothing plays
+        assert em_voice.wake_over_playback(DEV) is True
+        turn = Turn(dev)
+        task = turn.run()
+        await app.until(proto.Message.CALL_START)
+        _ring(app, 0.2)  # the next ring, sent before the app saw CALL_START
+        app.send_json(proto.Message.EVENT, {"type": "listening", "data": {"stage": "listening"}})
+        await asyncio.sleep(0.2)
+        assert turn.thinking == 0 and not turn.played and player.streams == 1
+        app.send_json(proto.Message.HANGUP, {"reason": "timer_stopped"})
+        assert await task is False
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_an_abandoned_stream_is_let_go_unanswered(world, outside, monkeypatch):
+    player, _dev = outside
+    monkeypatch.setattr(inc, "BACKGROUND_IDLE_S", 0.3)
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": True}})
+        _ring(app, 0.2, end=False)  # the app gave up on it: no AUDIO_OUT_END
+        for _ in range(100):
+            if player.released:
+                break
+            await asyncio.sleep(0.02)
+        assert player.released == 1
+        # Unanswered: the next thing the app hears is the next stream's drain.
+        _ring(app, 0.1)
+        frame = await app.next(timeout=2.0)
+        assert frame.message is proto.Message.PLAYBACK_DRAINED
+        assert player.streams == 2
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_stream_whose_playback_stopped_early_is_dropped_not_replayed(world, outside):
+    # The player gives up after one chunk (the Echo dropped, a failure): the
+    # rest of that stream must not come back as new streams, each "played".
+    player, _dev = outside
+
+    async def gives_up(device_id, chunks):
+        player.streams += 1
+        async for chunk in chunks:
+            player.played += chunk
+            break
+        player.released += 1
+        return len(player.played)
+
+    inc._player = gives_up
+
+    async def run():
+        app = await App.connect()
+        _ring(app, 1.5)  # ~12 frames, one stream, then its END
+        frame = await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert frame.message is proto.Message.PLAYBACK_DRAINED
+        assert player.streams == 1
+        # Nothing more is owed for it, and a new stream is a new stream.
+        _ring(app, 0.1)
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert player.streams == 2
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_an_announcement_given_up_mid_send_does_not_swallow_the_next_stream(world, outside):
+    player, _dev = outside
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": True}})
+        _ring(app, 0.2, end=False)
+        while not player.played:
+            await asyncio.sleep(0.01)
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": False}})
+        for _ in range(100):
+            if player.released:
+                break
+            await asyncio.sleep(0.01)
+        before = len(player.played)
+        nxt = _ring(app, 0.3)  # a fresh stream: played in full, and answered
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert player.streams == 2
+        up = em_resample.Upsampler()
+        assert bytes(player.played[before:]) == up.process(nxt) + up.flush()
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_finished_stream_leaves_nothing_to_cut(world, outside):
+    # After an announcement has played and been answered, the next call cuts
+    # nothing: no speaker_flush, no stale tail dropped.
+    player, dev = outside
+
+    async def run():
+        app = await App.connect()
+        _ring(app, 0.1)
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        task = Turn(dev).run()
+        await app.until(proto.Message.CALL_START)
+        assert {"type": "speaker_flush"} not in dev.sent
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await task is False
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_failing_player_owner_never_drops_the_app_connection(world, outside, monkeypatch):
+    async def boom(device_id):
+        raise RuntimeError("em_player broke")
+
+    monkeypatch.setattr(inc.em_player, "interrupt", boom)
+    monkeypatch.setattr(inc.em_player, "resume_interrupted", boom)
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        app.send_json(proto.Message.EVENT, {"type": "timer_stopped", "data": {}})
+        app.send(proto.encode(proto.Message.AUDIO_OUT_END))
+        assert (await app.until(proto.Message.PLAYBACK_DRAINED)).message is proto.Message.PLAYBACK_DRAINED
         app.writer.close()
     asyncio.run(run())

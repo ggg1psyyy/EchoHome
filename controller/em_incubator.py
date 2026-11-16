@@ -69,6 +69,7 @@ from zeroconf import ServiceInfo
 import em_db as db
 import em_incubator_proto as proto
 import em_oww_models
+import em_player
 import em_resample
 import em_state
 import em_tasks
@@ -118,6 +119,13 @@ same add-on option (`tts_wait_timeout`) and bounds as Home Assistant's
 (em_esphome.TTS_WAIT_TIMEOUT), read the same way, once at import."""
 
 SILENCE_FRAME = b"\x00\x00" * 1280  # 80 ms at 16 kHz
+
+BACKGROUND_IDLE_S = 5.0
+"""A stream outside a call that gets no frame for this long was abandoned by
+the app (its ring or announcement task cancelled mid-send, so no
+AUDIO_OUT_END will come): what came is played and the stream let go,
+unanswered. The app paces its ring and announcements in real time, a frame
+every ~128 ms, so a gap this long is never a stream still in progress."""
 
 COMMAND_ENDED = frozenset({
     "processing", "recognized", "not_recognized", "responding", "result",
@@ -178,8 +186,11 @@ class Stream:
     def __init__(self, number: int) -> None:
         self.number = number
         self.audio: asyncio.Queue = asyncio.Queue(maxsize=PLAYBACK_QUEUE_FRAMES)
-        self.ended = False
-        self.cut = False  # stopped on purpose: no PLAYBACK_DRAINED for it
+        self.ended = False      # nothing more is queued for the speaker
+        self.app_ended = False  # the app sent its AUDIO_OUT_END
+        self.cut = False        # stopped on purpose: no PLAYBACK_DRAINED for it
+        self.broken = False     # the speaker side stopped first: drop the rest
+        self.abandoned = False  # no frame for BACKGROUND_IDLE_S: no END coming
         self.bytes = 0
 
     async def put(self, pcm: bytes) -> None:
@@ -209,12 +220,20 @@ class Stream:
                 break
         self.end()
 
-    async def pcm_chunks(self, stopped):
+    async def pcm_chunks(self, stopped, idle: float | None = None):
         """The stream at 48 kHz, as post_turn_play takes it. `stopped()`
-        says the call was cancelled: no more, and no filter tail."""
+        says the call was cancelled: no more, and no filter tail. With
+        `idle`, a stream that gets no frame for that long is abandoned."""
         up = em_resample.Upsampler()
         while True:
-            item = await self.audio.get()
+            if idle is None:
+                item = await self.audio.get()
+            else:
+                try:
+                    item = await asyncio.wait_for(self.audio.get(), idle)
+                except asyncio.TimeoutError:
+                    self.abandoned = True
+                    item = None
             if item is None or stopped():
                 break
             out = up.process(item)
@@ -406,6 +425,7 @@ class AppConnection:
         self._background_task: asyncio.Task | None = None
         self._background_count = 0
         self.timer_ringing = False
+        self._ring_hold = False
         self._discard_out = False
         self._write_lock = asyncio.Lock()
         self._model_id: str | None = None
@@ -453,6 +473,7 @@ class AppConnection:
         if self.call is not None:
             self.call.lost()
         await self.cut_background("the app went away")
+        await self._release_ring()
         if not self.writer.is_closing():
             self.writer.close()
         try:
@@ -480,6 +501,8 @@ class AppConnection:
 
     async def _background_audio(self, pcm: bytes) -> None:
         stream = self.background
+        if stream is not None and stream.broken and not stream.app_ended:
+            return  # the rest of a stream whose playback stopped early
         if stream is None or stream.ended:
             self._background_count += 1
             stream = self.background = Stream(self._background_count)
@@ -489,6 +512,23 @@ class AppConnection:
                      f"{' (timer ringing)' if self.timer_ringing else ''}")
         await stream.put(pcm)
 
+    def _background_end(self) -> bool:
+        """AUDIO_OUT_END outside a call. True when it ends a stream still
+        playing (answered once played); False when it is answered now."""
+        stream = self.background
+        if stream is None or stream.app_ended:
+            return False
+        stream.app_ended = True
+        if stream.broken:
+            # Its playback stopped early and the rest was dropped; the app is
+            # still owed its answer, now.
+            self.background = None
+            return False
+        stream.end()
+        log.info(f"[{self._log}] AUDIO_OUT_END: playback stream {stream.number} outside a call, "
+                 f"{stream.bytes} bytes ({stream.bytes * 1000 // proto.BYTE_RATE} ms)")
+        return True
+
     async def _play_background(self, stream: Stream) -> None:
         device_id = self.satellite.device_id
         player = _player
@@ -496,68 +536,125 @@ class AppConnection:
             if player is None:
                 log.warning(f"[{self._log}] No player registered — app playback not played")
             else:
-                await player(device_id, stream.pcm_chunks(lambda: stream.cut))
+                await player(device_id, stream.pcm_chunks(lambda: stream.cut, idle=BACKGROUND_IDLE_S))
         except asyncio.CancelledError:
             raise
         except Exception as e:
             log.warning(f"[{self._log}] App playback failed: {e}")
         finally:
+            if not stream.cut and not stream.app_ended and not stream.abandoned:
+                # Stopped before the app finished sending (the player failed,
+                # the Echo dropped): the rest is dropped, not replayed as new
+                # streams each answered as played.
+                stream.broken = True
             stream.discard()  # whatever is left must not hold the reader
-        if not stream.cut and not self._closed:
-            await self.send_quietly(proto.playback_drained())
+        if stream.abandoned:
+            log.info(f"[{self._log}] Playback stream {stream.number} abandoned by the app "
+                     f"(no AUDIO_OUT_END) — played what came, unanswered")
+            if self.background is stream:
+                self.background = None
+            return
+        if stream.cut or stream.broken or self._closed:
+            return
+        if self.background is stream:
+            self.background = None  # played and answered: nothing left to cut
+        await self.send_quietly(proto.playback_drained())
 
-    async def cut_background(self, why: str) -> bool:
-        """Stop what the app is playing outside a call, at once: the Echo's
-        buffer flushed first, then the playback ended (em_player's order, so
-        nothing more is queued behind the flush). Returns whether anything
-        was playing. Never through cancel_event: a call starting over the
-        ring races that same event, and would be cancelled at birth."""
-        # Taken at once: a second cut meanwhile finds nothing, rather than
-        # cancelling the task again inside its cleanup (which would skip
-        # resume_interrupted and leave music ducked).
+    def _detach_background(self) -> tuple[Stream | None, asyncio.Task | None]:
+        """Take the background stream and its playback, synchronously, so
+        nothing the app sends next is queued behind a stream being cut. A
+        second caller finds nothing, rather than cancelling the task again
+        inside its cleanup (which would skip resume_interrupted)."""
         stream, task = self.background, self._background_task
         self.background, self._background_task = None, None
-        if task is None or task.done():
-            return False
         if stream is not None:
             stream.cut = True
             stream.discard()
+        return stream, task
+
+    async def _stop_background(self, stream: Stream | None, task: asyncio.Task | None,
+                               why: str) -> bool:
+        """The Echo's buffer flushed first, then the playback ended
+        (em_player's order). Flushed whenever a stream was detached, even if
+        its playback task already returned: ending the stream lets up to the
+        4 s lead already sent play out on the Echo. Never through
+        cancel_event: a call starting over the ring races that same event,
+        and would be cancelled at birth."""
+        alive = task is not None and not task.done()
+        if stream is None and not alive:
+            return False
         device = em_state.devices.get(self.satellite.device_id)
         if device is not None:
             try:
                 await device.send_control({"type": "speaker_flush"})
             except Exception as e:
                 log.info(f"[{self._log}] speaker_flush failed: {e}")
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
+        if alive:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
         log.info(f"[{self._log}] App playback cut: {why}")
         return True
+
+    async def cut_background(self, why: str) -> bool:
+        """Stop what the app is playing outside a call, at once. Returns
+        whether anything was playing."""
+        stream, task = self._detach_background()
+        return await self._stop_background(stream, task, why)
+
+    # The ring holds the music down for as long as it rings: one owner from
+    # timer_ringing to timer_stopped, not one per ring stream (each ring is its
+    # own stream, ~1 s apart, and music would pump up in every gap).
+
+    async def _hold_for_ring(self) -> None:
+        if not self._ring_hold:
+            self._ring_hold = True
+            try:
+                await em_player.interrupt(self.satellite.device_id)
+            except Exception as e:  # never the app connection's problem
+                log.warning(f"[{self._log}] Holding music for the ring failed: {e}")
+
+    async def _release_ring(self) -> None:
+        if self._ring_hold:
+            self._ring_hold = False
+            try:
+                await em_player.resume_interrupted(self.satellite.device_id)
+            except Exception as e:
+                log.warning(f"[{self._log}] Releasing music after the ring failed: {e}")
 
     async def stop_timer(self) -> None:
         """The button while the app's timer rings: silence it here, and tell
         the app (DEVICE_EVENT stop_timer); it stops the ring everywhere."""
         await self.cut_background("button: stop the timer")
         self.timer_ringing = False
+        await self._release_ring()
         await self.send_quietly(proto.device_event(proto.STOP_TIMER))
 
-    def _on_app_event(self, event: proto.Event) -> None:
+    async def _on_app_event(self, event: proto.Event) -> None:
         """EVENTs that matter outside a call."""
         if event.type == "timer_ringing":
             self.timer_ringing = True
+            await self._hold_for_ring()
         elif event.type == "timer_stopped":
             self.timer_ringing = False
-            em_tasks.spawn(self.cut_background("the app stopped its timer"),
+            # Detached now, so a stream that follows starts afresh; the flush
+            # and the end of the old playback run behind it.
+            stream, task = self._detach_background()
+            em_tasks.spawn(self._stop_background(stream, task, "the app stopped its timer"),
                            name=f"{self._log}-cut")
+            await self._release_ring()
         elif event.type == "announcement" and event.data.get("active") is False:
             # Normally the stream ended already; if the app gave up on it
-            # mid-send, no AUDIO_OUT_END follows -- let what came play out.
-            if self.background is not None:
-                self.background.end()
+            # mid-send, no AUDIO_OUT_END follows -- let what came play out,
+            # unanswered, and the next stream start afresh (as an idle one).
+            stream = self.background
+            if stream is not None and not stream.app_ended:
+                stream.abandoned = True
+                stream.end()
 
     async def _on_frame(self, frame: proto.Frame) -> None:
         msg = frame.message
@@ -586,12 +683,8 @@ class AppConnection:
             if call is not None and call.stale:
                 log.info(f"[{self._log}] AUDIO_OUT_END of the playback a call cut — dropped")
                 return
-            if call is None and self.background is not None and not self.background.ended:
-                stream = self.background
-                stream.end()  # PLAYBACK_DRAINED once it has played (_play_background)
-                log.info(f"[{self._log}] AUDIO_OUT_END: playback stream {stream.number} outside a call, "
-                         f"{stream.bytes} bytes ({stream.bytes * 1000 // proto.BYTE_RATE} ms)")
-                return
+            if call is None and self._background_end():
+                return  # PLAYBACK_DRAINED once it has played (_play_background)
             stream = call.on_audio_end() if call is not None else None
             if stream is not None:
                 # PLAYBACK_DRAINED once it has played (trigger_voice_turn).
@@ -608,7 +701,7 @@ class AppConnection:
         if msg is proto.Message.EVENT:
             event = proto.Event.parse(info)
             log.debug(f"[{self._log}] EVENT {event.type} {event.data}")
-            self._on_app_event(event)
+            await self._on_app_event(event)
             if call is not None:
                 if event.type in CALL_EVENTS:
                     call.stale = False
@@ -879,7 +972,7 @@ async def trigger_voice_turn(
     # this call's (Call.stale) -- marked BEFORE the call is published, so a
     # ring frame read while the cut is being awaited is dropped rather than
     # taken for the call's reply.
-    call.stale = app.playing_outside_call
+    call.stale = app.playing_outside_call or app.timer_ringing
     app.call = call
     await app.cut_background(f"a call ({trigger_label})")
     wi = wake_info or {}
@@ -1011,7 +1104,9 @@ def wake_over_playback(device_id: str) -> bool:
     the turn path: the app's ring and announcements are stopped by a wake
     (it starts a call, which cuts them), as EchoMuse's own alarm is."""
     app = _app(device_id)
-    return app is not None and app.call is None and app.playing_outside_call
+    # timer_ringing too: between two ring streams nothing plays for ~1 s,
+    # and a wake there is still a wake over the ring.
+    return app is not None and app.call is None and (app.playing_outside_call or app.timer_ringing)
 
 
 def app_timer_ringing(device_id: str) -> bool:
