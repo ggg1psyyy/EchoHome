@@ -1104,3 +1104,56 @@ def test_an_announcement_given_up_on_a_broken_stream_lets_the_next_through(world
         assert player.streams == 2
         app.writer.close()
     asyncio.run(run())
+
+
+def test_what_people_say_never_reaches_the_debug_log(world, caplog):
+    # The log tail goes into support bundles; recognised text, replies and
+    # the speaker's name must not be in it, even with debug logging on.
+    import logging
+    caplog.set_level(logging.DEBUG, logger="echomuse.incubator")
+
+    async def run():
+        app = await App.connect()
+        task = Turn(FakeDevice()).run()
+        await app.until(proto.Message.CALL_START)
+        app.send_json(proto.Message.EVENT, {"type": "processing",
+                                            "data": {"speaker": "Grandma Ingrid", "score": 0.9}})
+        app.send_json(proto.Message.EVENT, {"type": "recognized",
+                                            "data": {"text": "unlock the secret door", "command": "x"}})
+        app.send_json(proto.Message.EVENT, {"type": "responding",
+                                            "data": {"text": "the vault code is 4711"}})
+        app.send_json(proto.Message.EVENT, {"type": "not_recognized",
+                                            "data": {"heard": "mumbled private words"}})
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await task is False
+        app.writer.close()
+    asyncio.run(run())
+    text = caplog.text
+    for secret in ("Grandma Ingrid", "unlock the secret door", "4711", "mumbled private words"):
+        assert secret not in text, secret
+    assert "EVENT recognized" in text  # the event itself is still logged
+
+
+def test_a_hangup_reason_that_is_not_a_word_is_recorded_as_other(world, caplog):
+    import logging
+    caplog.set_level(logging.DEBUG, logger="echomuse.incubator")
+
+    async def run():
+        app = await App.connect()
+        task = Turn(FakeDevice()).run()
+        await app.until(proto.Message.CALL_START)
+        app.send_json(proto.Message.EVENT, {"type": "listening", "data": {"stage": "Hello Ingrid!"}})
+        app.send_json(proto.Message.HANGUP, {"reason": "Sorry Ingrid, the vault code is 4711"})
+        assert await task is False
+        app.writer.close()
+    asyncio.run(run())
+    assert world[-1]["outcome"] == "other"
+    assert "Ingrid" not in caplog.text and "4711" not in caplog.text
+    assert "reason='other'" in caplog.text
+
+
+def test_the_apps_own_words_are_kept():
+    for word in ("done", "no_answer", "timer_stopped", "wake_rejected", "listening"):
+        assert inc._identifier(word) == word
+    for not_a_word in ("", "Done", "two words", "x" * 33, "ümlaut", "4711", "a-b"):
+        assert inc._identifier(not_a_word) == "other"

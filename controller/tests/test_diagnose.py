@@ -175,3 +175,51 @@ def test_the_tool_warns_on_an_old_format(tmp_path, capsys):
     bundle_check.main([str(path)])
     assert "format 2" in capsys.readouterr().err
 
+
+
+# ─── The Voice Incubator ─────────────────────────────────────────────────────
+
+INCUBATOR_UP = {"port": 18001, "listening": True, "appConnected": True, "inCall": False}
+
+
+def test_an_incubator_echo_with_its_app_is_healthy():
+    assert _rules(_bundle(view=_view(voiceIncubator=INCUBATOR_UP))) == []
+
+
+def test_an_incubator_echo_without_its_app_is_found():
+    down = dict(INCUBATOR_UP, appConnected=False)
+    assert _rules(_bundle(view=_view(voiceIncubator=down))) == ["incubator_not_connected"]
+    offline = {"port": None, "listening": False, "appConnected": False, "inCall": False}
+    assert _rules(_bundle(view=_view(voiceIncubator=offline))) == ["incubator_not_connected"]
+
+
+def test_an_incubator_echo_does_not_need_home_assistants_voice():
+    # HA's ESPHome connection may be gone (or never there) on an Echo the
+    # Incubator answers; that is not a reason it cannot answer.
+    view = _view(voiceSatellite={"port": 6053, "listening": True, "haConnected": False},
+                 voiceIncubator=INCUBATOR_UP)
+    assert _rules(_bundle(view=view)) == []
+
+
+def test_a_home_assistant_echo_is_judged_as_before():
+    view = _view(voiceSatellite={"port": 6053, "listening": True, "haConnected": False},
+                 voiceIncubator=None)
+    assert _rules(_bundle(view=view)) == ["ha_not_connected"]
+
+
+def test_an_offline_incubator_echo_is_only_offline():
+    down = dict(INCUBATOR_UP, appConnected=False)
+    assert _rules(_bundle(view=_view(voiceIncubator=down), live={"connected": False})) == ["offline"]
+
+
+def test_the_app_vanishing_mid_call_counts_as_no_answer():
+    assert "app_gone" in D.FAILED_OUTCOMES
+
+
+def test_a_satellite_not_listening_is_the_controllers_side_not_the_apps():
+    down = {"port": None, "listening": False, "appConnected": False, "inCall": False}
+    (finding,) = D.check(_bundle(view=_view(voiceIncubator=down)))
+    assert "not listening on the controller" in finding["text"]
+    waiting = dict(INCUBATOR_UP, appConnected=False)
+    (finding,) = D.check(_bundle(view=_view(voiceIncubator=waiting)))
+    assert "app is not connected" in finding["text"]

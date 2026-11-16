@@ -153,6 +153,29 @@ CALL_EVENTS = COMMAND_ENDED | {"listening", "wake_rejected", "wake_overturned"}
 traffic begins (Call.stale)."""
 
 
+EVENT_LOG_KEYS = ("stage", "ok", "active", "reason", "timers", "shown", "on")
+"""The only EVENT fields logged. The rest can be what someone said or was
+told (`recognized` text, `responding` text, `not_recognized` heard) or who
+they are (`processing` speaker), and the log tail goes into support bundles,
+which drop transcript lines by pattern, not by guessing."""
+
+
+def _identifier(value) -> str:
+    """The app's word for something (a hang-up reason, an event's stage),
+    kept only while it looks like one: short, lowercase, letters and
+    underscores. Anything else -- which no part of the app sends today --
+    becomes `other` before it reaches the log, the turn record or a bundle."""
+    text = str(value)
+    if 0 < len(text) <= 32 and all(c.islower() or c == "_" for c in text) and text.isascii():
+        return text
+    return "other"
+
+
+def _event_summary(event: proto.Event) -> dict:
+    return {k: (_identifier(event.data[k]) if isinstance(event.data[k], str) else event.data[k])
+            for k in EVENT_LOG_KEYS if k in event.data}
+
+
 def backend(config: dict) -> str:
     """The Echo's voice backend. An unknown value is Home Assistant's: an
     Echo is never moved off the pipeline it has by a value nothing here can
@@ -752,7 +775,7 @@ class AppConnection:
         info = frame.json()
         if msg is proto.Message.EVENT:
             event = proto.Event.parse(info)
-            log.debug(f"[{self._log}] EVENT {event.type} {event.data}")
+            log.debug(f"[{self._log}] EVENT {event.type} {_event_summary(event)}")
             await self._on_app_event(event)
             if call is not None:
                 if event.type in CALL_EVENTS:
@@ -760,7 +783,8 @@ class AppConnection:
                 call.on_event(event)
         elif msg is proto.Message.HANGUP:
             hangup = proto.Hangup.parse(info)
-            log.info(f"[{self._log}] HANGUP reason={hangup.reason!r} listen={hangup.listen}")
+            log.info(f"[{self._log}] HANGUP reason={_identifier(hangup.reason) if hangup.reason else ''!r} "
+                     f"listen={hangup.listen}")
             if call is not None:
                 call.stale = False
                 call.on_hangup(hangup)
@@ -1163,7 +1187,7 @@ def _outcome(call: Call, played: bool) -> str:
         return "cancelled"
     if call.app_gone:
         return "app_gone"
-    reason = call.hangup.reason if call.hangup is not None else ""
+    reason = _identifier(call.hangup.reason) if call.hangup is not None and call.hangup.reason else ""
     if played:
         return "ok"
     if reason in ("wake_rejected", "answered_elsewhere"):
