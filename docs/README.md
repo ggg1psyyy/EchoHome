@@ -12,6 +12,7 @@ walkthroughs welcome.
 | [The Voice Pipeline, Explained](voice-pipeline.md) | How your voice travels from the microphones to Home Assistant and back, stage by stage, with the benefits and caveats of each design choice. |
 | [FAQ](faq.md) | Quick answers and workarounds for the things that come up most — rooting refusals, wizard failures, update problems, wake word tuning, privacy. Check here before filing. |
 | [User Acceptance Testing](uat.md) | A checklist for confirming EchoMuse does what it claims on your hardware, and how to report what doesn't. Includes the known faults not worth re-filing. |
+| [Using the Voice Incubator](voice-incubator.md) | Experimental: letting OHF-Voice's Voice Incubator app answer an Echo instead of Home Assistant's pipeline — setup, what works, what differs, and how to switch back. |
 | [Moving to the Home Assistant add-on](migrate-to-addon.md) | Migrating an existing Docker install to the add-on without losing your devices, settings or Home Assistant entities. Read the part about `tls/` before you start. |
 
 Deeper technical references live elsewhere:

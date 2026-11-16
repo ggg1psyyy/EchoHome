@@ -38,12 +38,14 @@ timers, alarms and announcements.
    password and idle timeout — and stops following fleet changes to them
    (see [Where settings live](configuration.md#where-settings-live)).
 
-   > **If you use an emOS console password,** set it again on this Echo
-   > after switching Advanced to Device, and check the console asks for it.
-   > Switching the section copies the fleet's settings into the Echo's own,
-   > and the password does not come across intact: the Echo can be left with
-   > no console password at all. This is independent of the Voice Incubator
-   > and reported separately.
+   > **If you use an emOS console password**, an Echo whose Advanced
+   > section is set to Device can be left with none. Switching the section
+   > from the dashboard does not carry the fleet's password across, and a
+   > password typed into that Echo's own Advanced section is not stored in
+   > the form the Echo checks. This is true of any Advanced section set to
+   > Device, not only for this setting. Setting **Voice assistant** in the
+   > fleet settings instead avoids it, but switches every Echo that follows
+   > the fleet's Advanced section.
 2. Within a few seconds the Voice Incubator app shows the Echo as a
    satellite, and Home Assistant links it to the Echo's existing ESPHome
    device as a separate *Voice Incubator* device.
@@ -75,7 +77,6 @@ one answers nothing.
   word or a tap stops them.
 - The app's **announcements**, to and from other Echoes using it.
 - Music keeps playing, ducked under replies, rings and announcements.
-- Several Echoes in one room: EchoMuse still decides which one answers.
 
 ## What is different
 
@@ -98,9 +99,10 @@ one answers nothing.
   satellites' wake words against what was actually said; an Echo sends too
   little audio from before the wake word for that, so the app accepts the
   Echo's detection as it is.
-- **Speaker identification** works for voices enrolled elsewhere, with less
-  accuracy than on the app's own satellite (that one sends a second,
-  echo-cancelled capture an Echo does not have).
+- **Speaker identification**, as the app's code reads, falls back to the
+  one capture an Echo sends (its own satellite sends a second,
+  echo-cancelled one) and uses voices enrolled elsewhere. It has not been
+  tried on an Echo.
 - **The ring** shows listening, thinking and the reply as usual. The app's
   timers ring by sound only: the ring does not light for them, nor show the
   app's running-timer progress or night mode.
@@ -148,8 +150,10 @@ back and forth, and the app being stopped.
 
 Against the real controller with a simulated Echo and app only (the
 project's scenario tests), not yet on hardware: asking with the action
-button, follow-up questions, a tap cancelling a call.
+button, follow-up questions, a tap cancelling a call (while the app listens
+and during its reply).
 
-Not tested: speaker identification on an Echo (read from the app's code),
+Not tested: speaker identification on an Echo, several Incubator Echoes
+hearing the same wake word (EchoMuse's arbitration should still pick one),
 detecting the wake word on the controller (*Wake word detection: On the
 controller*), and the app running on another machine.
