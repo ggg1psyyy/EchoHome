@@ -124,6 +124,11 @@ COMMAND_ENDED = frozenset({
 })
 """EVENTs that mean the app has stopped listening to the command."""
 
+CALL_EVENTS = COMMAND_ENDED | {"listening", "wake_rejected", "wake_overturned"}
+"""EVENTs about the call itself, as opposed to ones the app sends at any time
+(timer_progress, night): the first of them marks where the call's own
+traffic begins (Call.stale)."""
+
 
 def backend(config: dict) -> str:
     """The Echo's voice backend. An unknown value is Home Assistant's: an
@@ -174,6 +179,7 @@ class Stream:
         self.number = number
         self.audio: asyncio.Queue = asyncio.Queue(maxsize=PLAYBACK_QUEUE_FRAMES)
         self.ended = False
+        self.cut = False  # stopped on purpose: no PLAYBACK_DRAINED for it
         self.bytes = 0
 
     async def put(self, pcm: bytes) -> None:
@@ -238,6 +244,12 @@ class Call:
         self.current: Stream | None = None
         self._count = 0
         self.last_event: str | None = None
+        self.stale = False
+        """Set for a call that started over the app's own playback (a ring, an
+        announcement): AUDIO_OUT still in flight belongs to that, not to this
+        call, until the app's first EVENT or HANGUP for the call -- TCP order
+        makes that the boundary. Without it the tail of a ring would read as
+        this call's reply and end the command before anyone spoke."""
 
     def stopped(self) -> bool:
         return self.cancelled or self.app_gone
@@ -390,6 +402,10 @@ class AppConnection:
         peer = writer.get_extra_info("peername")
         self.peer = f"{peer[0]}:{peer[1]}" if isinstance(peer, tuple) else str(peer)
         self.call: Call | None = None
+        self.background: Stream | None = None
+        self._background_task: asyncio.Task | None = None
+        self._background_count = 0
+        self.timer_ringing = False
         self._discard_out = False
         self._write_lock = asyncio.Lock()
         self._model_id: str | None = None
@@ -436,6 +452,7 @@ class AppConnection:
         self._closed = True
         if self.call is not None:
             self.call.lost()
+        await self.cut_background("the app went away")
         if not self.writer.is_closing():
             self.writer.close()
         try:
@@ -454,6 +471,94 @@ class AppConnection:
         em_tasks.spawn(self.send_quietly(proto.call_end(proto.CANCELLED)),
                        name=f"{self._log}-call-end")
 
+    # ── Playback outside a call: the app's ring, its announcements ──────
+
+    @property
+    def playing_outside_call(self) -> bool:
+        task = self._background_task
+        return task is not None and not task.done()
+
+    async def _background_audio(self, pcm: bytes) -> None:
+        stream = self.background
+        if stream is None or stream.ended:
+            self._background_count += 1
+            stream = self.background = Stream(self._background_count)
+            self._background_task = em_tasks.spawn(
+                self._play_background(stream), name=f"{self._log}-playback")
+            log.info(f"[{self._log}] Playback outside a call: stream {stream.number}"
+                     f"{' (timer ringing)' if self.timer_ringing else ''}")
+        await stream.put(pcm)
+
+    async def _play_background(self, stream: Stream) -> None:
+        device_id = self.satellite.device_id
+        player = _player
+        try:
+            if player is None:
+                log.warning(f"[{self._log}] No player registered — app playback not played")
+            else:
+                await player(device_id, stream.pcm_chunks(lambda: stream.cut))
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.warning(f"[{self._log}] App playback failed: {e}")
+        finally:
+            stream.discard()  # whatever is left must not hold the reader
+        if not stream.cut and not self._closed:
+            await self.send_quietly(proto.playback_drained())
+
+    async def cut_background(self, why: str) -> bool:
+        """Stop what the app is playing outside a call, at once: the Echo's
+        buffer flushed first, then the playback ended (em_player's order, so
+        nothing more is queued behind the flush). Returns whether anything
+        was playing. Never through cancel_event: a call starting over the
+        ring races that same event, and would be cancelled at birth."""
+        # Taken at once: a second cut meanwhile finds nothing, rather than
+        # cancelling the task again inside its cleanup (which would skip
+        # resume_interrupted and leave music ducked).
+        stream, task = self.background, self._background_task
+        self.background, self._background_task = None, None
+        if task is None or task.done():
+            return False
+        if stream is not None:
+            stream.cut = True
+            stream.discard()
+        device = em_state.devices.get(self.satellite.device_id)
+        if device is not None:
+            try:
+                await device.send_control({"type": "speaker_flush"})
+            except Exception as e:
+                log.info(f"[{self._log}] speaker_flush failed: {e}")
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
+        log.info(f"[{self._log}] App playback cut: {why}")
+        return True
+
+    async def stop_timer(self) -> None:
+        """The button while the app's timer rings: silence it here, and tell
+        the app (DEVICE_EVENT stop_timer); it stops the ring everywhere."""
+        await self.cut_background("button: stop the timer")
+        self.timer_ringing = False
+        await self.send_quietly(proto.device_event(proto.STOP_TIMER))
+
+    def _on_app_event(self, event: proto.Event) -> None:
+        """EVENTs that matter outside a call."""
+        if event.type == "timer_ringing":
+            self.timer_ringing = True
+        elif event.type == "timer_stopped":
+            self.timer_ringing = False
+            em_tasks.spawn(self.cut_background("the app stopped its timer"),
+                           name=f"{self._log}-cut")
+        elif event.type == "announcement" and event.data.get("active") is False:
+            # Normally the stream ended already; if the app gave up on it
+            # mid-send, no AUDIO_OUT_END follows -- let what came play out.
+            if self.background is not None:
+                self.background.end()
+
     async def _on_frame(self, frame: proto.Frame) -> None:
         msg = frame.message
         if msg is None:
@@ -466,15 +571,26 @@ class AppConnection:
         if msg is proto.Message.AUDIO_OUT:
             if self._discard_out:
                 return  # a cancelled call's reply
+            if call is not None and call.stale:
+                return  # the ring or announcement this call cut
             if call is not None:
                 await call.on_audio(frame.payload)
-            # Outside a call (an app timer, an announcement): not played yet,
-            # and acknowledged at its end below.
+            else:
+                await self._background_audio(frame.payload)
             return
         if msg is proto.Message.AUDIO_OUT_END:
             if self._discard_out:
                 self._discard_out = False
                 log.info(f"[{self._log}] AUDIO_OUT_END of a cancelled call's stream — dropped")
+                return
+            if call is not None and call.stale:
+                log.info(f"[{self._log}] AUDIO_OUT_END of the playback a call cut — dropped")
+                return
+            if call is None and self.background is not None and not self.background.ended:
+                stream = self.background
+                stream.end()  # PLAYBACK_DRAINED once it has played (_play_background)
+                log.info(f"[{self._log}] AUDIO_OUT_END: playback stream {stream.number} outside a call, "
+                         f"{stream.bytes} bytes ({stream.bytes * 1000 // proto.BYTE_RATE} ms)")
                 return
             stream = call.on_audio_end() if call is not None else None
             if stream is not None:
@@ -492,12 +608,16 @@ class AppConnection:
         if msg is proto.Message.EVENT:
             event = proto.Event.parse(info)
             log.debug(f"[{self._log}] EVENT {event.type} {event.data}")
+            self._on_app_event(event)
             if call is not None:
+                if event.type in CALL_EVENTS:
+                    call.stale = False
                 call.on_event(event)
         elif msg is proto.Message.HANGUP:
             hangup = proto.Hangup.parse(info)
             log.info(f"[{self._log}] HANGUP reason={hangup.reason!r} listen={hangup.listen}")
             if call is not None:
+                call.stale = False
                 call.on_hangup(hangup)
         elif msg is proto.Message.MODEL_START:
             self._model_id = str(info.get("id") or "") or None
@@ -516,6 +636,16 @@ class AppConnection:
 
 _satellites: dict[str, Satellite] = {}
 _online: set[str] = set()
+_player = None
+"""em_controller's playback for the app's streams outside a call, set once at
+start (set_player): async (device_id, pcm_chunks at 48 kHz) -> bytes played.
+A function, not a Device: it looks the Echo up when it plays, so it survives
+a reconnect."""
+
+
+def set_player(player) -> None:
+    global _player
+    _player = player
 _locks: dict[str, asyncio.Lock] = {}
 _host = "0.0.0.0"
 
@@ -744,7 +874,14 @@ async def trigger_voice_turn(
     wake_word, preroll = call_kind(trigger_label, device.oww_model, device.listen_session)
     trace = em_turn_record.TurnTrace(trigger=trigger_label, t0=time.monotonic(), wake_info=wake_info)
     call = Call(wake_word)
+    # A call cuts what the app was playing (as the reference firmware's
+    # start_call resets its output), and its tail still in flight is not
+    # this call's (Call.stale) -- marked BEFORE the call is published, so a
+    # ring frame read while the cut is being awaited is dropped rather than
+    # taken for the call's reply.
+    call.stale = app.playing_outside_call
     app.call = call
+    await app.cut_background(f"a call ({trigger_label})")
     wi = wake_info or {}
     sender: asyncio.Task | None = None
     played = False
@@ -867,6 +1004,25 @@ async def _record(device, trace) -> None:
         device.turn_history.append(turn_record)
     except Exception as e:
         log.warning(f"[{device.device_id}] Incubator call not recorded: {e}")
+
+
+def wake_over_playback(device_id: str) -> bool:
+    """Whether a wake heard over this Echo's own playback must still reach
+    the turn path: the app's ring and announcements are stopped by a wake
+    (it starts a call, which cuts them), as EchoMuse's own alarm is."""
+    app = _app(device_id)
+    return app is not None and app.call is None and app.playing_outside_call
+
+
+def app_timer_ringing(device_id: str) -> bool:
+    app = _app(device_id)
+    return app is not None and app.timer_ringing
+
+
+async def stop_app_timer(device_id: str) -> None:
+    app = _app(device_id)
+    if app is not None:
+        await app.stop_timer()
 
 
 def cancel_voice_turn(device_id: str, abort_ha: bool = False,  # noqa: ARG001

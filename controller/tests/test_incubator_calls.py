@@ -527,3 +527,251 @@ def test_call_kind_names_and_preroll():
     assert inc.call_kind("button", "x", None) == ("manual", 0)
     assert inc.call_kind("continuation", "x", 3) == ("follow_up", 0)
     assert inc.call_kind("conversation", "x", None) == ("manual", 0)
+
+
+# ─── Playback outside a call: the app's ring and announcements ─────────────
+
+class Player:
+    """em_controller's _incubator_playback, recorded: plays (consumes) a
+    stream, optionally slowly, and notes when it is released."""
+
+    def __init__(self, delay=0.0):
+        self.delay = delay
+        self.played = bytearray()
+        self.streams = 0
+        self.released = 0
+
+    async def __call__(self, device_id, chunks):
+        self.streams += 1
+        try:
+            async for chunk in chunks:
+                self.played += chunk
+                if self.delay:
+                    await asyncio.sleep(self.delay)
+            return len(self.played)
+        finally:
+            self.released += 1
+
+
+class ControlDevice(FakeDevice):
+    def __init__(self):
+        super().__init__()
+        self.sent = []
+
+    async def send_control(self, msg):
+        self.sent.append(msg)
+
+
+@pytest.fixture
+def outside(world, monkeypatch):
+    player = Player()
+    dev = ControlDevice()
+    monkeypatch.setattr(inc, "_player", player)
+    monkeypatch.setitem(inc.em_state.devices, DEV, dev)
+    return player, dev
+
+
+def _ring(app, seconds=0.5, end=True):
+    pcm = b"\x03\x00" * int(16000 * seconds)
+    for frame in proto.audio_frames(proto.Message.AUDIO_OUT, pcm):
+        app.send(frame)
+    if end:
+        app.send(proto.encode(proto.Message.AUDIO_OUT_END))
+    return pcm
+
+
+def test_an_announcement_outside_a_call_is_played_then_answered(world, outside):
+    player, _dev = outside
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": True}})
+        pcm = _ring(app, 0.3)
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        up = em_resample.Upsampler()
+        assert bytes(player.played) == up.process(pcm) + up.flush()
+        assert player.streams == 1 and player.released == 1
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_wake_over_the_ring_cuts_it_and_its_tail_is_not_the_reply(world, outside):
+    player, dev = outside
+    player.delay = 0.05  # the ring plays at its own pace
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1, "name": "pasta"}})
+        _ring(app, 2.0, end=False)  # the app paces its ring: still sending
+        while not player.played:
+            await asyncio.sleep(0.01)
+        assert em_voice.wake_over_playback(DEV) is True  # the gate lets the wake through
+        turn = Turn(dev)
+        task = turn.run()
+        await app.until(proto.Message.CALL_START)
+        assert {"type": "speaker_flush"} in dev.sent
+        assert player.released == 1  # the ring's playback is over
+        assert em_voice.wake_over_playback(DEV) is False
+        # The ring's tail, still in flight when the app saw CALL_START, then
+        # its listening: the tail is neither played nor ends the command.
+        _ring(app, 0.2)
+        app.send_json(proto.Message.EVENT, {"type": "listening", "data": {"stage": "listening"}})
+        await asyncio.sleep(0.2)
+        assert turn.thinking == 0 and not turn.played
+        app.send_json(proto.Message.EVENT, {"type": "processing", "data": {}})
+        reply = b"\x09\x00" * 3200
+        app.say(reply)
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await task is False
+        up = em_resample.Upsampler()
+        assert bytes(turn.played) == up.process(reply) + up.flush()
+        assert turn.thinking == 1
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_an_abandoned_stream_is_cut_when_the_app_stops_its_timer(world, outside):
+    player, dev = outside
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        _ring(app, 0.3, end=False)  # the app's ring task was cancelled mid-send
+        while not player.played:
+            await asyncio.sleep(0.01)
+        app.send_json(proto.Message.EVENT, {"type": "timer_stopped", "data": {}})
+        for _ in range(100):
+            if player.released:
+                break
+            await asyncio.sleep(0.01)
+        assert player.released == 1 and {"type": "speaker_flush"} in dev.sent
+        assert not em_voice.app_timer_ringing(DEV)
+        # A fresh stream afterwards plays and is answered.
+        _ring(app, 0.1)
+        assert (await app.until(proto.Message.PLAYBACK_DRAINED)).message is proto.Message.PLAYBACK_DRAINED
+        assert player.streams == 2
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_the_button_during_the_apps_ring_stops_it_and_starts_no_call(world, outside):
+    player, dev = outside
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        _ring(app, 1.0, end=False)
+        while not player.played:
+            await asyncio.sleep(0.01)
+        assert em_voice.app_timer_ringing(DEV)
+        await em_voice.stop_app_timer(DEV)
+        event = await app.until(proto.Message.DEVICE_EVENT)
+        assert event.json() == {"type": "stop_timer"}
+        assert player.released == 1 and {"type": "speaker_flush"} in dev.sent
+        assert not em_voice.app_timer_ringing(DEV)
+        # Nothing else was sent: no CALL_START, no PLAYBACK_DRAINED for the cut ring.
+        app.send(proto.encode(proto.Message.AUDIO_OUT_END))  # the app's late end of it
+        nxt = await app.next(timeout=1.0)
+        assert nxt.message is proto.Message.PLAYBACK_DRAINED
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_the_app_going_away_mid_ring_releases_the_speaker(world, outside):
+    player, _dev = outside
+
+    async def run():
+        app = await App.connect()
+        _ring(app, 1.0, end=False)
+        while not player.played:
+            await asyncio.sleep(0.01)
+        app.writer.close()
+        for _ in range(200):
+            if player.released:
+                break
+            await asyncio.sleep(0.01)
+        assert player.released == 1
+    asyncio.run(run())
+
+
+def test_ha_echoes_have_no_app_playback(monkeypatch):
+    monkeypatch.setattr(em_voice.em_incubator, "serves", lambda i: False)
+    assert em_voice.wake_over_playback("HA") is False
+    assert em_voice.app_timer_ringing("HA") is False
+
+
+def test_em_controller_plays_the_apps_streams_as_a_speaker_owner():
+    import _sources
+    body = _sources.code_only(_sources.def_source("em_controller._incubator_playback"))
+    assert "em_player.interrupt(" in body and "em_player.resume_interrupted(" in body
+    assert body.index("finally") < body.index("em_player.resume_interrupted(")
+    assert "mic_stop" not in body  # a wake must still be heard over it
+    assert "_run_streaming_post_turn_playback(" in body
+    src = _sources.code_only(_sources.source(_sources.CONTROLLER / "em_controller.py"))
+    assert "em_incubator.set_player(_incubator_playback)" in src
+    # Both wake gates let a wake over the app's playback through.
+    assert src.count("voice.wake_over_playback(device.device_id)") == 2
+    assert "voice.app_timer_ringing(device.device_id)" in src
+
+
+def test_ring_audio_arriving_during_the_cut_is_not_the_reply(world, outside):
+    # The app paces its ring (a frame every ~128 ms); one read while the cut
+    # is still being awaited (a slow speaker_flush here) must already count
+    # as the ring's, not as this call's reply. A timer_progress meanwhile is
+    # not the call's own traffic and does not end that.
+    player, dev = outside
+    player.delay = 0.05
+    flushing = asyncio.Event()
+
+    async def slow_send_control(msg):
+        dev.sent.append(msg)
+        if msg.get("type") == "speaker_flush":
+            flushing.set()
+            await asyncio.sleep(0.3)
+
+    dev.send_control = slow_send_control
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        _ring(app, 2.0, end=False)
+        while not player.played:
+            await asyncio.sleep(0.01)
+        turn = Turn(dev)
+        task = turn.run()
+        await flushing.wait()
+        _ring(app, 0.3, end=False)  # read while the cut is in progress
+        app.send_json(proto.Message.EVENT, {"type": "timer_progress", "data": {"shown": 0}})
+        _ring(app, 0.2)
+        await app.until(proto.Message.CALL_START)
+        await asyncio.sleep(0.3)
+        assert turn.thinking == 0 and not turn.played
+        app.send_json(proto.Message.EVENT, {"type": "listening", "data": {"stage": "listening"}})
+        app.send_json(proto.Message.EVENT, {"type": "processing", "data": {}})
+        reply = b"\x0b\x00" * 1600
+        app.say(reply)
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await task is False
+        up = em_resample.Upsampler()
+        assert bytes(turn.played) == up.process(reply) + up.flush()
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_two_cuts_at_once_cut_once(world, outside):
+    player, dev = outside
+
+    async def run():
+        app = await App.connect()
+        _ring(app, 1.0, end=False)
+        while not player.played:
+            await asyncio.sleep(0.01)
+        conn = inc._satellites[DEV].app
+        results = await asyncio.gather(conn.cut_background("one"), conn.cut_background("two"))
+        assert sorted(results) == [False, True]
+        assert player.released == 1
+        assert dev.sent.count({"type": "speaker_flush"}) == 1
+        app.writer.close()
+    asyncio.run(run())

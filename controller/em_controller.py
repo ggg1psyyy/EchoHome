@@ -2583,6 +2583,22 @@ async def _meter_at_playback_start(pcm_chunks, on_start):
         await on_start()
 
 
+async def _incubator_playback(device_id: str, pcm_chunks) -> int:
+    """The Voice Incubator app's playback outside a call -- its ring, its
+    announcements (em_incubator.set_player). A speaker owner: music ducks or
+    pauses under it. The mic stays up, so a wake over it can stop it."""
+    device = em_state.devices.get(device_id)
+    if device is None:
+        return 0
+    if not device.voice_lock.locked():
+        device.cancel_event.clear()  # stale from an earlier cancel: see _standalone_play
+    await em_player.interrupt(device_id)
+    try:
+        return await _run_streaming_post_turn_playback(device, pcm_chunks)
+    finally:
+        await em_player.resume_interrupted(device_id)
+
+
 async def _run_streaming_post_turn_playback(device: Device, pcm_chunks) -> int:
     """
     Play decoded HA TTS while the HTTP response is still arriving.
@@ -3331,7 +3347,7 @@ async def _private_listen(device: Device) -> None:
             finally:
                 device.barge_decided.set()
             continue
-        if device.speaking and not device.timer_alarm_ringing:
+        if device.speaking and not (device.timer_alarm_ringing or voice.wake_over_playback(device.device_id)):
             # An announcement is playing and no turn owns it — the stream path
             # skips its own frames here too, so a wake over it is not acted on.
             await device.listen_close(ev["session"], "speaking")
@@ -3858,7 +3874,7 @@ async def _stream_listen(device: Device):
                 # score. Same acoustics as barge-in over TTS — AEC subtracts
                 # the chime, and the score is judged against the barge
                 # threshold below rather than the wake threshold.
-                ringing = device.timer_alarm_ringing
+                ringing = device.timer_alarm_ringing or voice.wake_over_playback(device.device_id)
                 if device.speaking and not ringing:
                     continue
 
@@ -4283,6 +4299,9 @@ async def handle_button_event(device: Device, event: dict):
         if device.timer_alarm_task is not None:
             log.info(f"[{device.device_id}] Dot button — dismissing timer alarm")
             await esphome.dismiss_timer_alarm(device.device_id)
+            return
+        if voice.app_timer_ringing(device.device_id):  # the Incubator app's ring
+            await voice.stop_app_timer(device.device_id)
             return
 
         # A HOLD is a separate gesture, forwarded to HA rather than starting a
@@ -6306,6 +6325,7 @@ async def main():
             em_ble_proxy.set_gatt_sender(_send_gatt)
             await em_ble_proxy.start_ble_proxy_servers(SERVER_HOST)
             await em_incubator.start(SERVER_HOST)
+            em_incubator.set_player(_incubator_playback)
 
             log.info("EchoMuse Controller ready — waiting for devices")
             await _until_stopped()

@@ -62,3 +62,19 @@ def note_barged(device_id: str) -> None:
         em_incubator.note_barged(device_id)
     else:
         em_esphome.note_barged(device_id)
+
+
+# ─── The Incubator app's own playback (Home Assistant has no equivalent) ────
+
+def wake_over_playback(device_id: str) -> bool:
+    """A wake heard over this Echo's playback still counts: the Incubator
+    app's ring or announcement is playing, and a wake is how it is stopped."""
+    return _incubator(device_id) and em_incubator.wake_over_playback(device_id)
+
+
+def app_timer_ringing(device_id: str) -> bool:
+    return _incubator(device_id) and em_incubator.app_timer_ringing(device_id)
+
+
+async def stop_app_timer(device_id: str) -> None:
+    await em_incubator.stop_app_timer(device_id)
