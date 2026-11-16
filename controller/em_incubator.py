@@ -163,6 +163,65 @@ def call_kind(trigger_label: str, oww_model: str, session: int | None) -> tuple[
     return proto.MANUAL, 0
 
 
+class Stream:
+    """One AUDIO_OUT stream: frames until AUDIO_OUT_END, played as one
+    post_turn_play and answered with one PLAYBACK_DRAINED. A call can hold
+    several -- the app's call sounds ("heard", "asking") are a stream it may
+    end on its own before the reply's (voice_incubator/server.py Cues) -- and
+    the app waits for each one's PLAYBACK_DRAINED."""
+
+    def __init__(self, number: int) -> None:
+        self.number = number
+        self.audio: asyncio.Queue = asyncio.Queue(maxsize=PLAYBACK_QUEUE_FRAMES)
+        self.ended = False
+        self.bytes = 0
+
+    async def put(self, pcm: bytes) -> None:
+        if self.ended:
+            return
+        self.bytes += len(pcm)
+        await self.audio.put(pcm)
+
+    def end(self) -> None:
+        if not self.ended:
+            self.ended = True
+            try:
+                self.audio.put_nowait(None)
+            except asyncio.QueueFull:
+                # The speaker side is behind; it stops at `ended`.
+                pass
+
+    def discard(self) -> None:
+        """Nothing more of it is played. Emptied, not just ended: a long reply
+        fills the queue, the socket reader then waits in put(), and with the
+        speaker side gone nothing would ever make room -- every later EVENT and
+        HANGUP would sit unread behind it."""
+        while True:
+            try:
+                self.audio.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        self.end()
+
+    async def pcm_chunks(self, stopped):
+        """The stream at 48 kHz, as post_turn_play takes it. `stopped()`
+        says the call was cancelled: no more, and no filter tail."""
+        up = em_resample.Upsampler()
+        while True:
+            item = await self.audio.get()
+            if item is None or stopped():
+                break
+            out = up.process(item)
+            if out:
+                yield out
+            if self.ended and self.audio.empty():
+                break
+        if not stopped():
+            tail = up.flush()
+            if tail:
+                yield tail
+
+
 class Call:
     """One call in flight: what the app has said about it so far."""
 
@@ -175,9 +234,13 @@ class Call:
         self.cancelled = False
         self.barged = False
         self.app_gone = False
-        self.audio: asyncio.Queue = asyncio.Queue(maxsize=PLAYBACK_QUEUE_FRAMES)
-        self.audio_ended = False
+        self.streams: asyncio.Queue = asyncio.Queue()
+        self.current: Stream | None = None
+        self._count = 0
         self.last_event: str | None = None
+
+    def stopped(self) -> bool:
+        return self.cancelled or self.app_gone
 
     def on_event(self, event: proto.Event) -> None:
         self.last_event = event.type
@@ -188,55 +251,50 @@ class Call:
         self.hangup = hangup
         self.command_ended.set()
         self.finished.set()
-        self._end_audio()
+        if self.current is not None:
+            self.current.end()
 
     async def on_audio(self, pcm: bytes) -> None:
-        if self.cancelled or self.audio_ended:
+        if self.stopped():
             return
         self.command_ended.set()
         self.play_started.set()
-        await self.audio.put(pcm)
+        if self.current is None or self.current.ended:
+            self._count += 1
+            self.current = Stream(self._count)
+            self.streams.put_nowait(self.current)
+        await self.current.put(pcm)
 
-    def on_audio_end(self) -> None:
-        self._end_audio()
+    def on_audio_end(self) -> Stream | None:
+        """The stream that just ended, to be answered once it has played; None
+        when there was none (an empty stream: answered at once)."""
+        stream = self.current
+        if stream is None or stream.ended:
+            return None
+        stream.end()
+        return stream
 
     def lost(self) -> None:
         self.app_gone = True
         self.command_ended.set()
         self.finished.set()
-        self._end_audio()
+        self.discard()
 
     def cancel(self) -> None:
         self.cancelled = True
         self.command_ended.set()
         self.finished.set()
-        self._end_audio()
+        self.discard()
 
-    def _end_audio(self) -> None:
-        if not self.audio_ended:
-            self.audio_ended = True
-            try:
-                self.audio.put_nowait(None)
-            except asyncio.QueueFull:
-                # The speaker side is behind; it stops at `audio_ended`.
-                pass
-
-    async def pcm_chunks(self):
-        """The reply at 48 kHz, as post_turn_play takes it."""
-        up = em_resample.Upsampler()
+    def discard(self) -> None:
+        """Nothing more of this call is played (Stream.discard)."""
+        if self.current is not None:
+            self.current.discard()
         while True:
-            item = await self.audio.get()
-            if item is None or self.cancelled:
+            try:
+                self.streams.get_nowait().discard()
+            except asyncio.QueueEmpty:
                 break
-            out = up.process(item)
-            if out:
-                yield out
-            if self.audio_ended and self.audio.empty():
-                break
-        if not self.cancelled:
-            tail = up.flush()
-            if tail:
-                yield tail
 
 
 class Satellite:
@@ -416,10 +474,16 @@ class AppConnection:
         if msg is proto.Message.AUDIO_OUT_END:
             if self._discard_out:
                 self._discard_out = False
+                log.info(f"[{self._log}] AUDIO_OUT_END of a cancelled call's stream — dropped")
                 return
-            if call is not None and call.play_started.is_set():
-                call.on_audio_end()  # PLAYBACK_DRAINED once it has played
+            stream = call.on_audio_end() if call is not None else None
+            if stream is not None:
+                # PLAYBACK_DRAINED once it has played (trigger_voice_turn).
+                log.info(f"[{self._log}] AUDIO_OUT_END: stream {stream.number} of the call, "
+                         f"{stream.bytes} bytes ({stream.bytes * 1000 // proto.BYTE_RATE} ms)")
             else:
+                log.info(f"[{self._log}] AUDIO_OUT_END with nothing playing"
+                         f"{' in the call' if call is not None else ' (outside a call)'} — drained")
                 await self.send(proto.playback_drained())
             return
         if msg is proto.Message.MODEL_DATA:
@@ -604,17 +668,47 @@ async def _wait_any(*aws, timeout: float | None = None) -> None:
             t.cancel()
 
 
-async def _stream_command(app: AppConnection, call: Call, device, trace) -> None:
-    """voice_queue to AUDIO_IN until cancelled. A turn stream the Echo ended
-    itself (its VAD, lock_mic turns) is padded with real-time silence: the
-    app decides when a command ended, and hears that it did."""
+async def _next_stream(call: Call, device, timeout: float) -> Stream | None:
+    """The call's next stream; None when the call finished with none left,
+    the turn was cancelled, or `timeout` passed. A stream already waiting
+    wins over a HANGUP that came after it."""
+    get = asyncio.ensure_future(call.streams.get())
+    others = [asyncio.ensure_future(call.finished.wait()),
+              asyncio.ensure_future(device.cancel_event.wait())]
+    try:
+        await asyncio.wait([get, *others], timeout=timeout,
+                           return_when=asyncio.FIRST_COMPLETED)
+        if get.done() and not get.cancelled():
+            return get.result()
+        return None
+    finally:
+        get.cancel()
+        for t in others:
+            t.cancel()
+
+
+async def _stream_command(app: AppConnection, call: Call, device, trace,
+                          pad_idle: bool = False) -> None:
+    """voice_queue to AUDIO_IN until cancelled. The app decides when a
+    command ended, and only from audio it receives, so a stream the Echo
+    ended itself (its VAD, lock_mic turns) is padded with real-time silence;
+    with `pad_idle` (those same wakeless turns, whose stream the Echo gates
+    on its VAD and starts only once someone speaks), so is the wait before
+    the first frame -- otherwise "nothing was said" can never be heard."""
     pad = False
     while True:
         if pad:
             await asyncio.sleep(0.08)
             await app.send(proto.encode(proto.Message.AUDIO_IN, SILENCE_FRAME))
             continue
-        item = await device.voice_queue.get()
+        if pad_idle and trace.t_first_frame_ms == -1:
+            try:
+                item = await asyncio.wait_for(device.voice_queue.get(), 0.08)
+            except asyncio.TimeoutError:
+                await app.send(proto.encode(proto.Message.AUDIO_IN, SILENCE_FRAME))
+                continue
+        else:
+            item = await device.voice_queue.get()
         if item is None or isinstance(item, str):
             log.info(f"[{app._log}] Echo ended the stream ({item}) — silence until the app ends the command")
             if trace.t_vad_end_ms == -1:
@@ -662,7 +756,8 @@ async def trigger_voice_turn(
         ))
         log.info(f"[{device.device_id}] Incubator call started: wake_word={wake_word} "
                  f"pre-roll={preroll * 1000 // proto.BYTE_RATE}ms ({trigger_label})")
-        sender = em_tasks.spawn(_stream_command(app, call, device, trace),
+        sender = em_tasks.spawn(_stream_command(app, call, device, trace,
+                                                pad_idle=wake_word in (proto.MANUAL, proto.FOLLOW_UP)),
                                 name=f"{app._log}-audio-in")
 
         await _wait_any(call.command_ended.wait(), device.cancel_event.wait(),
@@ -683,21 +778,26 @@ async def trigger_voice_turn(
                 trace.mark("t_vad_end_ms")
             await on_thinking()
 
-        if not call.finished.is_set() or call.play_started.is_set():
-            await _wait_any(call.play_started.wait(), call.finished.wait(),
-                            device.cancel_event.wait(),
-                            timeout=TTS_WAIT_S)
-        if device.cancel_event.is_set():
-            app.cancel_call()
-
-        if call.play_started.is_set() and not call.cancelled:
-            trace.mark("t_playback_ms")
-            trace.tts_bytes = await post_turn_play(call.pcm_chunks())
+        # Every stream the app sends, each played and answered in turn: the
+        # first within the reply wait, any later one within the hang-up wait.
+        wait = TTS_WAIT_S
+        while not call.stopped():
+            stream = await _next_stream(call, device, wait)
+            if device.cancel_event.is_set():
+                app.cancel_call()
+                break
+            if stream is None:
+                break
+            if not played:
+                trace.mark("t_playback_ms")
+            trace.tts_bytes += (await post_turn_play(stream.pcm_chunks(call.stopped))) or 0
             played = True
             if device.cancel_event.is_set():
                 app.cancel_call()
-            elif not call.app_gone:
+                break
+            if not call.app_gone:
                 await app.send_quietly(proto.playback_drained())
+            wait = HANGUP_WAIT_S
 
         if not call.finished.is_set():
             await _wait_any(call.finished.wait(), device.cancel_event.wait(),
@@ -712,6 +812,9 @@ async def trigger_voice_turn(
     finally:
         if sender is not None:
             sender.cancel()
+        # Whatever the reply had left is not played now, and must not hold
+        # the socket reader (Call.discard).
+        call.discard()
         if app.call is call:
             app.call = None
         trace.outcome = trace.outcome or _outcome(call, played)
@@ -733,7 +836,10 @@ def _outcome(call: Call, played: bool) -> str:
         return "ok"
     if reason in ("wake_rejected", "answered_elsewhere"):
         return reason
-    if reason == "timeout" and call.last_event is None:
+    if reason == "timeout" and call.last_event not in COMMAND_ENDED:
+        # Hung up for time before the command ever ended: nothing was said.
+        # (`listening`, which the app sends on accepting the wake, does not
+        # count -- it means the app was waiting to hear something.)
         return "no_speech"
     return reason or "no_tts"
 

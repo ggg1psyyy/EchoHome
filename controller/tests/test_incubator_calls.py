@@ -116,6 +116,7 @@ class Turn:
         self.thinking = 0
         self.played = bytearray()
         self.play_calls = 0
+        self.delay = 0.0  # seconds per chunk: a speaker slower than the socket
 
     async def on_thinking(self):
         self.thinking += 1
@@ -124,6 +125,8 @@ class Turn:
         self.play_calls += 1
         async for chunk in chunks:
             self.played += chunk
+            if self.delay:
+                await asyncio.sleep(self.delay)
             if self.device.cancel_event.is_set():
                 break
         return len(self.played)
@@ -230,6 +233,107 @@ def test_a_barge_cancels_the_call_and_the_rest_of_the_reply_is_dropped(world):
     asyncio.run(run())
 
 
+def test_every_stream_in_a_call_is_played_and_answered(world):
+    # The app's call sounds can be a stream of their own, ended before the
+    # reply's (its Cues); it waits for a PLAYBACK_DRAINED for each.
+    async def run():
+        app = await App.connect()
+        dev = FakeDevice()
+        turn = Turn(dev)
+        task = turn.run()
+        await app.until(proto.Message.CALL_START)
+        app.send_json(proto.Message.EVENT, {"type": "processing", "data": {}})
+        heard = b"\x05\x00" * 3200
+        app.say(heard)                      # the "heard" sound, its own stream
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        reply = b"\x07\x00" * 8000
+        app.say(reply)                      # then the answer
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        app.send(proto.encode(proto.Message.AUDIO_OUT_END))  # an empty stream
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await task is False
+        assert turn.play_calls == 2
+        def at48(pcm):
+            up = em_resample.Upsampler()
+            return up.process(pcm) + up.flush()
+        assert bytes(turn.played) == at48(heard) + at48(reply)
+        assert world[-1]["outcome"] == "ok"
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_cancel_mid_long_reply_does_not_wedge_the_connection(world):
+    # A reply longer than the queue (32 frames, ~4 s) fills it and parks the
+    # socket reader in put(); the speaker side stops at the cancel. Unless
+    # the call empties its queue, nothing reads the socket again and the
+    # next call never hears its HANGUP.
+    async def run():
+        app = await App.connect()
+        dev = FakeDevice()
+        turn = Turn(dev)
+        turn.delay = 0.05
+        task = turn.run()
+        await app.until(proto.Message.CALL_START)
+        app.send_json(proto.Message.EVENT, {"type": "processing", "data": {}})
+        long_reply = b"\x00\x01" * (proto.MAX_PAYLOAD // 2) * (inc.PLAYBACK_QUEUE_FRAMES * 3)
+        for frame in proto.audio_frames(proto.Message.AUDIO_OUT, long_reply):
+            app.send(frame)
+        app.send(proto.encode(proto.Message.AUDIO_OUT_END))
+        while not turn.played:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.2)  # let the queue fill behind the slow speaker
+        dev.cancel_event.set()
+        em_voice.cancel_voice_turn(DEV, abort_ha=True, reason="cancelled")
+        assert await asyncio.wait_for(task, 3.0) is False
+        await app.until(proto.Message.CALL_END)
+        # A fresh call on the same connection is still heard.
+        dev2 = FakeDevice()
+        second = Turn(dev2).run()
+        await app.until(proto.Message.CALL_START, timeout=3.0)
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await asyncio.wait_for(second, 3.0) is False
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_button_call_sends_silence_before_anyone_speaks(world):
+    # The Echo's turn stream starts only once its VAD hears speech; the app
+    # can only conclude "nothing was said" from audio it receives.
+    async def run():
+        app = await App.connect()
+        dev = FakeDevice()
+        task = Turn(dev).run(label="button")
+        await app.until(proto.Message.CALL_START)
+        while len(app.audio_in) < 3 * len(inc.SILENCE_FRAME):
+            await app.next(timeout=1.0)
+        assert set(app.audio_in) == {0}
+        dev.voice_queue.put_nowait(FRAME)  # then the speech arrives as it is
+        while FRAME not in bytes(app.audio_in):
+            await app.next(timeout=1.0)
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await task is False
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_wake_call_is_not_padded_before_its_audio(world):
+    async def run():
+        app = await App.connect()
+        dev = FakeDevice()
+        task = Turn(dev).run()
+        await app.until(proto.Message.CALL_START)
+        await asyncio.sleep(0.4)
+        dev.voice_queue.put_nowait(FRAME)
+        while len(app.audio_in) < len(FRAME):
+            await app.next(timeout=1.0)
+        assert bytes(app.audio_in) == FRAME  # no silence invented ahead of it
+        app.send_json(proto.Message.HANGUP, {"reason": "done"})
+        assert await task is False
+        app.writer.close()
+    asyncio.run(run())
+
+
 def test_the_button_cancels_a_call_while_the_app_thinks(world):
     async def run():
         app = await App.connect()
@@ -270,6 +374,7 @@ def test_a_stream_the_echo_ended_is_padded_with_silence_until_the_app_ends_it(wo
         dev.voice_queue.put_nowait("vad_end")
         task = Turn(dev).run(label="button")
         await app.until(proto.Message.CALL_START)
+        app.send_json(proto.Message.EVENT, {"type": "listening", "data": {"stage": "listening"}})
         while len(app.audio_in) < len(FRAME) + 4 * len(inc.SILENCE_FRAME):
             await app.next()
         assert set(app.audio_in[len(FRAME):]) == {0}
@@ -339,8 +444,7 @@ def test_a_second_turn_while_one_runs_is_refused(world, monkeypatch):
 
 
 def test_the_reply_queue_is_bounded_so_the_socket_pushes_back():
-    call = inc.Call("x")
-    assert call.audio.maxsize == inc.PLAYBACK_QUEUE_FRAMES
+    assert inc.Stream(1).audio.maxsize == inc.PLAYBACK_QUEUE_FRAMES
     # Full frames: the declared 4 s buffer, rounded up to whole frames.
     full = inc.PLAYBACK_QUEUE_FRAMES * proto.MAX_PAYLOAD
     assert full - proto.MAX_PAYLOAD < inc.OUTPUT_BUFFER_BYTES <= full
