@@ -1028,3 +1028,79 @@ def test_backends_are_read_before_any_echo_can_connect():
     body = _sources.code_only(_sources.def_source("em_controller.main"))
     assert body.index("em_incubator.start(") < body.index("websockets.serve(")
     assert body.index("em_incubator.set_player(") < body.index("websockets.serve(")
+
+
+def test_a_broken_stream_that_never_ends_is_let_go(world, outside, monkeypatch):
+    # Playback broke off, then the app gave the stream up without its
+    # AUDIO_OUT_END: once it has been quiet for the idle limit, the next
+    # frames are a new stream, not more of the broken one to drop.
+    player, _dev = outside
+    monkeypatch.setattr(inc, "BACKGROUND_IDLE_S", 0.3)
+
+    async def gives_up(device_id, chunks):
+        player.streams += 1
+        async for chunk in chunks:
+            player.played += chunk
+            if player.streams == 1:
+                break  # the first stream's playback breaks off
+        player.released += 1
+        return len(player.played)
+
+    inc._player = gives_up
+
+    async def run():
+        app = await App.connect()
+        _ring(app, 1.0, end=False)   # broken mid-stream, and never ended
+        while not player.released:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.5)     # the app is quiet past the idle limit
+        _ring(app, 0.2)              # a new stream
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert player.streams == 2
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_the_apps_connection_has_a_small_receive_buffer(world):
+    # The spec paces by TCP backpressure; a socket left to the kernel's
+    # autotuning soaks up a long reply (measured 0.55-0.9 MB of a 60 s one,
+    # against ~0.37 MB sized). Checked on the accepted connection itself,
+    # which is what the listening socket's size must reach.
+    import socket as _socket
+
+    async def run():
+        app = await App.connect()
+        conn = inc._satellites[DEV].app
+        rcvbuf = conn.writer.get_extra_info("socket").getsockopt(_socket.SOL_SOCKET, _socket.SO_RCVBUF)
+        assert rcvbuf <= 2 * inc.RECEIVE_BUFFER_BYTES  # Linux doubles what is set
+        assert conn.reader._limit == inc.READER_LIMIT
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_an_announcement_given_up_on_a_broken_stream_lets_the_next_through(world, outside):
+    player, _dev = outside
+
+    async def gives_up(device_id, chunks):
+        player.streams += 1
+        async for chunk in chunks:
+            player.played += chunk
+            if player.streams == 1:
+                break
+        player.released += 1
+        return len(player.played)
+
+    inc._player = gives_up
+
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": True}})
+        _ring(app, 1.0, end=False)
+        while not player.released:
+            await asyncio.sleep(0.01)
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": False}})
+        _ring(app, 0.2)  # straight after: paced frames, no idle gap
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert player.streams == 2
+        app.writer.close()
+    asyncio.run(run())

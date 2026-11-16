@@ -99,6 +99,21 @@ OUTPUT_BUFFER_BYTES = 4 * proto.BYTE_RATE
 VOICE_LEAD_S, test-pinned), so that is the buffer it declares, in the app's
 16 kHz bytes."""
 
+RECEIVE_BUFFER_BYTES = 16384
+"""SO_RCVBUF for the app's connections (set on the listening socket; Linux
+doubles it and accepted sockets inherit it), with READER_LIMIT for asyncio's
+own buffer. The spec's pacing is TCP backpressure: the app writes until the
+satellite stops reading. Measured on loopback, a test app bursting a 60 s
+reply at a speaker playing at its own pace had 0.55-0.9 MB of it off its
+hands within a second (17-28 s of audio) with the kernel left to autotune;
+sized, ~0.37 MB (~11 s). Both figures include that test app's own 64 KB send
+buffer and the second already played, so what this side takes in is about
+the reply queue (~4 s) plus a little: room against the app's 30 s drain wait
+that up to 28 s held unplayed did not leave. (The real app's send buffer is
+not ours to size.)"""
+
+READER_LIMIT = 8192
+
 PLAYBACK_QUEUE_FRAMES = 32
 """AUDIO_OUT frames held between the socket and the speaker: 32 x 4096 bytes
 is 4 s at 16 kHz, the same lead. Past it the reader waits, the socket stops
@@ -192,6 +207,7 @@ class Stream:
         self.broken = False     # the speaker side stopped first: drop the rest
         self.abandoned = False  # no frame for BACKGROUND_IDLE_S: no END coming
         self.bytes = 0
+        self.last_frame = time.monotonic()
 
     async def put(self, pcm: bytes) -> None:
         if self.ended:
@@ -362,7 +378,13 @@ class Satellite:
     async def start(self, host: str) -> None:
         if self._server is not None:
             return
-        self._server = await asyncio.start_server(self._accept, host, self.port)
+        self._server = await asyncio.start_server(self._accept, host, self.port,
+                                                  limit=READER_LIMIT)
+        for sock in self._server.sockets:
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, RECEIVE_BUFFER_BYTES)
+            except OSError as e:
+                log.warning(f"[{self._log}] Could not size the receive buffer: {e}")
         if not self.port:  # tests bind port 0; mDNS must say the real one
             self.port = self._server.sockets[0].getsockname()[1]
         log.info(f"[{self._log}] Listening on {host}:{self.port}")
@@ -501,8 +523,15 @@ class AppConnection:
 
     async def _background_audio(self, pcm: bytes) -> None:
         stream = self.background
+        now = time.monotonic()
         if stream is not None and stream.broken and not stream.app_ended:
-            return  # the rest of a stream whose playback stopped early
+            if now - stream.last_frame <= BACKGROUND_IDLE_S:
+                stream.last_frame = now
+                return  # the rest of a stream whose playback stopped early
+            # No AUDIO_OUT_END came for it and the app went quiet: it gave
+            # that stream up. This frame starts the next one.
+            log.info(f"[{self._log}] Broken stream {stream.number} never ended — letting it go")
+            self.background = stream = None
         if stream is None or stream.ended:
             self._background_count += 1
             stream = self.background = Stream(self._background_count)
@@ -510,6 +539,7 @@ class AppConnection:
                 self._play_background(stream), name=f"{self._log}-playback")
             log.info(f"[{self._log}] Playback outside a call: stream {stream.number}"
                      f"{' (timer ringing)' if self.timer_ringing else ''}")
+        stream.last_frame = now
         await stream.put(pcm)
 
     def _background_end(self) -> bool:
@@ -671,7 +701,9 @@ class AppConnection:
             # mid-send, no AUDIO_OUT_END follows -- let what came play out,
             # unanswered, and the next stream start afresh (as an idle one).
             stream = self.background
-            if stream is not None and not stream.app_ended:
+            if stream is not None and stream.broken:
+                self.background = None  # nothing more of it is coming
+            elif stream is not None and not stream.app_ended:
                 stream.abandoned = True
                 stream.end()
             await self._release("announcement")
