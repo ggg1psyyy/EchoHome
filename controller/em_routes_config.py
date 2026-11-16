@@ -12,6 +12,7 @@ from aiohttp import web
 
 import em_auth as auth
 import em_ble_proxy
+import em_incubator
 import em_config_types
 import em_db as db
 import em_device_config
@@ -116,5 +117,6 @@ async def _post_global_config(request: web.Request) -> web.Response:
     for row in all_rows:
         if row["approved"]:
             await em_ble_proxy.reconcile(row["device_id"])
+            await em_incubator.reconcile(row["device_id"])
 
     return em_http.ok({"config": config, "pushed_to": pushed})

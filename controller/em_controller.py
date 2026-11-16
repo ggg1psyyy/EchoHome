@@ -115,6 +115,7 @@ import em_wakeword
 import em_tap_burst
 import em_esphome as esphome
 import em_ble_proxy
+import em_incubator
 import em_oww_models
 import em_player
 import em_volume
@@ -5602,6 +5603,7 @@ async def handle_control(ws: WebSocketServerProtocol, secure: bool = False):
         # approved or toggled while they were offline.
         await em_ble_proxy.device_connected(device_id, device.ble_connect_capable)
         await em_ble_proxy.reconcile(device_id)
+        await em_incubator.device_connected(device_id)
 
         # ── Main message loop ─────────────────────────────────────────────
 
@@ -5751,6 +5753,7 @@ async def _release_device_services(device) -> None:
         await api.notify_device_disconnected(device.device_id)
         await esphome.device_disconnected(device.device_id)
         await em_ble_proxy.device_disconnected(device.device_id)
+        await em_incubator.device_disconnected(device.device_id)
         em_player.device_gone(device.device_id)
     except asyncio.CancelledError:
         raise
@@ -6301,12 +6304,14 @@ async def main():
             # After the voice satellites — BT proxies reuse their zeroconf.
             em_ble_proxy.set_gatt_sender(_send_gatt)
             await em_ble_proxy.start_ble_proxy_servers(SERVER_HOST)
+            await em_incubator.start(SERVER_HOST)
 
             log.info("EchoMuse Controller ready — waiting for devices")
             await _until_stopped()
 
     finally:
         await em_ble_proxy.stop_ble_proxy_servers()
+        await em_incubator.stop_all()
         await esphome.stop_esphome_servers()
         release_task.cancel()
         session_prune_task.cancel()

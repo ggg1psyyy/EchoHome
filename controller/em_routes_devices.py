@@ -17,6 +17,7 @@ from aiohttp import web
 
 import em_auth as auth
 import em_ble_proxy
+import em_incubator
 import em_config_sections as sections_mod
 import em_config_types
 import em_db as db
@@ -186,6 +187,7 @@ async def _delete_device(request: web.Request) -> web.Response:
     # `_servers` holding the old port for a re-added device to inherit
     # silently.
     await em_esphome.device_deleted(device_id)
+    await em_incubator.device_deleted(device_id)
     # Free the device's cached OWW models (#512), or a deleted device keeps its
     # models — and their ONNX sessions — for the life of the process.
     em_state.forget_oww_models(device_id)
@@ -425,6 +427,7 @@ async def _post_device_config(request: web.Request) -> web.Response:
     # reconcile unconditionally (idempotent): re-scoping a section changes the
     # effective value without the key appearing in the body.
     await em_ble_proxy.reconcile(device_id)
+    await em_incubator.reconcile(device_id)
 
     await em_events.push({"type": "device_update", "device_id": device_id,
                        "state": {"config": config,

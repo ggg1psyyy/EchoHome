@@ -9673,7 +9673,7 @@ const CONFIG_SECTIONS = {
   "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
   "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
   "ring": ["ledScene", "ledListenColor", "ledThinkColor", "remoteVolumeArc", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
-  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints"],
+  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend"],
   "bluetooth": ["bleProxyEnabled", "bleProxyConnections"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
 };
@@ -10515,6 +10515,20 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
           <ControllerEndpointsField readOnly={scoped || disabled}
             value={config.controllerEndpoints}
             onChange={v => onChange('controllerEndpoints', v)}/>
+        </div>
+        {subHeader('Voice assistant')}
+        <div style={{ ...inputStyle }}>
+          <Select label="Voice backend"
+            sub={(config.voiceBackend ?? 'ha') === 'incubator'
+              ? "experimental: OHF-Voice's Voice Incubator app answers this Echo, found by mDNS on the controller's network. Without the app connected the Echo has no voice assistant: it never falls back to Home Assistant's"
+              : "Home Assistant's own voice pipeline, through the Echo's ESPHome satellite"}
+            disabled={disabled}
+            value={(config.voiceBackend ?? 'ha') === 'incubator' ? 'incubator' : 'ha'}
+            options={[
+              { value: 'ha', label: 'Home Assistant' },
+              { value: 'incubator', label: 'Voice Incubator (experimental)' },
+            ]}
+            onChange={v => set('voiceBackend', v)}/>
         </div>
         {subHeader('Turn processing')}
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
