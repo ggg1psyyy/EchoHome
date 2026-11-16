@@ -917,6 +917,21 @@ def get_status(device_id: str) -> Optional[dict]:
     return sat.status() if sat is not None else None
 
 
+def status_view(device_id: str) -> Optional[dict]:
+    """For the dashboard (em_device_view): None for an Echo on Home
+    Assistant, else what its Voice Incubator satellite is doing -- the same
+    state the turn path refuses on (can_serve_turn), as em_esphome.get_status
+    is for HA. No peer address: the panel needs none."""
+    if backend_of(device_id) != BACKEND_INCUBATOR:
+        return None
+    sat = _satellites.get(device_id)
+    if sat is None:
+        return {"port": None, "listening": False, "appConnected": False, "inCall": False}
+    st = sat.status()
+    return {"port": st["port"], "listening": st["listening"],
+            "appConnected": can_serve_turn(device_id), "inCall": st["inCall"]}
+
+
 # ─── The turn path (em_voice dispatches here) ───────────────────────────────
 
 def serves(device_id: str) -> bool:

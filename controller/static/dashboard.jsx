@@ -2278,6 +2278,16 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                         entry is keyed on, so it is the first thing needed the
                         moment this row says Waiting. */}
                     {row('Voice assistant', (() => {
+                      // Set to the Voice Incubator: its app, not HA, is what
+                      // has to be on the other end (voiceIncubator is null
+                      // for an Echo on Home Assistant).
+                      const vi = device.voiceIncubator;
+                      if (vi) {
+                        const vat = vi.port != null ? ` · port ${vi.port}` : '';
+                        if (vi.appConnected) return `Voice Incubator connected${vat}`;
+                        if (vi.listening)    return `Waiting for the Voice Incubator app${vat}`;
+                        return 'Voice Incubator · not listening';
+                      }
                       const vs = device.voiceSatellite;
                       const p  = vs?.port ?? device.esphome_port;
                       const at = p != null ? ` · port ${p}` : '';
@@ -2286,6 +2296,8 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                       if (vs.listening)   return `Waiting for HA${at}`;
                       return `Port down${at}`;
                     })(), (() => {
+                      const vi = device.voiceIncubator;
+                      if (vi) return vi.appConnected ? 'var(--ok)' : 'var(--warn)';
                       const vs = device.voiceSatellite;
                       // Not-connected is amber rather than red: HA reconnects
                       // on its own from most of the ways this happens, and a

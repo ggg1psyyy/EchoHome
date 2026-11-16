@@ -392,3 +392,38 @@ def test_switching_backend_bounces_home_assistant_once(world, monkeypatch, espho
         await inc.reconcile(DEV)
     asyncio.run(run())
     assert bounced == [DEV, DEV]
+
+
+# ------------------------------------------------- the dashboard's row
+
+def test_the_dashboard_sees_nothing_for_a_home_assistant_echo(monkeypatch):
+    monkeypatch.setattr(inc, "_backends", {DEV: inc.BACKEND_HA})
+    assert inc.status_view(DEV) is None
+
+
+def test_the_dashboard_sees_an_incubator_echo_offline_as_not_listening(monkeypatch):
+    monkeypatch.setattr(inc, "_backends", {DEV: inc.BACKEND_INCUBATOR})
+    assert inc.status_view(DEV) == {"port": None, "listening": False,
+                                    "appConnected": False, "inCall": False}
+
+
+def test_the_dashboard_row_reads_what_the_turn_path_reads(world):
+    async def run():
+        await inc.device_connected(DEV)
+        view = inc.status_view(DEV)
+        assert view["listening"] and not view["appConnected"]
+        assert "appPeer" not in view  # no address on the panel
+        reader, writer = await asyncio.open_connection("127.0.0.1", inc._satellites[DEV].port)
+        await asyncio.wait_for(inc.proto.read_frame(reader), 2)
+        assert inc.status_view(DEV)["appConnected"] is inc.can_serve_turn(DEV) is True
+        writer.close()
+    asyncio.run(run())
+
+
+def test_the_device_record_and_the_panel_carry_it():
+    import _sources
+    view = _sources.code_only(_sources.def_source("merge_device"))
+    assert "'voiceIncubator': em_incubator.status_view(device_id)" in view
+    jsx = (_sources.CONTROLLER / "static" / "dashboard.jsx").read_text()
+    assert "const vi = device.voiceIncubator;" in jsx
+    assert "Voice Incubator connected" in jsx and "Waiting for the Voice Incubator app" in jsx
