@@ -58,7 +58,7 @@ def world(monkeypatch):
     monkeypatch.setattr(inc.db, "get_esphome_port", lambda _i: 0)
     monkeypatch.setattr(inc.db, "get_esphome_mac", lambda _i: "02:EC:00:00:00:C1")
     monkeypatch.setattr(inc.em_turn_record, "persist_turn", persist)
-    monkeypatch.setattr(inc.em_turnclock, "tts_wait_seconds", lambda: 2.0)
+    monkeypatch.setattr(inc, "TTS_WAIT_S", 2.0)
     monkeypatch.setattr(inc, "HANGUP_WAIT_S", 1.0)
     yield recorded
     asyncio.run(inc.stop_all())
@@ -402,6 +402,17 @@ def test_em_controller_reaches_backends_only_through_em_voice():
                "abort_ha_run", "note_barged", "record_dropped_wake"):
         assert f"esphome.{fn}(" not in src, fn
         assert f"voice.{fn}(" in src, fn
+
+
+def test_the_reply_wait_is_home_assistants_option_read_the_same_way():
+    # Read once at import from the add-on's tts_wait_timeout, with the same
+    # bounds: never a call into em_turnclock per turn (which once took the
+    # raw value and crashed a live call when called without it).
+    import em_esphome
+    import em_turnclock
+    assert isinstance(inc.TTS_WAIT_S, float)
+    assert inc.TTS_WAIT_S == em_esphome.TTS_WAIT_TIMEOUT
+    assert 0 < inc.TTS_WAIT_S <= em_turnclock.TTS_WAIT_MAX
 
 
 def test_call_kind_names_and_preroll():

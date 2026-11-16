@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import socket
 import time
 from typing import Optional
@@ -110,6 +111,11 @@ own limit is shorter (15 s)."""
 HANGUP_WAIT_S = 10.0
 """After the reply has played, how long the app has to hang up before the
 call is ended here (CALL_END `timeout`, as the spec has a satellite do)."""
+
+TTS_WAIT_S = em_turnclock.tts_wait_seconds(os.environ.get("EM_TTS_WAIT_TIMEOUT"))
+"""How long the app has, once the command ended, to begin its reply: the
+same add-on option (`tts_wait_timeout`) and bounds as Home Assistant's
+(em_esphome.TTS_WAIT_TIMEOUT), read the same way, once at import."""
 
 SILENCE_FRAME = b"\x00\x00" * 1280  # 80 ms at 16 kHz
 
@@ -680,7 +686,7 @@ async def trigger_voice_turn(
         if not call.finished.is_set() or call.play_started.is_set():
             await _wait_any(call.play_started.wait(), call.finished.wait(),
                             device.cancel_event.wait(),
-                            timeout=em_turnclock.tts_wait_seconds())
+                            timeout=TTS_WAIT_S)
         if device.cancel_event.is_set():
             app.cancel_call()
 
