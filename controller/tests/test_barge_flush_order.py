@@ -178,7 +178,7 @@ def test_a_private_barge_marks_the_turn_before_it_flushes(monkeypatch):
 
 def test_the_stream_watcher_marks_the_turn_before_it_flushes():
     src = code_only(def_source("_barge_watcher"))
-    assert src.index("esphome.note_barged(device.device_id)") < src.index("speaker_flush")
+    assert src.index("voice.note_barged(device.device_id)") < src.index("speaker_flush")
 
 
 def _satellite():
