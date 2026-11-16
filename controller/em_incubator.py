@@ -425,7 +425,7 @@ class AppConnection:
         self._background_task: asyncio.Task | None = None
         self._background_count = 0
         self.timer_ringing = False
-        self._ring_hold = False
+        self._holds: set[str] = set()
         self._discard_out = False
         self._write_lock = asyncio.Lock()
         self._model_id: str | None = None
@@ -473,7 +473,7 @@ class AppConnection:
         if self.call is not None:
             self.call.lost()
         await self.cut_background("the app went away")
-        await self._release_ring()
+        await self._release()
         if not self.writer.is_closing():
             self.writer.close()
         try:
@@ -606,25 +606,42 @@ class AppConnection:
         stream, task = self._detach_background()
         return await self._stop_background(stream, task, why)
 
-    # The ring holds the music down for as long as it rings: one owner from
-    # timer_ringing to timer_stopped, not one per ring stream (each ring is its
-    # own stream, ~1 s apart, and music would pump up in every gap).
+    # The ring and an announcement hold the music down from start to end: one
+    # owner for the whole of it, not one per stream (each ring is its own
+    # stream ~1 s apart, an announcement is a chime stream then a speech
+    # stream), or music pumps up in every gap. One em_player owner for any
+    # number of reasons ("ring", "announcement"), taken on the first, given
+    # back on the last.
 
-    async def _hold_for_ring(self) -> None:
-        if not self._ring_hold:
-            self._ring_hold = True
+    async def _hold(self, reason: str) -> None:
+        first = not self._holds
+        self._holds.add(reason)
+        if first:
             try:
                 await em_player.interrupt(self.satellite.device_id)
             except Exception as e:  # never the app connection's problem
-                log.warning(f"[{self._log}] Holding music for the ring failed: {e}")
+                log.warning(f"[{self._log}] Holding music ({reason}) failed: {e}")
+
+    async def _release(self, reason: str | None = None) -> None:
+        """Give back `reason`'s hold, or every hold (None)."""
+        if not self._holds:
+            return
+        if reason is None:
+            self._holds.clear()
+        else:
+            self._holds.discard(reason)
+            if self._holds:
+                return
+        try:
+            await em_player.resume_interrupted(self.satellite.device_id)
+        except Exception as e:
+            log.warning(f"[{self._log}] Releasing music failed: {e}")
+
+    async def _hold_for_ring(self) -> None:
+        await self._hold("ring")
 
     async def _release_ring(self) -> None:
-        if self._ring_hold:
-            self._ring_hold = False
-            try:
-                await em_player.resume_interrupted(self.satellite.device_id)
-            except Exception as e:
-                log.warning(f"[{self._log}] Releasing music after the ring failed: {e}")
+        await self._release("ring")
 
     async def stop_timer(self) -> None:
         """The button while the app's timer rings: silence it here, and tell
@@ -647,6 +664,8 @@ class AppConnection:
             em_tasks.spawn(self._stop_background(stream, task, "the app stopped its timer"),
                            name=f"{self._log}-cut")
             await self._release_ring()
+        elif event.type == "announcement" and event.data.get("active") is True:
+            await self._hold("announcement")
         elif event.type == "announcement" and event.data.get("active") is False:
             # Normally the stream ended already; if the app gave up on it
             # mid-send, no AUDIO_OUT_END follows -- let what came play out,
@@ -655,6 +674,7 @@ class AppConnection:
             if stream is not None and not stream.app_ended:
                 stream.abandoned = True
                 stream.end()
+            await self._release("announcement")
 
     async def _on_frame(self, frame: proto.Frame) -> None:
         msg = frame.message
@@ -729,6 +749,27 @@ class AppConnection:
 
 _satellites: dict[str, Satellite] = {}
 _online: set[str] = set()
+_backends: dict[str, str] = {}
+"""Each approved Echo's voice backend as last read from its config: filled at
+start for every one (before any connects, so Home Assistant's first read of
+an Echo's ESPHome device already has it) and kept by reconcile. em_esphome
+reads it to leave the voice assistant out of an Incubator Echo's device."""
+
+
+def backend_of(device_id: str) -> str:
+    return _backends.get(device_id, BACKEND_HA)
+
+
+def _note_backend(device_id: str, value: str) -> None:
+    """A change Home Assistant must see: its ESPHome connection reads the
+    device's features once, so the Echo's satellite is bounced -- only on an
+    actual change, as every bounce flaps the device's entities."""
+    before = _backends.get(device_id, BACKEND_HA)
+    _backends[device_id] = value
+    if value != before:
+        log.info(f"[{device_id}] Voice backend {before} → {value}")
+        from em_esphome import voice_backend_changed
+        voice_backend_changed(device_id)
 _player = None
 """em_controller's playback for the app's streams outside a call, set once at
 start (set_player): async (device_id, pcm_chunks at 48 kHz) -> bytes played.
@@ -783,6 +824,7 @@ async def reconcile(device_id: str) -> None:
             if row is not None and row["approved"]:
                 cfg = await loop.run_in_executor(None, db.get_effective_device_config, device_id)
                 wanted = backend(cfg) == BACKEND_INCUBATOR
+            _note_backend(device_id, BACKEND_INCUBATOR if wanted else BACKEND_HA)
             sat = _satellites.get(device_id)
             if not wanted or device_id not in _online:
                 if sat is not None:
@@ -826,10 +868,22 @@ async def _teardown(device_id: str, sat: Satellite) -> None:
 
 
 async def start(host: str = "0.0.0.0") -> None:
-    """At controller start, after em_esphome.start_esphome_servers (its
-    zeroconf). Echoes are not online yet: each comes up on connect."""
+    """At controller start, before the device listeners open (em_controller
+    main): every approved Echo's backend is read now, so Home Assistant's
+    first read of an Incubator Echo's ESPHome device already leaves the voice
+    assistant out, and no restart bounces it. Satellites come up as Echoes
+    connect; zeroconf is looked up then (em_esphome's, started by then)."""
     global _host
     _host = host
+    loop = asyncio.get_running_loop()
+    try:
+        rows = await loop.run_in_executor(None, db.get_all_devices)
+        for row in rows:
+            if row["approved"]:
+                cfg = await loop.run_in_executor(None, db.get_effective_device_config, row["device_id"])
+                _backends[row["device_id"]] = backend(cfg)
+    except Exception as e:
+        log.warning(f"Reading voice backends at start failed: {e}")
 
 
 async def stop_all() -> None:
@@ -850,6 +904,7 @@ async def device_disconnected(device_id: str) -> None:
 
 async def device_deleted(device_id: str) -> None:
     _online.discard(device_id)
+    _backends.pop(device_id, None)
     sat = _satellites.get(device_id)
     if sat is not None:
         async with _device_lock(device_id):

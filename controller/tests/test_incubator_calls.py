@@ -50,6 +50,7 @@ def world(monkeypatch):
             pass
 
     monkeypatch.setattr(inc, "_azc", lambda: NoZeroconf())
+    monkeypatch.setattr(inc, "_backends", {})  # no order between tests
     monkeypatch.setattr(inc, "_server_ip", lambda: "127.0.0.1")
     monkeypatch.setattr(inc, "_host", "127.0.0.1")
     monkeypatch.setattr(inc, "PORT_OFFSET", 0)
@@ -456,7 +457,8 @@ def test_dispatch_goes_to_the_incubator_only_for_its_echoes(monkeypatch):
     seen = []
     monkeypatch.setattr(em_voice.em_esphome, "can_serve_turn", lambda i: seen.append(("ha", i)) or True)
     monkeypatch.setattr(em_voice.em_incubator, "can_serve_turn", lambda i: seen.append(("inc", i)) or False)
-    monkeypatch.setattr(em_voice.em_incubator, "serves", lambda i: i == "INC")
+    monkeypatch.setattr(em_voice.em_incubator, "backend_of",
+                        lambda i: "incubator" if i == "INC" else "ha")
     assert em_voice.can_serve_turn("HA") is True
     assert em_voice.can_serve_turn("INC") is False
     assert seen == [("ha", "HA"), ("inc", "INC")]
@@ -467,7 +469,8 @@ def test_every_turn_call_is_dispatched(monkeypatch, fn):
     seen = []
     monkeypatch.setattr(em_voice.em_esphome, fn, lambda i, **k: seen.append("ha"))
     monkeypatch.setattr(em_voice.em_incubator, fn, lambda i, **k: seen.append("inc"))
-    monkeypatch.setattr(em_voice.em_incubator, "serves", lambda i: i == "INC")
+    monkeypatch.setattr(em_voice.em_incubator, "backend_of",
+                        lambda i: "incubator" if i == "INC" else "ha")
     getattr(em_voice, fn)("HA")
     getattr(em_voice, fn)("INC")
     assert seen == ["ha", "inc"]
@@ -486,7 +489,8 @@ def test_trigger_voice_turn_is_dispatched(monkeypatch):
 
     monkeypatch.setattr(em_voice.em_esphome, "trigger_voice_turn", ha)
     monkeypatch.setattr(em_voice.em_incubator, "trigger_voice_turn", incubator)
-    monkeypatch.setattr(em_voice.em_incubator, "serves", lambda i: i == "INC")
+    monkeypatch.setattr(em_voice.em_incubator, "backend_of",
+                        lambda i: "incubator" if i == "INC" else "ha")
 
     class D:
         def __init__(self, i):
@@ -698,7 +702,7 @@ def test_the_app_going_away_mid_ring_releases_the_speaker(world, outside):
 
 
 def test_ha_echoes_have_no_app_playback(monkeypatch):
-    monkeypatch.setattr(em_voice.em_incubator, "serves", lambda i: False)
+    monkeypatch.setattr(em_voice.em_incubator, "backend_of", lambda i: "ha")
     assert em_voice.wake_over_playback("HA") is False
     assert em_voice.app_timer_ringing("HA") is False
 
@@ -971,3 +975,56 @@ def test_a_failing_player_owner_never_drops_the_app_connection(world, outside, m
         assert (await app.until(proto.Message.PLAYBACK_DRAINED)).message is proto.Message.PLAYBACK_DRAINED
         app.writer.close()
     asyncio.run(run())
+
+
+def test_an_announcement_holds_the_music_down_across_its_chime_and_speech(world, outside, owners):
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": True}})
+        _ring(app, 0.1)                        # the chime
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        _ring(app, 0.2)                        # then the words
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert owners == ["interrupt"]
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": False}})
+        for _ in range(100):
+            if owners == ["interrupt", "resume"]:
+                break
+            await asyncio.sleep(0.01)
+        assert owners == ["interrupt", "resume"]
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_a_ring_and_an_announcement_together_hold_once(world, outside, owners):
+    async def run():
+        app = await App.connect()
+        app.send_json(proto.Message.EVENT, {"type": "timer_ringing", "data": {"timers": 1}})
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": True}})
+        app.send_json(proto.Message.EVENT, {"type": "announcement", "data": {"active": False}})
+        app.send(proto.encode(proto.Message.AUDIO_OUT_END))
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert owners == ["interrupt"]          # the ring still holds it
+        app.send_json(proto.Message.EVENT, {"type": "timer_stopped", "data": {}})
+        app.send(proto.encode(proto.Message.AUDIO_OUT_END))
+        await app.until(proto.Message.PLAYBACK_DRAINED)
+        assert owners == ["interrupt", "resume"]
+        app.writer.close()
+    asyncio.run(run())
+
+
+def test_an_incubator_echo_without_its_satellite_stands_down_not_to_ha(monkeypatch):
+    # Set to the Incubator, satellite not up (it failed, or no port yet): HA
+    # offers no voice assistant there, so the turn must not go to it.
+    seen = []
+    monkeypatch.setattr(em_voice.em_incubator, "backend_of", lambda i: "incubator")
+    monkeypatch.setattr(em_voice.em_esphome, "can_serve_turn", lambda i: seen.append("ha") or True)
+    assert em_voice.can_serve_turn("NO_SAT") is False   # no app behind it: stand down
+    assert seen == []
+
+
+def test_backends_are_read_before_any_echo_can_connect():
+    import _sources
+    body = _sources.code_only(_sources.def_source("em_controller.main"))
+    assert body.index("em_incubator.start(") < body.index("websockets.serve(")
+    assert body.index("em_incubator.set_player(") < body.index("websockets.serve(")

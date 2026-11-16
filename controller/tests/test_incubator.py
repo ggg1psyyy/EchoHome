@@ -34,6 +34,7 @@ def world(monkeypatch):
             state["unregistered"].append(info)
 
     monkeypatch.setattr(inc, "_azc", lambda: FakeZeroconf())
+    monkeypatch.setattr(inc, "_backends", {})  # no order between tests
     monkeypatch.setattr(inc, "_server_ip", lambda: "127.0.0.1")
     monkeypatch.setattr(inc, "_host", "127.0.0.1")
     monkeypatch.setattr(inc, "PORT_OFFSET", 0)
@@ -287,3 +288,107 @@ def test_stopping_closes_the_app_connection(world):
         assert await _next(r) is None
         w.close()
     asyncio.run(run())
+
+
+# ------------------------------------------------- what Home Assistant sees
+
+@pytest.fixture
+def esphome_module():
+    """em_esphome imported over the openwakeword stand-in, which is removed
+    again afterwards: left in sys.modules it would stop the suite's
+    importorskip("openwakeword") tests from skipping (_oww_stub)."""
+    import _oww_stub
+    _oww_stub.install()
+    import em_esphome
+    yield em_esphome
+    _oww_stub.uninstall()
+
+
+def _flags_for(device_id, caps=("mic",)):
+    import em_esphome
+
+    class Fake:
+        pass
+
+    fake = Fake()
+    fake.device_id = device_id
+    fake._device_has = lambda cap: cap in caps
+    return em_esphome.EchoMuseSatellite._voice_assistant_flags(fake), em_esphome
+
+
+def test_an_incubator_echo_offers_home_assistant_no_voice_assistant(monkeypatch, esphome_module):
+    monkeypatch.setitem(inc._backends, DEV, inc.BACKEND_INCUBATOR)
+    flags, _ = _flags_for(DEV)
+    assert flags == 0  # no Assist satellite: the media player and the rest stay
+
+
+def test_a_home_assistant_echo_keeps_its_voice_assistant(monkeypatch, esphome_module):
+    monkeypatch.setitem(inc._backends, DEV, inc.BACKEND_HA)
+    flags, em_esphome = _flags_for(DEV)
+    assert flags == em_esphome.VOICE_ASSISTANT_FLAGS | em_esphome.VOICE_ASSISTANT_CONVERSATION_FLAG
+    inc._backends.pop(DEV)
+    assert _flags_for(DEV)[0] == flags  # unknown reads as Home Assistant
+
+
+def test_home_assistant_is_bounced_only_on_a_real_change(monkeypatch, esphome_module):
+    em_esphome = esphome_module
+    bounced = []
+    monkeypatch.setattr(em_esphome, "voice_backend_changed", lambda i: bounced.append(i))
+    monkeypatch.setattr(inc, "_backends", {})
+    inc._note_backend(DEV, inc.BACKEND_HA)          # unknown -> ha: nothing changed
+    inc._note_backend(DEV, inc.BACKEND_HA)
+    assert bounced == []
+    inc._note_backend(DEV, inc.BACKEND_INCUBATOR)   # a real change
+    inc._note_backend(DEV, inc.BACKEND_INCUBATOR)
+    inc._note_backend(DEV, inc.BACKEND_HA)
+    assert bounced == [DEV, DEV]
+
+
+def test_the_bounce_disconnects_only_a_connected_home_assistant(monkeypatch, esphome_module):
+    em_esphome = esphome_module
+    gone = []
+
+    class Sat:
+        def disconnect(self):
+            gone.append(True)
+
+    class Server:
+        def __init__(self, sat):
+            self.sat = sat
+
+        def get_satellite(self):
+            return self.sat
+
+    monkeypatch.setitem(em_esphome._servers, DEV, Server(Sat()))
+    em_esphome.voice_backend_changed(DEV)
+    assert gone == [True]
+    monkeypatch.setitem(em_esphome._servers, DEV, Server(None))
+    em_esphome.voice_backend_changed(DEV)  # HA not connected: nothing to bounce
+    em_esphome.voice_backend_changed("NOBODY")
+    assert gone == [True]
+
+
+def test_backends_are_known_at_start_before_any_echo_connects(monkeypatch):
+    monkeypatch.setattr(inc, "_backends", {})
+    rows = [{"device_id": "A", "approved": 1}, {"device_id": "B", "approved": 1},
+            {"device_id": "C", "approved": 0}]
+    cfgs = {"A": {"voiceBackend": "incubator"}, "B": {}}
+    monkeypatch.setattr(inc.db, "get_all_devices", lambda: rows)
+    monkeypatch.setattr(inc.db, "get_effective_device_config", lambda i: cfgs[i])
+    asyncio.run(inc.start("127.0.0.1"))
+    assert inc._backends == {"A": "incubator", "B": "ha"}
+
+
+def test_switching_backend_bounces_home_assistant_once(world, monkeypatch, esphome_module):
+    em_esphome = esphome_module
+    bounced = []
+    monkeypatch.setattr(em_esphome, "voice_backend_changed", lambda i: bounced.append(i))
+    monkeypatch.setattr(inc, "_backends", {DEV: inc.BACKEND_HA})
+
+    async def run():
+        await inc.device_connected(DEV)       # set to incubator in `world`
+        await inc.reconcile(DEV)              # same again: no second bounce
+        world["config"] = {"voiceBackend": "ha"}
+        await inc.reconcile(DEV)
+    asyncio.run(run())
+    assert bounced == [DEV, DEV]

@@ -21,7 +21,11 @@ import em_incubator
 
 
 def _incubator(device_id: str) -> bool:
-    return em_incubator.serves(device_id)
+    # By the Echo's configured backend, not by whether its satellite is up:
+    # an Incubator Echo whose satellite failed to start offers HA no voice
+    # assistant, so its turns must stand down here (no app: the no-assistant
+    # cue), never be sent to an HA that cannot answer them.
+    return em_incubator.backend_of(device_id) == em_incubator.BACKEND_INCUBATOR
 
 
 def can_serve_turn(device_id: str) -> bool:

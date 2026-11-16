@@ -6271,6 +6271,10 @@ async def main():
         except Exception as e:
             log.error(f"Device-link TLS setup failed — wss listener disabled: {e}")
     em_state.set_link_ports(SERVER_IP, SERVER_PORT, SERVER_TLS_PORT if tls_ctx else 0)
+    # Before any Echo can connect: an Incubator Echo's ESPHome device must not
+    # offer HA a voice assistant even on HA's first read (em_incubator.start).
+    await em_incubator.start(SERVER_HOST)
+    em_incubator.set_player(_incubator_playback)
 
     # Bound to SERVER_IP's own interface, never auto-detected across all of
     # them. zeroconf's default enumerates every interface on the host and
@@ -6324,8 +6328,6 @@ async def main():
             # After the voice satellites — BT proxies reuse their zeroconf.
             em_ble_proxy.set_gatt_sender(_send_gatt)
             await em_ble_proxy.start_ble_proxy_servers(SERVER_HOST)
-            await em_incubator.start(SERVER_HOST)
-            em_incubator.set_player(_incubator_playback)
 
             log.info("EchoMuse Controller ready — waiting for devices")
             await _until_stopped()
