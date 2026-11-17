@@ -196,8 +196,8 @@ State names used below: `IDLE`, `LISTENING`, `THINKING`, `PLAYING`, `MUTED`,
 | M6 | Boot after reboot/OTA while muted | `RestoreMuted()` — ADC + flag pre-connect; ring + button LED once LED init completes | Red, before any controller contact | None | [today] |
 
 Mute is the reference implementation of principle 5, and its behaviour is
-**not changing**, with one opt-out: **`muteRing` off** (the "Red ring while
-muted" switch, firmware announcing `mute_ring_off`) paints the ring dark
+**not changing**, with one opt-out: **`muteRing` off** (the dashboard's "Hide
+the red ring while muted" switch on, firmware announcing `mute_ring_off`) paints the ring dark
 instead of red in M1, M2, M4, M5 and M6, the lit mute button alone showing
 it, and controller paints stay suppressed as under the red ring. It is
 offered, and honoured, only on an Echo whose mute button lights itself

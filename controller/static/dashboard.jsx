@@ -10469,13 +10469,13 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
             disabled={!remoteVolumeArcCapable}
             value={config.remoteVolumeArc ?? false}
             onChange={v => set('remoteVolumeArc', v)}/>
-          <Toggle label="Red ring while muted"
+          <Toggle label="Hide the red ring while muted"
             sub={muteRingOffCapable
-              ? 'off: the ring stays dark while muted, and the lit mute button alone shows it'
-              : "always on: this Echo's mute button has no light of its own, so the ring is what shows it is muted"}
+              ? 'the ring stays dark while muted, and the lit mute button alone shows it'
+              : "unavailable: this Echo's mute button has no light of its own, so the ring is what shows it is muted"}
             disabled={!muteRingOffCapable}
-            value={muteRingOffCapable ? config.muteRing !== false : true}
-            onChange={v => set('muteRing', v)}/>
+            value={muteRingOffCapable && config.muteRing === false}
+            onChange={v => set('muteRing', !v)}/>
         </div>
         <StageAdvanced open={advRing} onToggle={() => setAdvRing(o => !o)} disabledStyle={inputStyle}>
           <div style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--text2)', lineHeight: 1.6, marginBottom: 'var(--space-6)' }}>
