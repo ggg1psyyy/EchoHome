@@ -132,6 +132,7 @@ type ControlClient struct {
 	playCueCallback       func(string)
 	identifyCallback      StateCallback
 	sendspinTokenCallback func() map[string]any
+	incubatorCallback     func(IncubatorSatellite)
 	volumeSetCallback     VolumeSetCallback
 	beamLockCallback      BeamLockCallback
 	speakerFlushCallback  StateCallback
@@ -217,6 +218,27 @@ func (c *ControlClient) OnWifiScan(cb StateCallback)              { c.wifiScanCa
 // the stats report, which lands in support bundles. The callback returns nil
 // when the player is off.
 func (c *ControlClient) OnSendspinToken(cb func() map[string]any) { c.sendspinTokenCallback = cb }
+func (c *ControlClient) OnIncubatorSatellite(cb func(IncubatorSatellite)) {
+	c.incubatorCallback = cb
+}
+
+// IncubatorSatellite is the controller's incubator_satellite message: run
+// the Voice Incubator satellite (Enabled) under the identity the app
+// already knows this Echo by, on Port. Sent only to firmware announcing the
+// incubator_satellite capability, on connect and on any change.
+type IncubatorSatellite struct {
+	Enabled bool   `json:"enabled"`
+	Name    string `json:"name"`
+	MAC     string `json:"mac"`
+	Port    int    `json:"port"`
+}
+
+// SendIncubatorState reports the satellite's state (incubator_state): the
+// controller advertises the Echo on the app's network only while it says
+// it is listening.
+func (c *ControlClient) SendIncubatorState(state any) error {
+	return c.writeJSON(map[string]any{"type": "incubator_state", "state": state})
+}
 
 // SendSendspinStatus reports the Sendspin player's state as it changes. The
 // stats tick carries it too; this is what makes the dashboard follow a
@@ -1023,6 +1045,16 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 				c.identifyCallback()
 			}
 
+		case "incubator_satellite":
+			var m IncubatorSatellite
+			if err := json.Unmarshal(raw, &m); err != nil {
+				log.Printf("[control] bad incubator_satellite: %v", err)
+				break
+			}
+			if c.incubatorCallback != nil {
+				c.incubatorCallback(m)
+			}
+
 		case "sendspin_token_request":
 			var reply map[string]any
 			if c.sendspinTokenCallback != nil {
@@ -1349,11 +1381,16 @@ func capabilities() []string {
 	// "sendspin": this firmware can be a Sendspin player (internal/sendspin),
 	// switched by sendspinEnabled. Whether it is running, and paired, is the
 	// sendspin status, for the aec_hw_ref reason.
+	//
+	// "incubator_satellite": this firmware can be a Voice Incubator satellite
+	// itself (internal/incubator), switched by the incubator_satellite
+	// message; whether it listens, and whether the app is connected, is
+	// incubator_state. Presence only so far: its HELLO says no capability.
 	caps := []string{"speaker", "leds", "led_anim", "buttons",
 		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
 		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
-		"wake_word_off", "sendspin", "identify_ring", "ble_connect"}
+		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "ble_connect"}
 	if MicUnavailable() == "" {
 		caps = append(caps, "mic")
 	}

@@ -503,6 +503,7 @@ func main() {
 		// are swallowed by the mute suppression on a muted device.
 		s.SetLinkDown(true)
 		sendspinLinkDown(pcmSpeaker)
+		incubatorLinkDown()
 		go pulseOrange(pulseCtx, s)
 	})
 
@@ -522,6 +523,7 @@ func main() {
 		// buttons do nothing.
 		s.SetLinkDown(true)
 		sendspinLinkDown(pcmSpeaker)
+		incubatorLinkDown()
 		go pulseWhite(pulseCtx, s)
 	})
 
@@ -542,6 +544,7 @@ func main() {
 		pulseKind = "refused"
 		s.SetLinkDown(true)
 		sendspinLinkDown(pcmSpeaker)
+		incubatorLinkDown()
 		go pulseRefused(pulseCtx, s)
 	})
 
@@ -660,6 +663,9 @@ func main() {
 	controlClient.OnIdentify(s.Identify)
 
 	controlClient.OnSendspinToken(sendspinToken)
+
+	// The Voice Incubator satellite, when the controller asks for it.
+	setupIncubator(controlClient)
 
 	// Speaker flush — barge-in: cut buffered TTS the moment the controller
 	// hears the wake word during playback.
