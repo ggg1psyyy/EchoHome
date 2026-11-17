@@ -135,6 +135,13 @@ the Echo's questions. Keep it reachable only from where the app runs.
 - A support bundle (**Settings → Support**) records whether the app was
   connected; the project's `bundle_check` tool reports *"the Voice Incubator
   app is not connected"* from it.
+- **After a question is cancelled before its answer began, the next answer
+  can end early for the app.** The Echo keeps playing it, but the app and
+  EchoMuse treat it as finished as soon as it has been sent: music can come
+  back up under it, a tap during it can start a new question instead of
+  stopping it, and a question the app asks back may not wait for it to
+  finish. The answer after that is unaffected. The cause is in the Echo's
+  firmware; so far it has been seen only with the Voice Incubator.
 - **Very long answers** (more than about half a minute) make the app log
   *"Timed out waiting for playback to drain"*. The answer still plays to its
   end; the message is the app giving up waiting for the Echo to finish.
@@ -148,11 +155,8 @@ Assistant 2026.11.1, both Echoes detecting their wake word on the device
 and by the button), announcements between the two Echoes, music, switching
 backends back and forth, and the app being stopped. On one of the two:
 asking with the action button, a follow-up question the app asked (which of
-two timers), and a tap cancelling a call while the app listened.
-
-Against the real controller with a simulated Echo and app only (the
-project's scenario tests), not yet on hardware: a tap cancelling a call
-during the app's reply.
+two timers), and a tap cancelling a call, both while the app listened and
+during its reply.
 
 Not tested: speaker identification on an Echo, several Incubator Echoes
 hearing the same wake word (EchoMuse's arbitration should still pick one),
