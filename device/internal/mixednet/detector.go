@@ -34,6 +34,7 @@ type Detection struct {
 	WakeWord string
 	Average  uint8
 	Highest  uint8
+	Cutoff   uint8 // the model's, as take_detection reports it
 }
 
 type detModel struct {
@@ -113,6 +114,25 @@ func (d *Detector) Load(cfg ModelConfig, blob []byte) error {
 // connect).
 func (d *Detector) Clear() { d.models = d.models[:0] }
 
+// Reset starts every model's window over, and its mute window (stop: the
+// firmware resets each model's probabilities when the microphone stops, so
+// what a model last heard never joins what it hears next).
+func (d *Detector) Reset() {
+	for _, m := range d.models {
+		m.stream.Reset()
+	}
+}
+
+// Has says whether a model with this ID is loaded.
+func (d *Detector) Has(id string) bool {
+	for _, m := range d.models {
+		if m.cfg.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // Models is how many are loaded.
 func (d *Detector) Models() int { return len(d.models) }
 
@@ -164,7 +184,7 @@ func (d *Detector) Process(frame []int8) []Detection {
 			continue // suppressed by the VAD; the window is kept
 		}
 		avg, top := m.stream.Summarize()
-		d.found = append(d.found, Detection{Index: i, ID: m.cfg.ID, WakeWord: m.cfg.WakeWord, Average: avg, Highest: top})
+		d.found = append(d.found, Detection{Index: i, ID: m.cfg.ID, WakeWord: m.cfg.WakeWord, Average: avg, Highest: top, Cutoff: m.cfg.Cutoff})
 		m.stream.Reset()
 	}
 	return d.found

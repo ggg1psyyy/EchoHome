@@ -21,8 +21,14 @@
 // default) over a 30 ms window.
 package microfeatures
 
+// Its kiss_fft is renamed msf_kiss_* at compile time: internal/aec vendors
+// speex's, a different kiss_fft with the same external names, and the server
+// links both (a duplicate-symbol link failure otherwise). The vendored
+// sources stay byte-identical.
+
 /*
 #cgo CFLAGS: -I${SRCDIR}/libmsf/include -I${SRCDIR}/libmsf/src -O2 -w
+#cgo CFLAGS: -Dkiss_fft=msf_kiss_fft -Dkiss_fft_alloc=msf_kiss_fft_alloc -Dkiss_fft_cleanup=msf_kiss_fft_cleanup -Dkiss_fft_next_fast_size=msf_kiss_fft_next_fast_size -Dkiss_fft_stride=msf_kiss_fft_stride -Dkiss_fftr=msf_kiss_fftr -Dkiss_fftr_alloc=msf_kiss_fftr_alloc -Dkiss_fftri=msf_kiss_fftri -Dkiss_fftr_next_fast_size_real=msf_kiss_fftr_next_fast_size_real
 #cgo LDFLAGS: -lm
 #include <stdlib.h>
 #include "frontend.h"
