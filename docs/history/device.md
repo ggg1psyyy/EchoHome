@@ -1043,6 +1043,33 @@ enabled it and nothing happened" this removes.
   (controller `reconcile_action`), so this reaches controller-scoring devices
   too, on their next connect.
 
+- **2026-11-17, the Voice Incubator's wake word stack on an Echo (00LQ,
+  emOS, v2.19.0), by `tools/mixednet_probe`.** Front end
+  (`internal/microfeatures`) plus one `okay_nabu` stream (`internal/mixednet`),
+  paced at 80 ms of audio a tick: 4.2% of one core for one model, 7.1% for
+  two, 12.3% for four, no late tick (longest 4 / 10 / 24 ms); 2 cores online,
+  42 °C, the server running beside it (CPU frequency not recorded). Against
+  the ~23% this file gives for openWakeWord, measured earlier on another
+  Echo, not in this run.
+  Parity: the app's okay-nabu recording gives every frame, probability and
+  the detection (frame 138, report 235/255) identical to the host. The
+  probe's seeded broadband audio does not quite: with the input bytes
+  identical (hash `d122071c` both sides), 2 of its 998 frames differ, both in
+  channel 38 (~7 kHz) and both one int8 step higher on the Echo (frame 64: 19
+  against 20; frame 741: 17 against 18). One channel, one direction, fits a
+  single table entry: the front end builds its filterbank tables once with
+  float math from the C library, and bionic's rounding a last bit
+  differently from glibc's is the suspect (not yet confirmed by a table
+  dump). Neither
+  is known to equal the ESP32's (newlib). Accepted as is: one step in 256, a
+  few frames, the top of the band. A first report of a mismatch was the
+  probe's own fault: its audio came from Go's float math, which rounds
+  differently on 32-bit ARM, so it now generates the audio in integers.
+  The parser's refusal table, field sweep (5.7 s), trial test, frame-width
+  refusal and cutoff conversion pass on the Echo, 29 tests and subtests
+  under `-test.v`: the first run of the range checks on the real 32-bit
+  target. Phase 1 hashes for reference: host `4d99a062`, 00LQ `2b79ae70`.
+
 ## The external audio jack
 
 Three separate faults, all fixed 2026-08-09 (#80), and one non-fault worth

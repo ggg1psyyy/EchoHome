@@ -160,6 +160,40 @@ optimum can be re-derived on the hardware rather than trusted: on an Echo Dot
 Gen 2, one thread with XNNPACK and spinning **off** cost 36.2% of one core,
 where ORT's defaults cost 243%.
 
+# mixednet_probe — the Voice Incubator wake word stack on an Echo
+
+Answers what the host tests cannot: do `internal/microfeatures` and
+`internal/mixednet` give the host's answers on the real 32-bit ARM target,
+and what do they cost? It touches no microphone, speaker, LEDs or mixer and
+leaves the server running: it reads a model blob (and optionally a PCM file)
+and prints.
+
+- **Phase 1:** 10 s of seeded audio, generated in integers so the input is
+  the same bytes on every CPU, through the front end and one stream; prints a
+  hash of every frame and stream output. `-expect <host hash>` exits 1 on a
+  mismatch; `-pcm` also runs a 16 kHz mono file; `-trace` prints per-second
+  front end and stream hashes, and `-frame N` one frame's values (`-frame -N`
+  a hash per frame for the first N), which is how a difference is located.
+- **Phase 2:** the same chain paced in real time, 80 ms of audio a tick, with
+  1, 2 and 4 streams: process CPU from `getrusage` as a share of one core,
+  and the longest tick.
+
+Built by `build_tools.sh` with the device module mounted (no `-tags
+server`). The phase 1 hash is not expected to match between the host
+(`4d99a062`) and an Echo (00LQ: `2b79ae70`): see the known difference below.
+To compare, run `-pcm` with a speech recording on both (identical so far),
+and `-trace -frame -998` on both and diff the per-frame hashes to count the
+frames that differ; `-expect` is for comparing two runs of one platform. Push the binary and
+`okay_nabu.blob` to `/data/local/tmp` as for `oww_probe`, and start phase 2
+detached (`nohup ... > cost.out &`): the shell plane drops after about 50 s
+of load.
+
+On 00LQ (emOS, v2.19.0, 2 cores online, 42 °C, the server running),
+2026-11-17: 4.2% of one core with one model, 7.1% with two, 12.3% with four,
+no late tick. A speech recording matched the host on every frame; the
+probe's broadband audio differed in 2 of 998 frames, both channel 38
+(~7 kHz), one int8 step (`docs/history/device.md`).
+
 # mixednet_ref — the reference for `internal/mixednet`'s vectors
 
 Builds a small harness around the Voice Incubator firmware's own C++

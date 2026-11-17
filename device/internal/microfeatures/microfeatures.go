@@ -10,8 +10,12 @@
 //
 // What the tests show: frames identical to that configuration and scaling
 // (cut verbatim from the firmware by tools/mixednet_ref) on synthetic audio,
-// on the host. Not yet on an Echo, where the set-up's float math (window,
-// filterbank and gain tables) runs on another libm.
+// on the host. On an Echo (tools/mixednet_probe, 2026-11-17) a real speech
+// recording gives identical frames, but loud broadband audio differed in 2
+// of 998 frames, both in channel 38 (~7 kHz), one int8 step higher: the
+// set-up's float math (filterbank tables) runs on bionic's libm there, and
+// its last-bit rounding is the suspect. Accepted; docs/history/device.md
+// has the figures.
 //
 // One feature frame of FeatureSize values comes out per step (10 ms by
 // default) over a 30 ms window.
