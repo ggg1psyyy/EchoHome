@@ -68,16 +68,18 @@ g++ -std=c++17 -O2 -fwrapv -I"$dir" -I"$gen" -o "$out/stream_harness" \
 	"$here/stream_harness.cpp" "$dir/mixednet.cpp" "$dir/mixednet_blob.cpp"
 echo "built $out/stream_harness"
 
-# The detector harness: the firmware's own loading, stop-word arming and
-# process_features_, cut verbatim from wake_detector.h and .cpp.
+# The detector harness: the firmware's own loading, stop-word arming,
+# process_features_ and take_report, cut verbatim from wake_detector.h and .cpp.
 awk '/^static constexpr uint8_t FEATURE_SIZE = 40;/{p=1} p{print} p&&/^struct WakeModel \{/{w=1} w&&/^\};/{exit}' \
 	"$dir/wake_detector.h" > "$gen/detector_decls.inc"
 awk '/^bool WakeDetector::begin_model/{p=1} /^size_t WakeDetector::total_arena_size/{p=0} p' \
 	"$dir/wake_detector.cpp" > "$gen/loading_impl.inc"
 awk '/^void WakeDetector::process_features_/{p=1} p{print} p&&/^}/{exit}' \
 	"$dir/wake_detector.cpp" > "$gen/process_impl.inc"
+awk '/^void WakeDetector::take_report/{p=1} p{print} p&&/^}/{exit}' \
+	"$dir/wake_detector.cpp" > "$gen/report_impl.inc"
 [ "$(wc -l < "$gen/detector_decls.inc")" -eq 93 ] && [ "$(wc -l < "$gen/loading_impl.inc")" -eq 109 ] &&
-	[ "$(wc -l < "$gen/process_impl.inc")" -eq 60 ] ||
+	[ "$(wc -l < "$gen/process_impl.inc")" -eq 60 ] && [ "$(wc -l < "$gen/report_impl.inc")" -eq 17 ] ||
 	{ echo "the detector moved: re-check gen/detector_*.inc" >&2; exit 1; }
 g++ -std=c++17 -O2 -fwrapv -I"$dir" -I"$gen" -o "$out/detector_harness" \
 	"$here/detector_harness.cpp" "$dir/mixednet.cpp" "$dir/mixednet_blob.cpp"

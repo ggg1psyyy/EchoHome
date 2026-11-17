@@ -7,6 +7,7 @@
 //   stream_impl.inc     ModelStream's methods
 //   loading_impl.inc    begin_model .. set_stop_armed
 //   process_impl.inc    process_features_
+//   report_impl.inc     take_report (what a monitored satellite's WAKE_REPORT says)
 // What is not the firmware's: the stand-ins for its ESP32 pieces below (an
 // allocator, a mutex, logging), the WakeDetector class shell (its member
 // list and initial values, copied from wake_detector.h), queue_detection_
@@ -15,7 +16,8 @@
 //   detector_harness <features> <model>... [arm=N]... [disarm=N]...
 //   model: id,is_vad,cutoff,window,blob     arm/disarm: set_stop_armed at frame N
 // Prints per frame: "<frame> <latest probability of each model, or - when
-// disabled>", and "D <frame> <index> <average> <max>" per detection.
+// disabled>", and "D <frame> <index> <average> <max>" per detection; every
+// 7th frame, take_report's "R <frame>" and " <id> <peak> <window>" per model.
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -58,6 +60,7 @@ class WakeDetector {
   void clear_models();
   void set_stop_armed(bool armed);
   void process_features_(const int8_t *features);
+  void take_report(std::vector<ModelReport> *out);
   void queue_detection_(uint8_t index, const ModelStream &stream) {
     uint8_t average, max;
     stream.summarize(&average, &max);
@@ -79,6 +82,7 @@ class WakeDetector {
 
 #include "loading_impl.inc"
 #include "process_impl.inc"
+#include "report_impl.inc"
 }  // namespace esphome::voice_incubator
 
 static std::vector<uint8_t> slurp(const char *path) {
@@ -130,6 +134,14 @@ int main(int argc, char **argv) {
         std::printf(" -");
     }
     std::printf("\n");
+    if (frame % 7 == 0) {
+      std::vector<ModelReport> reports;
+      det.take_report(&reports);
+      std::printf("R %ld", frame);
+      for (auto &r : reports)
+        std::printf(" %s %u %u", r.id.c_str(), r.peak, r.window);
+      std::printf("\n");
+    }
   }
   return 0;
 }

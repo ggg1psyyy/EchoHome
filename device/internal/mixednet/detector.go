@@ -41,6 +41,19 @@ type detModel struct {
 	cfg     ModelConfig
 	stream  *Stream
 	enabled bool
+	// what TakeReport says next: the highest latest inference, and the
+	// highest window mean, since the last report (report_peak, report_window)
+	peak, window uint8
+}
+
+// ModelReport is one model's part of a WAKE_REPORT (ModelReport): what it
+// heard since the last report, 0-255.
+type ModelReport struct {
+	ID     string
+	IsVAD  bool
+	Cutoff uint8
+	Peak   uint8 // the highest single inference
+	Window uint8 // the highest window mean
 }
 
 // Detector runs up to MaxModelSlots models over one stream of feature
@@ -55,6 +68,7 @@ type Detector struct {
 	stopArmed bool
 	frames    uint32
 	found     []Detection
+	reports   []ModelReport
 }
 
 // NewDetector is a detector for a front end with the given feature step.
@@ -114,6 +128,21 @@ func (d *Detector) Load(cfg ModelConfig, blob []byte) error {
 // connect).
 func (d *Detector) Clear() { d.models = d.models[:0] }
 
+// TakeReport is what each enabled model heard since the last report, and
+// starts the next (take_report). The slice is reused by the next call.
+func (d *Detector) TakeReport() []ModelReport {
+	d.reports = d.reports[:0]
+	for _, m := range d.models {
+		if !m.enabled {
+			continue
+		}
+		d.reports = append(d.reports, ModelReport{ID: m.cfg.ID, IsVAD: m.cfg.IsVAD,
+			Cutoff: m.cfg.Cutoff, Peak: m.peak, Window: m.window})
+		m.peak, m.window = 0, 0
+	}
+	return d.reports
+}
+
 // Reset starts every model's window over, and its mute window (stop: the
 // firmware resets each model's probabilities when the microphone stops, so
 // what a model last heard never joins what it hears next).
@@ -172,6 +201,14 @@ func (d *Detector) Process(frame []int8) []Detection {
 			voice = sum > uint32(m.cfg.Cutoff)*uint32(m.cfg.Window)
 			m.stream.fresh = false
 		}
+		// For whoever listens live: the latest inference, and the window's
+		// mean.
+		var sum uint32
+		for _, p := range m.stream.recent {
+			sum += uint32(p)
+		}
+		m.peak = max(m.peak, m.stream.recent[m.stream.last])
+		m.window = max(m.window, uint8(sum/uint32(len(m.stream.recent))))
 	}
 	for i, m := range d.models {
 		if !m.enabled || m.cfg.IsVAD || !m.stream.Fresh() {

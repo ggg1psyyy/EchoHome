@@ -169,6 +169,13 @@ func detRun(t *testing.T, c detCase) []byte {
 			}
 		}
 		out.WriteByte('\n')
+		if (f+1)%7 == 0 {
+			fmt.Fprintf(&out, "R %d", f+1)
+			for _, r := range d.TakeReport() {
+				fmt.Fprintf(&out, " %s %d %d", r.ID, r.Peak, r.Window)
+			}
+			out.WriteByte('\n')
+		}
 	}
 	return out.Bytes()
 }
