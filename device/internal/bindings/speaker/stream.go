@@ -330,6 +330,25 @@ func (s *audioStream) take() []byte {
 	}
 }
 
+// settle clears an EOS that no drain will ever consume: the pump loop calls
+// it when the stream is neither ready nor playing. flush arms eosPending so
+// the drain it causes reads as an ending, but a drain happens only while the
+// stream plays. A flush with nothing playing (a cancel before any answer
+// came; mute, or a barge, while idle) or while still priming left the flag
+// set with no stream behind it, and the NEXT stream then skipped its prime
+// gate and reported itself complete at its first dip: the turn ended, the
+// duck lifted and a Voice Incubator app hung up while most of the answer was
+// still to play (2026-11-17, on 00LQ). Nothing is lost by clearing it here:
+// with nothing playing and nothing queued, no stream is in flight whose end
+// needs accounting (a stream's EOS arrives only after its first period is
+// queued, so a short clip is ready, not settled). Only the ALSA goroutine
+// calls it, as it owns playing.
+func (s *audioStream) settle() {
+	if !s.playing && len(s.ch) == 0 && s.eosPending.Load() {
+		s.eosPending.Store(false)
+	}
+}
+
 // drained is called when the stream was playing and had nothing to give this
 // round. It reports the completed stream's stats when the drain is an EOS,
 // and counts an underrun when it is not.

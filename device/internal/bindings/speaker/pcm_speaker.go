@@ -575,11 +575,15 @@ func (p *PcmSpeaker) silenceLoop() {
 			voice = p.voice.take()
 		} else if p.voice.playing {
 			p.report(p.voice.drained(), "voice")
+		} else {
+			p.voice.settle()
 		}
 		if p.music.ready(primePeriods) {
 			music = p.music.take()
 		} else if p.music.playing {
 			p.report(p.music.drained(), "music")
+		} else {
+			p.music.settle()
 		}
 		if music == nil && !p.music.playing && !p.music.isActive() {
 			music = p.pullSource()

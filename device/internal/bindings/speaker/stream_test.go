@@ -140,6 +140,91 @@ func TestTheStreamAfterAFlushBehavesNormally(t *testing.T) {
 	}
 }
 
+// loopTick is one pump-loop iteration for this stream, as pcm_speaker.go's
+// loop runs it (that file builds only on the device).
+func loopTick(s *audioStream) *StreamStats {
+	switch {
+	case s.ready(24):
+		s.take()
+	case s.playing:
+		return s.drained()
+	default:
+		s.settle()
+	}
+	return nil
+}
+
+func TestAFlushWithNothingPlayingDoesNotEndTheNextStreamEarly(t *testing.T) {
+	// 2026-11-17, on 00LQ: a tap cancelled a question before any answer had
+	// come, so the speaker was flushed with nothing playing. No drain
+	// followed to consume the EOS the flush armed, and the next answer then
+	// skipped its prime gate and reported itself complete 0.4 s in.
+	s, _ := newTestStream(64)
+	s.flush()   // nothing playing, nothing queued
+	loopTick(s) // the pump loop goes round once while idle
+	pumpN(t, s, 2)
+	if s.ready(24) {
+		t.Fatal("the next stream skipped its prime gate")
+	}
+	pumpN(t, s, 22)
+	for i := 0; i < 24; i++ {
+		if st := loopTick(s); st != nil {
+			t.Fatalf("completed after %d periods", st.Periods)
+		}
+	}
+	// The sender falls behind: a dip, not an ending.
+	if st := loopTick(s); st != nil {
+		t.Fatalf("a mid-stream dip reported the stream complete (%d periods)", st.Periods)
+	}
+	if s.underruns != 1 {
+		t.Fatalf("underruns %d, want the dip counted as one", s.underruns)
+	}
+}
+
+func TestAFlushWhilePrimingDoesNotEndTheNextStreamEarly(t *testing.T) {
+	// The other way to a flush no drain consumes: the stream had begun to
+	// arrive but not yet started playing.
+	s, _ := newTestStream(64)
+	pumpN(t, s, 5)
+	s.flush()
+	loopTick(s)
+	pumpN(t, s, 3) // swallowed: the cancelled stream's remainder
+	s.endStream()  // its EOS
+	pumpN(t, s, 24)
+	for i := 0; i < 24; i++ {
+		if st := loopTick(s); st != nil {
+			t.Fatalf("completed after %d periods", st.Periods)
+		}
+	}
+	if st := loopTick(s); st != nil {
+		t.Fatal("a mid-stream dip reported the stream complete")
+	}
+}
+
+func TestSettlingNeverEatsALiveEnding(t *testing.T) {
+	// A short clip: its EOS lands while queued, so it is ready, not settled.
+	s, _ := newTestStream(64)
+	pumpN(t, s, 2)
+	s.endStream()
+	var st *StreamStats
+	for i := 0; i < 4 && st == nil; i++ {
+		st = loopTick(s)
+	}
+	if st == nil || st.Periods != 2 {
+		t.Fatalf("a short clip's ending was lost: %+v", st)
+	}
+	// A whole stream's natural end, through the loop.
+	pumpN(t, s, 30)
+	s.endStream()
+	st = nil
+	for i := 0; i < 40 && st == nil; i++ {
+		st = loopTick(s)
+	}
+	if st == nil || st.Periods != 30 {
+		t.Fatalf("a stream's natural end was lost: %+v", st)
+	}
+}
+
 func TestFlushSwallowsTheRestOfTheStreamUntilItsEos(t *testing.T) {
 	s, _ := newTestStream(64)
 	pumpN(t, s, 10)
