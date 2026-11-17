@@ -777,7 +777,7 @@ func main() {
 			// Reported as muted rather than as the stream stopping, which
 			// StopMic would otherwise record.
 			dataClient.CloseAnyListen(listen.ReasonMuted)
-			incubatorMuted()
+			incubatorMute(true)
 			dataClient.StopMic()
 		} else {
 			// Restore the permanent OWW listening stream on unmute — no
@@ -785,6 +785,7 @@ func main() {
 			// also sends its own mic_start around the same time, StartMic
 			// is idempotent (ignores the call while already active).
 			dataClient.StartMic(false)
+			incubatorMute(false)
 		}
 	})
 
@@ -1513,9 +1514,12 @@ func onWakeCrossing(cc *client.ControlClient, dc *client.DataClient,
 		log.Printf("[shadow] wake %.3f suppressed — wake word off", score)
 		return
 	}
-	if incubatorInCall() {
+	if incubatorInCall() || incubatorHearsWake() {
 		// The call has the microphone: a crossing now is the user talking
-		// to the app, not a new wake (no session, no cut, no duck).
+		// to the app, not a new wake (no session, no cut, no duck). Or the
+		// app has pushed the satellite its own wake words, which it
+		// answers instead: this word has no one to answer it (the
+		// controller runs no turns on an Echo that is its own satellite).
 		cc.SendOwwShadowCross(score, ageMs)
 		return
 	}

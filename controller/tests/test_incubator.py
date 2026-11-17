@@ -687,6 +687,20 @@ def test_a_call_on_the_echo_shows_in_the_panel(on_echo):
     asyncio.run(run())
 
 
+def test_the_wake_models_the_app_pushed_the_echo_show_in_the_panel(on_echo):
+    """What the Echo reports, never inferred; a value that is not a count is
+    none."""
+    echo = _calls_echo(on_echo)
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True, wakeModels=2)
+        assert inc.status_view(DEV)["wakeModels"] == 2
+        for bad in (-1, "2", True, 1.5, None):
+            await _state(echo, listening=True, port=6055, appConnected=True, wakeModels=bad)
+            assert inc.status_view(DEV)["wakeModels"] == 0, bad
+    asyncio.run(run())
+
+
 def test_the_button_reaches_the_echo_only_as_a_voice_press():
     """Holds, tap events, a tap with no microphone and a muted tap are the
     controller's as for any Echo; only what would have been a turn (or its

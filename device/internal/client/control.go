@@ -1398,14 +1398,18 @@ func capabilities() []string {
 	// message; whether it listens, and whether the app is connected, is
 	// incubator_state. "incubator_calls" (with "mic": a call needs one): its
 	// satellite takes button calls, so the controller passes a voice press
-	// on as incubator_press rather than acting on it.
+	// on as incubator_press rather than acting on it. "incubator_wake" (with
+	// "mic"): its satellite runs the wake word models the app pushes it
+	// (HELLO wake_format mixednet) and starts calls on them itself, standing
+	// its own wake word down while it holds any (incubator_state
+	// wakeModels).
 	caps := []string{"speaker", "leds", "led_anim", "buttons",
 		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
 		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
 		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "ble_connect"}
 	if MicUnavailable() == "" {
-		caps = append(caps, "mic", "incubator_calls")
+		caps = append(caps, "mic", "incubator_calls", "incubator_wake")
 	}
 	if board.CurrentLayout().Speaker.Voicing != nil {
 		caps = append(caps, "stock_sound")

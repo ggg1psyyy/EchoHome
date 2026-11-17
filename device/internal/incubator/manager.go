@@ -126,10 +126,11 @@ func (m *Manager) Press() bool {
 	return true
 }
 
-// Cancel ends a call, if one is open (mute).
-func (m *Manager) Cancel() {
+// SetMuted passes on the Echo's mute: a call ends, and the satellite's
+// microphone stays closed until it is unmuted.
+func (m *Manager) SetMuted(muted bool) {
 	if s := m.server(); s != nil {
-		s.Cancel()
+		s.SetMuted(muted)
 	}
 }
 
@@ -138,6 +139,15 @@ func (m *Manager) Drained() {
 	if s := m.server(); s != nil {
 		s.Drained()
 	}
+}
+
+// WakeModels is how many wake word models the satellite's app has pushed:
+// while any are loaded the Echo's own wake word stands down for them.
+func (m *Manager) WakeModels() int {
+	if s := m.server(); s != nil {
+		return s.WakeModels()
+	}
+	return 0
 }
 
 // InCall says whether a call holds the microphone.

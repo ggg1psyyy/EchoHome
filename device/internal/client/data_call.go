@@ -2,12 +2,15 @@ package client
 
 import "log"
 
-// The microphone for a Voice Incubator call the Echo runs itself
+// The microphone for the Voice Incubator satellite the Echo runs itself
 // (internal/incubator): the wake stream's 80 ms frames, processed as the
-// controller's are (beam, gain, AEC; no gate, no AGC), handed to the call
-// for as long as it is open.
+// controller's are (beam, gain, AEC; no gate, no AGC), handed to the
+// satellite for as long as it is open: while a call listens, and while the
+// app's wake word models are loaded (they run on the Echo, and nothing
+// leaves it until one fires). The satellite closes it at mute, before
+// StopMic, so the stream it would otherwise keep (below) stops with it.
 //
-// The call needs the microphone whether or not the controller wants a wake
+// The satellite needs the microphone whether or not the controller wants a wake
 // stream (with the wake word off it keeps the stream down), so with no
 // stream running it starts one of its own, which sends nothing to the
 // controller (callOnly). A controller mic_start replaces that with its own

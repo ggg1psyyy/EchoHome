@@ -1086,6 +1086,31 @@ enabled it and nothing happened" this removes.
   until the next satellite stream's report). The session lets an awaited
   PLAYBACK_DRAINED go at any cut, so neither stalls the app.
 
+- **2026-11-17, the app's wake words on the Echo's own satellite
+  (`incubator_wake`, host tests only so far).** One path carries the
+  microphone: the device's callback queues each 80 ms chunk to the
+  session's worker (16 deep, dropped and counted when full), which keeps the
+  1.5 s pre-roll, feeds a listening call, then runs the front end and
+  detector. A detection's call starts with the pre-roll up to the chunk
+  that detected, and the next chunk follows as live audio, proven
+  byte-for-byte on the app's okay-nabu recording against the stack run
+  directly. Three choices: (1) four slots, the measured figure, not the
+  executor's six; (2) the Echo's own wake word stands down while a model is
+  loaded (its crossing opened a session to a controller that runs no turns
+  here); (3) `WakeWordOn()` does not gate the app's words: HA's picker is
+  unreachable under this backend, and 00LQ's has been off since a test.
+  Mute must close the satellite's microphone, not only cancel the call:
+  with a model loaded the tap kept the stream running through
+  `stopMic`, and a wake soon after unmute would have sent up to 1.5 s heard
+  while muted. Each chunk carries the microphone opening it came in; one
+  from an earlier opening is dropped, and a new one empties the pre-roll (a
+  chunk queued before the mute but taken after the unmute leaked one chunk
+  in a test run before that). The first server build to link the front
+  end failed on duplicate `kiss_fft*` symbols: `internal/aec` vendors
+  speex's kiss_fft under the same names (the probe never linked the AEC).
+  The front end's are renamed `msf_kiss_*` by `-D` in its cgo flags, the
+  vendored files untouched.
+
 ## The external audio jack
 
 Three separate faults, all fixed 2026-08-09 (#80), and one non-fault worth

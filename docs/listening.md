@@ -67,6 +67,16 @@ reply then plays with the microphone closed. `listen_state` stays `local`
 throughout, so the Echo reports the listening as `inCall` in
 `incubator_state`.
 
+That satellite can also run the Voice Incubator app's own wake words, which
+the app pushes to it (firmware announcing `incubator_wake`). While it holds
+any, they replace the Echo's own wake word, whose crossings it then only
+reports. The microphone runs into them and into a **1.5 s buffer kept on the
+Echo**, and nothing leaves it until one fires. A wake call then starts with
+that buffer: **1.5 s of audio from before the detection**, where a session
+here sends 260 ms, because the app checks the wake word again on that audio
+and needs all of it. Mute closes the microphone and empties the buffer, so
+nothing from before a mute can lead a later call.
+
 ### What is honest to claim, and what is not
 
 - Say: *audio leaves the Echo only after it hears the wake word, and only

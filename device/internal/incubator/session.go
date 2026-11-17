@@ -101,13 +101,29 @@ func (w *writer) json(m Message, v any) error {
 }
 
 // call is one call. While listening its microphone frames go from the
-// microphone path to the socket through mic, never blocking the
-// microphone; done ends both sides.
+// session's worker to the socket through mic, never blocking it, after the
+// pre-roll; done ends both sides.
 type call struct {
 	mic       chan []byte
 	done      chan struct{}
 	dropped   atomic.Int64
 	listening bool
+	preroll   []byte // sent first: the audio before a detection
+	from      uint64 // the last chunk before it (wake.heard): later ones are its
+}
+
+// push hands a chunk to the call's sender, or drops and counts it.
+func (c *call) push(pcm []byte) {
+	select {
+	case <-c.done:
+		return
+	default:
+	}
+	select {
+	case c.mic <- pcm:
+	default:
+		c.dropped.Add(int64(len(pcm)))
+	}
 }
 
 // session is one app connection: calls, playback and the button's meaning.
@@ -122,11 +138,15 @@ type session struct {
 	dev    Device
 	report func() // the listening state changed; called without the lock
 
-	mu         sync.Mutex // guards call, timer, timerRings, closed
+	mu         sync.Mutex // guards call, timer, timerRings, closed, micOn
 	call       *call      // nil when not in a call
 	timer      *time.Timer
 	timerRings bool
 	closed     bool
+	micOn      bool
+	muted      bool // the Echo's mute: no microphone at all
+
+	wake *wake // wake.go
 
 	discard atomic.Bool // after a cancel, until the stream's end
 
@@ -140,8 +160,29 @@ type session struct {
 }
 
 func newSession(c net.Conn, dev Device, report func()) *session {
-	return &session{w: &writer{c: c}, dev: dev, report: report,
-		drained: make(chan struct{}, 1)}
+	s := &session{w: &writer{c: c}, dev: dev, report: report,
+		drained: make(chan struct{}, 1), wake: newWake(), muted: dev.Muted()}
+	go s.wakeLoop()
+	return s
+}
+
+// wakeModels is how many wake word models it holds.
+func (s *session) wakeModels() int { return int(s.wake.models.Load()) }
+
+// syncMicLocked opens the microphone while something needs it (a wake word
+// model to run, a call listening) and closes it once nothing does.
+func (s *session) syncMicLocked() {
+	want := !s.closed && !s.muted && (s.wake.models.Load() > 0 || (s.call != nil && s.call.listening))
+	if want == s.micOn {
+		return
+	}
+	s.micOn = want
+	if want {
+		s.wake.opened.Add(1)
+		s.dev.MicOpen(s.onMic)
+	} else {
+		s.dev.MicClose()
+	}
 }
 
 // listening says whether the microphone is going to the app.
@@ -173,16 +214,31 @@ func (s *session) press() {
 	case muted:
 		s.mu.Unlock()
 	default:
-		started := s.startLocked()
+		started := s.startLocked(CallStartInfo{WakeWord: WakeManual}, nil, s.wake.heard.Load())
 		s.mu.Unlock()
 		if started {
+			log.Printf("[incubator] call started (manual)")
 			s.dev.ListenStarted()
 			s.report()
 		}
 	}
 }
 
-// cancel ends a call from the Echo's side (mute).
+// setMuted is the Echo's mute. Muted, a call is cancelled and the
+// microphone closed, models or not: nothing is heard, and the pre-roll
+// starts over when it opens again, so no audio from while it was muted can
+// lead a later call.
+func (s *session) setMuted(muted bool) {
+	if muted {
+		s.cancel()
+	}
+	s.mu.Lock()
+	s.muted = muted
+	s.syncMicLocked()
+	s.mu.Unlock()
+}
+
+// cancel ends a call from the Echo's side.
 func (s *session) cancel() {
 	s.mu.Lock()
 	open := s.call != nil
@@ -203,34 +259,23 @@ func (s *session) after(wasListening bool) {
 	}
 }
 
-// startLocked opens a manual call. No pre-roll: nothing from before the
-// press leaves the Echo. What plays is cut, as a press means "listen to me",
-// and a stream the app left open is ended (flushed first, so a reply
-// blocked on a full voice plane lets go of it).
-func (s *session) startLocked() bool {
+// startLocked opens a call: a manual one with no pre-roll (nothing from
+// before the press leaves the Echo), or a wake word's with the audio before
+// its detection. What plays is cut, as a call means "listen to me", and a
+// stream the app left open is ended (flushed first, so a reply blocked on a
+// full voice plane lets go of it).
+func (s *session) startLocked(info CallStartInfo, preroll []byte, from uint64) bool {
 	s.dev.Flush()
 	s.endStreamHere()
 	s.playbackDrained()
-	if err := s.w.json(CallStart, CallStartInfo{WakeWord: WakeManual}); err != nil {
+	if err := s.w.json(CallStart, info); err != nil {
 		return false
 	}
-	c := &call{mic: make(chan []byte, micQueue), done: make(chan struct{}), listening: true}
+	c := &call{mic: make(chan []byte, micQueue), done: make(chan struct{}), listening: true, preroll: preroll, from: from}
 	s.call = c
 	s.armLocked(c, listenLimit)
 	go s.sendMic(c)
-	s.dev.MicOpen(func(pcm []byte) {
-		select {
-		case <-c.done:
-			return
-		default:
-		}
-		select {
-		case c.mic <- append([]byte(nil), pcm...):
-		default:
-			c.dropped.Add(int64(len(pcm)))
-		}
-	})
-	log.Printf("[incubator] call started (manual)")
+	s.syncMicLocked()
 	return true
 }
 
@@ -258,9 +303,9 @@ func (s *session) stopListeningLocked(why string) bool {
 	if c == nil || !c.listening {
 		return false
 	}
-	s.dev.MicClose()
 	close(c.done)
 	c.listening = false
+	s.syncMicLocked()
 	s.armLocked(c, replyWait)
 	if n := c.dropped.Load(); n > 0 {
 		log.Printf("[incubator] listening ended (%s), %d microphone bytes dropped", why, n)
@@ -298,6 +343,19 @@ func (s *session) endLocked(reason string) bool {
 }
 
 func (s *session) sendMic(c *call) {
+	for pre := c.preroll; len(pre) > 0; {
+		select {
+		case <-c.done: // ended (a mute, a cancel) before its pre-roll was out
+			return
+		default:
+		}
+		n := min(len(pre), MaxPayload)
+		if s.w.frame(AudioIn, pre[:n]) != nil {
+			return
+		}
+		pre = pre[n:]
+	}
+	c.preroll = nil
 	for {
 		select {
 		case <-c.done:
@@ -319,7 +377,9 @@ func (s *session) close() {
 	s.mu.Lock()
 	s.closed = true
 	was := s.endLocked("")
+	s.syncMicLocked()
 	s.mu.Unlock()
+	s.stopWake()
 	s.endStreamHere()
 	s.after(was)
 }
@@ -343,6 +403,14 @@ func (s *session) handle(m Message, p []byte) error {
 		was := s.endLocked("")
 		s.mu.Unlock()
 		s.after(was)
+	case ModelStart:
+		s.modelStart(p)
+	case ModelData:
+		s.modelData(p)
+	case ModelEnd:
+		s.modelEnd()
+	case ModelClear:
+		s.modelClear()
 	case Event:
 		var e EventInfo
 		if Decode(m, p, &e) == nil {

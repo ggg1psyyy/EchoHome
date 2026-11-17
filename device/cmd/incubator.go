@@ -153,13 +153,18 @@ func incubatorStreamEnded() bool {
 // incubatorInCall: a call holds the microphone.
 func incubatorInCall() bool { return incubatorMgr != nil && incubatorMgr.InCall() }
 
-// incubatorMuted ends a call: before the microphone is stopped, which
-// otherwise leaves a call's stream running (data_call.go).
-func incubatorMuted() {
+// incubatorMute passes the Echo's mute on: muted, before the microphone is
+// stopped, which otherwise leaves the satellite's stream running
+// (data_call.go); unmuted, after it is started again.
+func incubatorMute(muted bool) {
 	if incubatorMgr != nil {
-		incubatorMgr.Cancel()
+		incubatorMgr.SetMuted(muted)
 	}
 }
+
+// incubatorHearsWake: the app has pushed the satellite wake word models,
+// which it listens for instead of the Echo's own wake word.
+func incubatorHearsWake() bool { return incubatorMgr != nil && incubatorMgr.WakeModels() > 0 }
 
 // incubatorLinkDown stops the satellite with the controller link.
 func incubatorLinkDown() {

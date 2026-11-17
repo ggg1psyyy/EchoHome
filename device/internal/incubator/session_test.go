@@ -224,9 +224,23 @@ func TestTheAppIsStillHeardWhileADrainIsAwaited(t *testing.T) {
 	a.send(AudioOutEnd, nil) // no speaker report comes
 	a.send(Hangup, nil)
 	time.Sleep(100 * time.Millisecond)
-	// Had the hang-up gone unread, this press would cancel the call.
+	// Had the hang-up gone unread, this press would cancel the call. The
+	// press also lets the awaited PLAYBACK_DRAINED go (a cut), which may
+	// reach the app first.
 	s.Press()
-	a.expect(CallStart)
+	a.c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for {
+		m, _, err := a.r.Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m == CallStart {
+			return
+		}
+		if m != PlaybackDrained {
+			t.Fatalf("got %#x, want CALL_START", m)
+		}
+	}
 }
 
 func TestARingingTimerIsStoppedNotTalkedOver(t *testing.T) {
@@ -262,7 +276,7 @@ func TestMuteEndsACall(t *testing.T) {
 	s, echo, _, a := connectApp(t)
 	s.Press()
 	a.expect(CallStart)
-	s.Cancel()
+	s.SetMuted(true)
 	var ce CallEndInfo
 	json.Unmarshal(a.expect(CallEnd), &ce)
 	if ce.Reason != "cancelled" || echo.count(&echo.closes) != 1 {

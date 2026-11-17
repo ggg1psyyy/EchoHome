@@ -8,6 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/wilbowes/EchoMuse/internal/mixednet"
 )
 
 // Config is what a satellite says of itself. Name and MAC are the identity
@@ -33,8 +35,11 @@ type State struct {
 	AppConnected bool `json:"appConnected"`
 	// InCall: the microphone is going to the app now. listen_state cannot
 	// say so (it is "local" throughout), so this does.
-	InCall bool   `json:"inCall,omitempty"`
-	Error  string `json:"error,omitempty"`
+	InCall bool `json:"inCall,omitempty"`
+	// WakeModels: how many wake word models the app has pushed it, which
+	// it is listening for.
+	WakeModels int    `json:"wakeModels,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // keepAlive matters: an app host that loses power sends no FIN, and the
@@ -44,8 +49,8 @@ type State struct {
 var keepAlive = net.KeepAliveConfig{Enable: true, Idle: 10 * time.Second, Interval: 5 * time.Second, Count: 3}
 
 // Server is a satellite's listener: one app at a time, HELLO first. With a
-// Device it takes calls started by the button (Press) and plays the app's
-// audio; it announces no wake word, so the app pushes no models.
+// Device it takes calls started by the button (Press) or by the wake word
+// models the app pushes (wake.go), and plays the app's audio.
 type Server struct {
 	cfg     Config
 	ln      net.Listener
@@ -167,6 +172,16 @@ func (s *Server) accept() {
 func (s *Server) hello() HelloInfo {
 	h := NewHello(s.cfg.Name, s.cfg.MAC)
 	h.Model, h.Firmware = s.cfg.Model, s.cfg.Firmware
+	if s.cfg.Device != nil {
+		// A new connection holds no models: the app pushes them after HELLO.
+		none := 0
+		h.PrerollMs = PrerollMs
+		h.WakeFormat = "mixednet"
+		h.ModelSlots = ModelSlots
+		h.WakeModels = &none
+		h.FeatureSize = mixednet.StreamFeatureSize
+		h.MaxPool = true
+	}
 	return h
 }
 
@@ -178,10 +193,11 @@ func (s *Server) Press() {
 	}
 }
 
-// Cancel ends a call the Echo must end itself (mute).
-func (s *Server) Cancel() {
+// SetMuted is the Echo's mute: muted, a call ends and the microphone
+// closes, wake word models or not.
+func (s *Server) SetMuted(muted bool) {
 	if sess := s.session(); sess != nil {
-		sess.cancel()
+		sess.setMuted(muted)
 	}
 }
 
@@ -191,6 +207,15 @@ func (s *Server) Drained() {
 	if sess := s.session(); sess != nil {
 		sess.playbackDrained()
 	}
+}
+
+// WakeModels is how many wake word models the connected app has pushed.
+func (s *Server) WakeModels() int {
+	sess := s.session()
+	if sess == nil {
+		return 0
+	}
+	return sess.wakeModels()
 }
 
 // InCall says whether the microphone is going to the app.
@@ -205,16 +230,17 @@ func (s *Server) session() *session {
 	return s.sess
 }
 
-// callChanged reports the call state; never called with a session's lock.
+// callChanged reports the call state and the models; never called with a
+// session's lock.
 // Read under the server's lock (server, then session: never the other way
 // round), so a late report cannot overwrite a newer one with a stale value.
 func (s *Server) callChanged(sess *session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	in := sess.listening()
-	if s.sess == sess && !s.closed && s.state.InCall != in {
+	in, n := sess.listening(), sess.wakeModels()
+	if s.sess == sess && !s.closed && (s.state.InCall != in || s.state.WakeModels != n) {
 		st := s.state
-		st.InCall = in
+		st.InCall, st.WakeModels = in, n
 		s.setLocked(st)
 	}
 }

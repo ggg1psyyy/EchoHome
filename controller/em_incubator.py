@@ -1051,6 +1051,7 @@ async def on_incubator_state(device, msg: dict) -> None:
     st = msg.get("state") if isinstance(msg.get("state"), dict) else {}
     state = {"listening": bool(st.get("listening")), "appConnected": bool(st.get("appConnected")),
              "inCall": bool(st.get("inCall")),
+             "wakeModels": st["wakeModels"] if type(st.get("wakeModels")) is int and st["wakeModels"] >= 0 else 0,
              "port": st.get("port") if isinstance(st.get("port"), int) else None,
              "error": str(st.get("error"))[:200] if st.get("error") else ""}
     async with _device_lock(device_id):
@@ -1172,7 +1173,8 @@ def status_view(device_id: str) -> Optional[dict]:
         st = rec.state
         return {"port": rec.port, "listening": bool(st.get("listening")),
                 "appConnected": bool(st.get("appConnected")),
-                "inCall": bool(st.get("inCall")), "onEcho": True}
+                "inCall": bool(st.get("inCall")), "wakeModels": st.get("wakeModels", 0),
+                "onEcho": True}
     sat = _satellites.get(device_id)
     if sat is None:
         return {"port": None, "listening": False, "appConnected": False, "inCall": False}
