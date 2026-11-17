@@ -143,15 +143,16 @@ the Echo's questions. Keep it reachable only from where the app runs.
 
 On hardware: two Echo Dot 2 (biscuit) on emOS with firmware v2.19.0, Voice
 Incubator 0.3.1 as a Home Assistant app on the same host as EchoMuse, Home
-Assistant 2026.11.1, both Echoes detecting their wake word on the device (the
-default). Wake word calls, barge-in, timers (stopped by the wake word and by
-the button), announcements between the two Echoes, music, switching backends
-back and forth, and the app being stopped.
+Assistant 2026.11.1, both Echoes detecting their wake word on the device
+(the default). Wake word calls, barge-in, timers (stopped by the wake word
+and by the button), announcements between the two Echoes, music, switching
+backends back and forth, and the app being stopped. On one of the two:
+asking with the action button, and a follow-up question the app asked (which
+of two timers).
 
 Against the real controller with a simulated Echo and app only (the
-project's scenario tests), not yet on hardware: asking with the action
-button, follow-up questions, a tap cancelling a call (while the app listens
-and during its reply).
+project's scenario tests), not yet on hardware: a tap cancelling a call
+(while the app listens and during its reply).
 
 Not tested: speaker identification on an Echo, several Incubator Echoes
 hearing the same wake word (EchoMuse's arbitration should still pick one),
