@@ -1111,6 +1111,23 @@ enabled it and nothing happened" this removes.
   The front end's are renamed `msf_kiss_*` by `-D` in its cgo flags, the
   vendored files untouched.
 
+- **2026-11-18, the Echo's own satellite on 00LQ: the call-only stream, a
+  dropped data link, and the cost (v2.20.0-ea.1-66-gfe6588e).** The
+  call-only microphone stream (data_call.go) runs on every restart: the
+  app's models load before the controller's mic_start, so the satellite
+  opens its own stream (`call microphone started`) and hands over when the
+  controller's arrives (`stopped`, about 30 s later); wake calls worked
+  throughout. The data link was dropped by blocking its local port's output
+  for 60 s (iptables, the second of the firmware's connections to :8770):
+  the Echo noticed after about 30 s, redialled at once, restored the mic
+  stream on the new link, and a hey_jarvis call 7 s later went through; the
+  controller closed the old link on its keepalive timeout and kept the new
+  one (data_ws is compared by identity). Cost with three of the app's wake
+  words loaded beside openWakeWord: the server process 51% of one core over
+  30 s, about a quarter of the two cores online; the controller's hourly
+  cpuPct averages read 17-19% the day before and 16-22% since. 33-40 °C, no
+  dropped microphone audio logged.
+
 ## The external audio jack
 
 Three separate faults, all fixed 2026-08-09 (#80), and one non-fault worth
