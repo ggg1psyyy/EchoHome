@@ -152,3 +152,14 @@ func TestAMicStartDuringACallFeedsBoth(t *testing.T) {
 	before := sink.frames.Load()
 	eventually(t, "the controller's stream kept", func() bool { return sink.frames.Load() > before+2 })
 }
+
+func TestAMicStartWithNoConnectionLeavesTheCallItsMicrophone(t *testing.T) {
+	d, _ := callTestClient(t, false)
+	var got callFrames
+	d.OpenCallMic(got.deliver)
+	eventually(t, "the call's frames", func() bool { return got.count() >= 2 })
+	d.StartMic(false) // remembered for the connection, nothing to stream to yet
+	n := got.count()
+	eventually(t, "the call's frames to go on", func() bool { return got.count() > n+2 })
+	d.CloseCallMic()
+}

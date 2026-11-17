@@ -129,6 +129,7 @@ func (s *session) inCall() bool {
 // order. A ringing timer is stopped; a call is cancelled; otherwise, unless
 // muted, a call starts.
 func (s *session) press() {
+	muted := s.dev.Muted() // before the lock: the Echo's, not the session's
 	s.mu.Lock()
 	switch {
 	case s.closed:
@@ -141,13 +142,15 @@ func (s *session) press() {
 		s.endLocked("cancelled")
 		s.mu.Unlock()
 		s.dev.Flush()
+		s.dev.CallEnded()
 		s.report()
-	case s.dev.Muted():
+	case muted:
 		s.mu.Unlock()
 	default:
 		started := s.startLocked()
 		s.mu.Unlock()
 		if started {
+			s.dev.CallStarted()
 			s.report()
 		}
 	}
@@ -161,6 +164,7 @@ func (s *session) cancel() {
 	s.mu.Unlock()
 	if ended {
 		s.dev.Flush()
+		s.dev.CallEnded()
 		s.report()
 	}
 }
@@ -179,6 +183,7 @@ func (s *session) startLocked() bool {
 		ended := s.call == c && s.endLocked("timeout")
 		s.mu.Unlock()
 		if ended {
+			s.dev.CallEnded()
 			s.report()
 		}
 	})
@@ -195,12 +200,12 @@ func (s *session) startLocked() bool {
 			c.dropped.Add(int64(len(pcm)))
 		}
 	})
-	s.dev.CallStarted()
 	log.Printf("[incubator] call started (manual)")
 	return true
 }
 
 // endLocked closes the call, the microphone first so nothing more leaves.
+// The caller then calls dev.CallEnded and report, without the lock.
 // reason "" is the app's HANGUP or its going away: no CALL_END back. What is
 // queued to play keeps playing, except after a cancel (the caller flushes).
 func (s *session) endLocked(reason string) bool {
@@ -218,7 +223,6 @@ func (s *session) endLocked(reason string) bool {
 		}
 		s.w.json(CallEnd, CallEndInfo{Reason: reason})
 	}
-	s.dev.CallEnded()
 	if reason == "" {
 		reason = "hangup"
 	}
@@ -258,6 +262,7 @@ func (s *session) close() {
 		s.dev.End()
 	}
 	if ended {
+		s.dev.CallEnded()
 		s.report()
 	}
 }
@@ -280,6 +285,7 @@ func (s *session) handle(m Message, p []byte) error {
 		ended := s.endLocked("")
 		s.mu.Unlock()
 		if ended {
+			s.dev.CallEnded()
 			s.report()
 		}
 	case Event:

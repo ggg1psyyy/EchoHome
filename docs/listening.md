@@ -56,6 +56,16 @@ Assistant **follow-up question** ("continue conversation", or an
 nothing; the controller ends it at end of speech exactly as it closes a
 session, and the Echo goes back to listening locally.
 
+An Echo that is its own Voice Incubator satellite (voice backend "Voice
+Incubator, on the Echo", firmware announcing `incubator_calls`) answers the
+button itself. From the press, and with nothing from before it, the
+microphone goes **straight to the Voice Incubator app**, not through the
+controller, until the app hangs up. That includes the reply, because the
+app's endpointer needs the audio after the command. The Echo ends the call
+itself after 30 s, at mute, or when the app goes away. `listen_state` stays
+`local` throughout, so the Echo reports the call as `inCall` in
+`incubator_state`.
+
 ### What is honest to claim, and what is not
 
 - Say: *audio leaves the Echo only after it hears the wake word, and only

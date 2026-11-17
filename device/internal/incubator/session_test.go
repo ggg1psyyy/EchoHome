@@ -312,3 +312,20 @@ func TestPresenceOnlyTakesNoCalls(t *testing.T) {
 		t.Fatalf("%#x from a presence-only satellite", m)
 	}
 }
+
+func TestACancelledCallLeavesTheNextReplyAlone(t *testing.T) {
+	// Cancelled while listening, before any reply: the app still ends the
+	// (empty) stream, and the next call's reply plays.
+	s, echo, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	s.Press()
+	a.expect(CallEnd)
+	a.send(AudioOutEnd, nil) // what the app sends on every cancelled
+	a.expect(PlaybackDrained)
+	s.Press()
+	a.expect(CallStart)
+	a.send(AudioOut, make([]byte, 4000))
+	a.send(AudioOutEnd, nil)
+	waitFor(t, "the next call's reply to play", func() bool { return echo.periods() > 0 })
+}

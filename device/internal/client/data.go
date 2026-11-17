@@ -772,18 +772,19 @@ func (d *DataClient) StartMic(lockMic bool) {
 	// yet" and then waits for the controller to ask again — 39 seconds on
 	// 2026-08-30's boot.
 	d.micWanted, d.micWantedLock = true, lockMic
-	if d.micActive && d.callOnly.Load() {
+	d.connMu.Lock()
+	conn := d.conn
+	d.connMu.Unlock()
+	if conn != nil && d.micActive && d.callOnly.Load() {
 		// A call's own stream gives way to the controller's: the tap stays,
-		// so the new stream feeds the call (data_call.go).
+		// so the new stream feeds the call (data_call.go). With no
+		// connection it keeps running, and resumeMic replaces it on connect.
 		d.stopCallStreamLocked()
 	}
 	if d.micActive {
 		log.Println("[data] StartMic: already active — ignoring")
 		return
 	}
-	d.connMu.Lock()
-	conn := d.conn
-	d.connMu.Unlock()
 	if conn == nil {
 		log.Println("[data] StartMic: no connection yet — will start on connect")
 		return

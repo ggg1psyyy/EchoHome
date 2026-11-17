@@ -206,10 +206,12 @@ func (s *Server) session() *session {
 }
 
 // callChanged reports the call state; never called with a session's lock.
+// Read under the server's lock (server, then session: never the other way
+// round), so a late report cannot overwrite a newer one with a stale value.
 func (s *Server) callChanged(sess *session) {
-	in := sess.inCall()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	in := sess.inCall()
 	if s.sess == sess && !s.closed && s.state.InCall != in {
 		st := s.state
 		st.InCall = in

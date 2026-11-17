@@ -56,8 +56,15 @@ func (e *echoParts) Play(period []byte) error {
 	return e.spk.PumpPeriod(period)
 }
 
-func (e *echoParts) End()        { e.spk.EndStream() }
-func (e *echoParts) Flush()      { e.spk.Flush() }
+func (e *echoParts) End() { e.spk.EndStream() }
+
+// Flush is the satellite cutting its own reply (a cancel, a new call): the
+// plane is no longer its, as a stream cut before it began to play never
+// reports its end, and the next controller stream's must not come here.
+func (e *echoParts) Flush() {
+	e.spk.Flush()
+	incubatorOwnsVoice.Store(false)
+}
 func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
 
 // CallStarted lights the listening ring the controller pushed for this
