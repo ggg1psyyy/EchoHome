@@ -100,6 +100,7 @@ func NewServer(buttonController buttons.Controller, microphone mic.Microphone, s
 	server.volume.isMuted = func() bool {
 		return server.mute.IsMuted()
 	}
+	server.volume.showMute = server.mute.showMuteLEDs
 
 	// When the volume arc's display window ends, hand the ring back to the
 	// last controller-set state (listening/thinking/playing mid-turn, all
@@ -197,6 +198,20 @@ func (s *Server) SetVolume(level int) {
 // the silent boot-time SeedVolume path.
 func (s *Server) SetRemoteVolumeArc(enabled bool) {
 	s.remoteVolumeArc.Store(enabled)
+}
+
+// SetMuteRing turns the red ring shown while muted on or off (config
+// muteRing); off is honoured only where the mute button lights itself
+// (led.HasMuteButtonLED). A change while muted repaints the ring at once.
+func (s *Server) SetMuteRing(on bool) {
+	s.mute.mu.Lock()
+	changed := s.mute.ringOff == on
+	s.mute.ringOff = !on
+	muted := s.mute.muted
+	s.mute.mu.Unlock()
+	if changed && muted {
+		s.mute.showMuteLEDs()
+	}
 }
 
 // SeedVolume restores the controller's stored startupVolume — the source of

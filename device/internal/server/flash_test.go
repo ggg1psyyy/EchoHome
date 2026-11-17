@@ -31,6 +31,8 @@ func testServer(ring *recordingRing) *Server {
 	s := &Server{ledController: ring}
 	s.volume = newVolumeController(s.gatedLED)
 	s.mute = newMuteController(s.gatedLED, nil)
+	s.volume.isMuted = s.mute.IsMuted
+	s.volume.showMute = s.mute.showMuteLEDs
 	return s
 }
 

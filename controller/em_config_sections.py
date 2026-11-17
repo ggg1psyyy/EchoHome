@@ -50,7 +50,7 @@ SECTIONS: dict[str, dict] = {
         "label": "Ring",
         "keys": [
             "ledScene", "ledListenColor", "ledThinkColor",
-            "remoteVolumeArc",
+            "remoteVolumeArc", "muteRing",
             "meterAttack", "meterDecay", "meterFloor",
             "meterGamma", "meterRef", "meterCurve",
         ],

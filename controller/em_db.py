@@ -302,6 +302,7 @@ DEFAULT_DEVICE_CONFIG = {
     # dashboard, automations, or another remote source. Physical buttons show
     # the cyan arc regardless; mute and boot restore stay silent.
     "remoteVolumeArc":  False,
+    "muteRing":         True,  # red ring while muted; off needs a lit mute button
     # Playback "meter" ring response curve — how hard the ring throbs with
     # the speaker level. Device-side defaults live in animator.go
     # (meterDefaults) and these mirror them; both are clamped independently.

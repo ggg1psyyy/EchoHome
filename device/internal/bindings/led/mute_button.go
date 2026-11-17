@@ -31,6 +31,12 @@ func muteButtonPath(attr string) string {
 	return "/sys/class/gpio/gpio" + muteButtonGPIO() + "/" + attr
 }
 
+// HasMuteButtonLED says whether this Echo's mute button lights itself: its
+// board states the LED's GPIO, or Amazon's privacy driver owns it. Only then
+// may the red ring be left off while muted (the mute ring setting): without
+// it a muted Echo would show nothing at all.
+func HasMuteButtonLED() bool { return PrivacyDriver() || muteButtonGPIO() != "" }
+
 // InitMuteButtonLED exports the GPIO if needed, forces output direction,
 // and switches the LED off (the process starts unmuted; a crash while
 // muted must not leave a stale red button on restart).

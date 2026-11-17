@@ -22,6 +22,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/wilbowes/EchoMuse/internal/bindings/als"
+	ledbind "github.com/wilbowes/EchoMuse/internal/bindings/led"
 	"github.com/wilbowes/EchoMuse/internal/clock"
 	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/discovery"
@@ -1424,6 +1425,12 @@ func capabilities() []string {
 	}
 	if als.Present() {
 		caps = append(caps, "ambient_light")
+	}
+	// "mute_ring_off": the red ring can be left off while muted (config
+	// muteRing), offered only where the mute button lights itself, so a
+	// muted Echo always shows it.
+	if ledbind.HasMuteButtonLED() {
+		caps = append(caps, "mute_ring_off")
 	}
 	if thermalReadable() {
 		caps = append(caps, "thermal")

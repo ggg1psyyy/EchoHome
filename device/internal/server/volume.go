@@ -54,6 +54,7 @@ type volumeController struct {
 	timer          *time.Timer
 	displayActive  bool        // volume arc currently on the ring — see DisplayActive
 	isMuted        func() bool // set after construction to avoid circular dependency
+	showMute       func()      // repaints the mute ring (its setting decides red or dark)
 	onVolumeChange func(int)   // set after construction; called after every Set()
 	apply          func(int)   // applies a level to the audio; see SetApply
 	// onDisplayExpire, when set, replaces the default clear-to-black at the
@@ -342,13 +343,10 @@ func (vc *volumeController) showLEDs(level int) {
 		vc.displayActive = false
 		expire := vc.onDisplayExpire
 		vc.mu.Unlock()
-		if vc.isMuted != nil && vc.isMuted() {
-			// Restore mute indicator — red ring
-			leds := make([]led.Led, numLEDs)
-			for i := 0; i < numLEDs; i++ {
-				leds[i] = led.Led{ID: i, R: 180, G: 0, B: 0}
-			}
-			lc.SetLEDs(leds...)
+		if vc.isMuted != nil && vc.isMuted() && vc.showMute != nil {
+			// Restore the mute indicator, as the mute controller paints it
+			// (red, or dark with the muteRing setting off).
+			vc.showMute()
 		} else if expire != nil {
 			// Hand back to whatever the controller last painted —
 			// listening/thinking/playing ring mid-turn, all-off when idle.

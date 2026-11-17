@@ -2537,6 +2537,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
                 remoteVolumeArcCapable={!device.connected || !!device.remoteVolumeArcCapable}
+                muteRingOffCapable={!device.connected || !!device.muteRingOffCapable}
                 responseLevelCapable={!device.connected || !!device.responseLevelCapable}
                 stockSoundCapable={device.connected && !!device.stockSoundCapable}
                 wakeMicCapable={!device.connected || !!device.wakeMicCapable}
@@ -9686,7 +9687,7 @@ const CONFIG_SECTIONS = {
   "playback": ["eqBands", "eqLoudness", "duckDb", "responseLevel", "limiterEnabled", "limiterThreshold", "limiterRelease", "bassGuardEnabled", "bassGuardDb", "streamReply", "volumeButtonSound"],
   "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
   "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
-  "ring": ["ledScene", "ledListenColor", "ledThinkColor", "remoteVolumeArc", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
+  "ring": ["ledScene", "ledListenColor", "ledThinkColor", "remoteVolumeArc", "muteRing", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
   "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorMonitor"],
   "bluetooth": ["bleProxyEnabled", "bleProxyConnections"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
@@ -9864,6 +9865,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             emosFleet = true, wakeCueCapable = true,
                             volumeCueCapable = true,
                             remoteVolumeArcCapable = true,
+                            muteRingOffCapable = true,
                             incubatorOnEchoCapable = true,
                             incubatorMonitorCapable = true,
                             responseLevelCapable = true,
@@ -10467,6 +10469,13 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
             disabled={!remoteVolumeArcCapable}
             value={config.remoteVolumeArc ?? false}
             onChange={v => set('remoteVolumeArc', v)}/>
+          <Toggle label="Red ring while muted"
+            sub={muteRingOffCapable
+              ? 'off: the ring stays dark while muted, and the lit mute button alone shows it'
+              : "always on: this Echo's mute button has no light of its own, so the ring is what shows it is muted"}
+            disabled={!muteRingOffCapable}
+            value={muteRingOffCapable ? config.muteRing !== false : true}
+            onChange={v => set('muteRing', v)}/>
         </div>
         <StageAdvanced open={advRing} onToggle={() => setAdvRing(o => !o)} disabledStyle={inputStyle}>
           <div style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--text2)', lineHeight: 1.6, marginBottom: 'var(--space-6)' }}>

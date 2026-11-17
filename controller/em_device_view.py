@@ -245,8 +245,7 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "identifyRingCapable": getattr(live, "identify_ring_capable", False) if live else False,
         "incubatorSatelliteCapable": "incubator_satellite" in (getattr(live, "capabilities", None) or []) if live else False,
         "incubatorMonitorCapable": em_incubator.MONITOR_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
-        # Firmware that asks to pair itself (the owner holds the button); for
-        # older firmware on a plain link the dashboard offers Pair instead.
+        # Firmware that pairs itself (the owner holds the button); else Pair.
         "pairingCapable":   getattr(live, "pairing_capable", False) if live else False,
         # What this Echo is actually doing with its microphone
         # (docs/listening.md, em_listen.resolve) — the one source for every
@@ -260,6 +259,7 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "volumeCueCapable": getattr(live, "volume_cue_capable", False) if live else False,
         "wakeMicCapable": getattr(live, "wake_mic_capable", False) if live else False,
         "remoteVolumeArcCapable": getattr(live, "remote_volume_arc_capable", False) if live else False,
+        "muteRingOffCapable": "mute_ring_off" in (getattr(live, "capabilities", None) or []) if live else False,
         "responseLevelCapable": getattr(live, "response_level_capable", False) if live else False,
         "stockSoundCapable": getattr(live, "stock_sound_capable", False) if live else False,
         # Sendspin player (#89): whether the firmware has one, and its status

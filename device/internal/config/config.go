@@ -76,6 +76,11 @@ type Device struct {
 	// found distracting, but useful as an opt-in accessibility setting (#634).
 	RemoteVolumeArc bool
 
+	// MuteRing shows the red ring while muted. Off, the ring stays dark and
+	// the lit mute button alone says it: honoured only on an Echo whose
+	// button lights itself (capability mute_ring_off).
+	MuteRing bool
+
 	// OwwOnDevice selects on-device wake word scoring: "off", "shadow" or
 	// "on".
 	//
@@ -235,6 +240,7 @@ func (d *Device) loadDefaults() {
 	d.WakeSound = envBool("WAKE_SOUND", false)
 	d.WakeSoundLevel = envStr("WAKE_SOUND_LEVEL", "medium")
 	d.RemoteVolumeArc = envBool("REMOTE_VOLUME_ARC", false)
+	d.MuteRing = envBool("MUTE_RING", true)
 	d.AdcDigitalGain = envInt("ADC_DIGITAL_GAIN", 88)
 	d.AdcMicpga = envInt("ADC_MICPGA", 40)
 	d.MicGainDb = clampMicGainDb(envInt("MIC_GAIN_DB", 24))
@@ -323,6 +329,9 @@ func (d *Device) Apply(msg ConfigMessage) {
 	if msg.RemoteVolumeArc != nil {
 		d.RemoteVolumeArc = *msg.RemoteVolumeArc
 	}
+	if msg.MuteRing != nil {
+		d.MuteRing = *msg.MuteRing
+	}
 	if msg.StartupVolume > 0 {
 		d.StartupVolume = msg.StartupVolume
 	}
@@ -404,6 +413,13 @@ func (d *Device) VolumeButtonSoundEnabled() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.VolumeButtonSound
+}
+
+// MuteRingOn reports whether the red ring shows while muted.
+func (d *Device) MuteRingOn() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.MuteRing
 }
 
 // RemoteVolumeArcEnabled reports whether live remote volume changes should
@@ -520,6 +536,7 @@ func (d *Device) Snapshot() ConfigMessage {
 	sendspinEnabled := d.SendspinEnabled != nil && *d.SendspinEnabled
 	sendspinUnpaired := d.SendspinUnpaired != nil && *d.SendspinUnpaired
 	remoteVolumeArc := d.RemoteVolumeArc
+	muteRing := d.MuteRing
 	return ConfigMessage{
 		VadThreshold:        d.VadThreshold,
 		VadSpeechMs:         d.VadSpeechMs,
@@ -551,6 +568,7 @@ func (d *Device) Snapshot() ConfigMessage {
 		SendspinUnpaired:    &sendspinUnpaired,
 		SendspinName:        d.SendspinName,
 		RemoteVolumeArc:     &remoteVolumeArc,
+		MuteRing:            &muteRing,
 		ListeningAnim:       d.ListeningAnim,
 		IncubatorRing:       d.IncubatorRing,
 	}
@@ -628,6 +646,8 @@ type ConfigMessage struct {
 	VolumeButtonSound *bool `json:"volumeButtonSound,omitempty"`
 	// RemoteVolumeArc: a pointer so "off" is distinguishable from absent.
 	RemoteVolumeArc *bool `json:"remoteVolumeArc,omitempty"`
+	// MuteRing: a pointer, as false is meaningful (the ring off while muted).
+	MuteRing *bool `json:"muteRing,omitempty"`
 
 	// Output chain (internal/outchain). Pointers because zero is a real
 	// setting for every one of them; see applyOutput.

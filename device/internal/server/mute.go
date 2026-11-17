@@ -10,9 +10,16 @@ import (
 	"github.com/wilbowes/EchoMuse/pkg/led"
 )
 
+// hasMuteButtonLED: whether the mute button lights itself (a variable for
+// the tests, which run on no Echo).
+var hasMuteButtonLED = internalLed.HasMuteButtonLED
+
 type muteController struct {
-	mu      sync.Mutex
-	muted   bool
+	mu    sync.Mutex
+	muted bool
+	// ringOff: the red ring is not shown while muted (the mute ring
+	// setting), honoured only where the mute button lights itself.
+	ringOff bool
 	ledCtrl func() led.Controller
 	// dotMuted is set externally to block dot button events while muted
 	onMuteChange func(muted bool)
@@ -133,6 +140,15 @@ func setMuteButtonLED(on bool) {
 func (m *muteController) showMuteLEDs() {
 	lc := m.ledCtrl()
 	if lc == nil {
+		return
+	}
+	m.mu.Lock()
+	off := m.ringOff && hasMuteButtonLED()
+	m.mu.Unlock()
+	if off {
+		// The lit mute button says it; the ring stays dark, and nothing else
+		// paints it while muted (suppressPaint), as under the red ring.
+		clearLeds(lc)
 		return
 	}
 	leds := make([]led.Led, numLEDs)
