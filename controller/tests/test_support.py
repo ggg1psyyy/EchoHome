@@ -982,3 +982,12 @@ def test_ble_stats_keep_the_counters_and_lose_the_address():
         "music": {"bursts": 3, "starvedMs": 0, "peer": SECRETS["bssid"]}}})
     assert out["ble"] == {"scanning": True, "advertsSeen": 40,
                           "music": {"bursts": 3, "starvedMs": 0}}
+
+
+def test_the_voice_incubator_state_is_in_the_bundle_without_the_apps_address():
+    view = {"voiceIncubator": {"port": 18001, "listening": True, "appConnected": True,
+                               "inCall": False, "appPeer": "192.0.2.7:51234"}}
+    out = S.redact_view(view)
+    assert out["voiceIncubator"] == {"port": 18001, "listening": True,
+                                     "appConnected": True, "inCall": False}
+    assert S.redact_view({"voiceIncubator": None})["voiceIncubator"] is None

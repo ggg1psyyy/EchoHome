@@ -101,6 +101,7 @@ import em_turnclock
 import em_volume
 import em_wakeword
 import em_output_mute
+import em_incubator
 
 # ── VAD sentinels ──────────────────────────────────────────────────────────────
 # Queue items marking end-of-speech in mic_queue/voice_queue, in place of
@@ -476,6 +477,8 @@ class EchoMuseSatellite(SatelliteServerProtocol):
         See VOICE_ASSISTANT_CONVERSATION_FLAG for why announce-then-listen is
         the one that is conditional.
         """
+        if em_incubator.backend_of(self.device_id) == em_incubator.BACKEND_INCUBATOR:
+            return 0  # the Voice Incubator answers this Echo, not Home Assistant
         flags = VOICE_ASSISTANT_FLAGS
         if self._device_has("mic"):
             flags |= VOICE_ASSISTANT_CONVERSATION_FLAG
@@ -2751,6 +2754,16 @@ async def push_media_state(device_id: str, state: str) -> None:
         satellite._send_one(satellite._media_state_msg())
     except Exception as e:
         log.debug(f"[{device_id}] media state push failed: {e}")
+
+
+def voice_backend_changed(device_id: str) -> None:
+    """The Echo moved between Home Assistant and the Voice Incubator: HA reads
+    the voice assistant flags once per connection, so bounce it to re-read."""
+    server = _servers.get(device_id)
+    satellite = server.get_satellite() if server is not None else None
+    if satellite is not None:
+        log.info(f"[{device_id}] voice backend changed — reconnecting HA to re-read the device")
+        satellite.disconnect()
 
 
 async def update_oww_model(device_id: str, model_id: str) -> None:

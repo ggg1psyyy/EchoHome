@@ -54,6 +54,12 @@ Two run anywhere, with the test venv:
   issue is the reporter's data: never commit one.
 - **config_map.py** — regenerates `docs/config-keys.md` from the code;
   `tests/test_config_map.py` fails until it is run after a key changes.
+- **incubator_interop_check.py** — `em_incubator_proto` against the Voice
+  Incubator app's own `voice_incubator/protocol.py`, downloaded at a pinned
+  commit and file hash: message numbers, constants, the app reading our
+  HELLO, frames both ways. `python controller/tools/incubator_interop_check.py`
+  (`--file` for a local copy). A hash mismatch refuses to run: re-pin on
+  purpose after reading what upstream changed.
 
 And one needs openwakeword, so neither the test venv nor CI can run it:
 

@@ -53,6 +53,7 @@ NEEDS_CAPABILITY: dict[str, str] = {
 FAILED_OUTCOMES = frozenset({
     "no_ha", "tts_error", "no_tts", "timeout", "stream_timeout",
     "pipeline_refused", "silent_reply",
+    "app_gone",  # the Voice Incubator app went away mid-call
 })
 
 MIN_TURNS = 5             # below this a rate says nothing
@@ -84,6 +85,8 @@ def _ha_not_connected(d: dict, ctx: dict) -> list[dict]:
     view = d.get("view") or {}
     if not d.get("live", {}).get("connected") or "voiceSatellite" not in view:
         return []
+    if view.get("voiceIncubator"):
+        return []  # answered by the Voice Incubator: HA's voice is not needed
     sat = view["voiceSatellite"]
     if sat and sat.get("haConnected"):
         return []
@@ -91,6 +94,23 @@ def _ha_not_connected(d: dict, ctx: dict) -> list[dict]:
                      "Home Assistant is not connected to its voice satellite, "
                      "so a wake lights the ring and nothing answers",
                      satellite=sat)]
+
+
+def _incubator_not_connected(d: dict, ctx: dict) -> list[dict]:
+    """The Voice Incubator's counterpart of ha_not_connected: an Echo set to
+    it (view.voiceIncubator present) answers nothing while the app is away,
+    and never falls back to Home Assistant."""
+    view = d.get("view") or {}
+    inc = view.get("voiceIncubator")
+    if not d.get("live", {}).get("connected") or not inc or inc.get("appConnected"):
+        return []
+    if not inc.get("listening"):
+        text = ("its Voice Incubator satellite is not listening on the controller, "
+                "so the app cannot connect and a wake lights the ring and nothing answers")
+    else:
+        text = ("the Voice Incubator app is not connected to its satellite, "
+                "so a wake lights the ring and nothing answers")
+    return [_finding(d["name"], "incubator_not_connected", FACT, text, satellite=inc)]
 
 
 def _listening(d: dict, ctx: dict) -> list[dict]:
@@ -213,7 +233,7 @@ def _turns(d: dict, ctx: dict) -> list[dict]:
 
 
 DEVICE_RULES: tuple[Callable[[dict, dict], list[dict]], ...] = (
-    _offline, _ha_not_connected, _listening, _link, _settings_ignored,
+    _offline, _ha_not_connected, _incubator_not_connected, _listening, _link, _settings_ignored,
     _updates, _hardware, _turns,
 )
 

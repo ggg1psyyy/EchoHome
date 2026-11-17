@@ -67,6 +67,9 @@ SECTIONS: dict[str, dict] = {
             "consolePassword", "consoleTimeoutMin",
             # Fleet-only (FLEET_KEYS): shown here, never overridden per device.
             "controllerEndpoints",
+            # Experimental, so beside the other things most fleets never
+            # touch: the Voice Incubator app instead of Home Assistant.
+            "voiceBackend",
         ],
     },
     "bluetooth": {

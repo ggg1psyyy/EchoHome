@@ -17,6 +17,7 @@ import em_db as db
 import em_emos_ota
 import em_emos_update
 import em_esphome
+import em_incubator
 import em_health
 import em_ota
 import em_pairing
@@ -210,6 +211,7 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # the same thing a working device renders as (#349) — the wake word
         # fires, the ring lights, and the turn dies in milliseconds.
         "voiceSatellite":   em_esphome.get_status(device_id),
+        "voiceIncubator":   em_incubator.status_view(device_id),  # None unless on it
         # Device-link security: token issued (persistent) + whether the
         # current control connection came in over the TLS listener (live).
         "linkTokenIssued":  bool(row["token"]) if "token" in row.keys() else False,

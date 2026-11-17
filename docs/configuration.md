@@ -739,6 +739,18 @@ the silence gate.
 
 ---
 
+### Voice assistant (experimental)
+
+Unlike the rest of this section, this one applies to every conversation.
+
+**Voice assistant** (`voiceBackend`) — who answers this Echo: **Home
+Assistant** (the default), or **Voice Incubator**, OHF-Voice's experimental
+app. With the Incubator the Echo keeps its wake word, ring, buttons and
+music; the app recognises and answers, and Home Assistant's Assist entities
+for the Echo disappear until you switch back. Without the app running, the
+Echo answers nothing — it never falls back to Home Assistant. Setup, limits
+and what was tested: [Using the Voice Incubator](voice-incubator.md).
+
 ## 06 — Bluetooth
 
 **Bluetooth proxy** — turns the Dot into a Home Assistant Bluetooth proxy.

@@ -218,6 +218,10 @@ COPY em_wifi.py .
 COPY em_timers.py .
 COPY em_identify.py .
 COPY em_loglevel.py .
+COPY em_incubator.py .
+COPY em_incubator_proto.py .
+COPY em_resample.py .
+COPY em_voice.py .
 COPY version.py .
 # ESPHome native API subpackage (frame protocol, message registry, vendored protobuf)
 COPY esphome/ ./esphome/
