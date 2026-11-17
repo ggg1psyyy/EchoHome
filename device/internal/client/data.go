@@ -195,6 +195,13 @@ type DataClient struct {
 	// exit cleanup only stops the mic if the stream is its own (see the
 	// defer in connect for the zombie-stream incident this guards against).
 	micConn *websocket.Conn
+	// micStreamLock is the running stream's lockMic (a bounded turn).
+	micStreamLock bool
+	// callTap takes the wake stream's frames for an Incubator call
+	// (data_call.go); callOnly marks a stream that runs for the call alone
+	// and sends nothing to the controller.
+	callTap  atomic.Pointer[func([]byte)]
+	callOnly atomic.Bool
 
 	// micWanted is the controller's INTENT, which outlives any one data
 	// connection: true from mic_start until mic_stop, across however many
@@ -765,6 +772,11 @@ func (d *DataClient) StartMic(lockMic bool) {
 	// yet" and then waits for the controller to ask again — 39 seconds on
 	// 2026-08-30's boot.
 	d.micWanted, d.micWantedLock = true, lockMic
+	if d.micActive && d.callOnly.Load() {
+		// A call's own stream gives way to the controller's: the tap stays,
+		// so the new stream feeds the call (data_call.go).
+		d.stopCallStreamLocked()
+	}
 	if d.micActive {
 		log.Println("[data] StartMic: already active — ignoring")
 		return
@@ -779,6 +791,7 @@ func (d *DataClient) StartMic(lockMic bool) {
 	d.micActive = true
 	d.micStopCh = make(chan struct{})
 	d.micConn = conn
+	d.micStreamLock = lockMic
 	go d.streamMic(conn, d.micStopCh, lockMic)
 	log.Println("[data] Mic streaming started")
 }
@@ -795,7 +808,7 @@ func (d *DataClient) StartMic(lockMic bool) {
 // start a no-op.
 func (d *DataClient) resumeMic() {
 	d.micMu.Lock()
-	want, lockMic, active := d.micWanted, d.micWantedLock, d.micActive
+	want, lockMic, active := d.micWanted, d.micWantedLock, d.micActive && !d.callOnly.Load()
 	d.micMu.Unlock()
 	if !want || active {
 		return
@@ -827,6 +840,16 @@ func (d *DataClient) stopMic() {
 	// controller has already asked to end.
 	d.micWanted = false
 	if !d.micActive {
+		return
+	}
+	if d.callOnly.Load() {
+		return // the call's; it ends with the call
+	}
+	if d.callTap.Load() != nil && !d.micStreamLock {
+		// The controller is done with the wake stream, a call is not: it
+		// keeps the stream and nothing more goes to the controller.
+		d.callOnly.Store(true)
+		log.Println("[data] wake stream stopped for the controller, kept for a call")
 		return
 	}
 	close(d.micStopCh)
@@ -917,6 +940,10 @@ func (d *DataClient) connect(ctx context.Context, baseURL string) error {
 		if owned {
 			close(d.micStopCh)
 			d.micActive = false
+			d.callOnly.Store(false)
+			if d.callTap.Load() != nil {
+				d.startCallStreamLocked() // a call's microphone is not the link's
+			}
 		}
 		d.micMu.Unlock()
 		// A session's audio rode this connection; it cannot continue on the
@@ -1075,6 +1102,7 @@ func (d *DataClient) streamMic(conn *websocket.Conn, stopCh <-chan struct{}, loc
 		owner := d.micStopCh == stopCh
 		if owner {
 			d.micActive = false
+			d.callOnly.Store(false)
 		}
 		d.micMu.Unlock()
 		if owner && endedItself {
@@ -1164,6 +1192,9 @@ func (d *DataClient) streamMic(conn *websocket.Conn, stopCh <-chan struct{}, loc
 	}
 
 	writeFrame := func(frame []byte) {
+		if conn == nil {
+			return // a call's own stream (data_call.go) has no connection
+		}
 		d.connMu.Lock()
 		conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 		err := conn.WriteMessage(websocket.BinaryMessage, frame)
@@ -1484,6 +1515,12 @@ func (d *DataClient) streamMic(conn *websocket.Conn, stopCh <-chan struct{}, loc
 					// than delaying this loop, which reads 160ms ALSA batches
 					// out of a 160ms-deep ring. Re-read per frame: a config
 					// push can swap the scorer mid-stream and close the old one.
+					if tap := d.callTap.Load(); tap != nil {
+						(*tap)(chunk)
+					}
+					if d.callOnly.Load() {
+						continue // a call's alone: nothing for the controller
+					}
 					if sc := d.ShadowScorer(); sc != nil {
 						sc.PushBytesAt(chunk, at)
 					}

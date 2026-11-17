@@ -378,6 +378,7 @@ func main() {
 			bleScanner.Yield(music ||
 				dataClient.TurnStreamActive() ||
 				dataClient.ListenOpen() ||
+				incubatorInCall() ||
 				pcmSpeaker.VoiceArriving() ||
 				controlClient.ShellActive())
 		}
@@ -665,7 +666,7 @@ func main() {
 	controlClient.OnSendspinToken(sendspinToken)
 
 	// The Voice Incubator satellite, when the controller asks for it.
-	setupIncubator(controlClient)
+	setupIncubator(controlClient, dataClient, pcmSpeaker, s)
 
 	// Speaker flush — barge-in: cut buffered TTS the moment the controller
 	// hears the wake word during playback.
@@ -694,6 +695,9 @@ func main() {
 	// Per-stream playback stats — underrun/period counts reported upstream
 	// once per completed TTS stream, persisted against the voice turn.
 	pcmSpeaker.OnStreamStats(func(st speaker.StreamStats) {
+		if incubatorStreamEnded() {
+			return // the satellite's reply, not a turn's
+		}
 		// How close the Echo came to hearing a barge-in over this stream.
 		// Under private listening nothing else can say: the controller
 		// hears no audio during a reply.
@@ -773,6 +777,7 @@ func main() {
 			// Reported as muted rather than as the stream stopping, which
 			// StopMic would otherwise record.
 			dataClient.CloseAnyListen(listen.ReasonMuted)
+			incubatorMuted()
 			dataClient.StopMic()
 		} else {
 			// Restore the permanent OWW listening stream on unmute — no
@@ -1506,6 +1511,12 @@ func onWakeCrossing(cc *client.ControlClient, dc *client.DataClient,
 	if !config.Get().WakeWordOn() {
 		cc.SendOwwShadowCross(score, ageMs)
 		log.Printf("[shadow] wake %.3f suppressed — wake word off", score)
+		return
+	}
+	if incubatorInCall() {
+		// The call has the microphone: a crossing now is the user talking
+		// to the app, not a new wake (no session, no cut, no duck).
+		cc.SendOwwShadowCross(score, ageMs)
 		return
 	}
 	var session uint32

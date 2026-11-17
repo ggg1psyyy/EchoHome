@@ -120,28 +120,29 @@ type WifiChangeCallback func(ssid []byte, psk string)
 type ControlClient struct {
 	deviceID string
 
-	ledCallback           LEDCallback
-	ledAnimCallback       LEDAnimCallback
-	micStartCallback      MicStartCallback
-	micStopCallback       MicStopCallback
-	disconnectedCallback  StateCallback
-	connectedCallback     StateCallback
-	pendingCallback       StateCallback
-	refusedCallback       StateCallback
-	configAppliedCallback ConfigAppliedCallback
-	playCueCallback       func(string)
-	identifyCallback      StateCallback
-	sendspinTokenCallback func() map[string]any
-	incubatorCallback     func(IncubatorSatellite)
-	volumeSetCallback     VolumeSetCallback
-	beamLockCallback      BeamLockCallback
-	speakerFlushCallback  StateCallback
-	musicFlushCallback    StateCallback
-	duckCallback          func(on bool)
-	wifiChangeCallback    WifiChangeCallback
-	wifiCommitCallback    StateCallback
-	wifiScanCallback      StateCallback
-	listenCallback        ListenCallback
+	ledCallback            LEDCallback
+	ledAnimCallback        LEDAnimCallback
+	micStartCallback       MicStartCallback
+	micStopCallback        MicStopCallback
+	disconnectedCallback   StateCallback
+	connectedCallback      StateCallback
+	pendingCallback        StateCallback
+	refusedCallback        StateCallback
+	configAppliedCallback  ConfigAppliedCallback
+	playCueCallback        func(string)
+	identifyCallback       StateCallback
+	sendspinTokenCallback  func() map[string]any
+	incubatorCallback      func(IncubatorSatellite)
+	incubatorPressCallback func()
+	volumeSetCallback      VolumeSetCallback
+	beamLockCallback       BeamLockCallback
+	speakerFlushCallback   StateCallback
+	musicFlushCallback     StateCallback
+	duckCallback           func(on bool)
+	wifiChangeCallback     WifiChangeCallback
+	wifiCommitCallback     StateCallback
+	wifiScanCallback       StateCallback
+	listenCallback         ListenCallback
 
 	conn    *websocket.Conn
 	connTLS bool // conn is over wss; guarded by connMu
@@ -221,6 +222,11 @@ func (c *ControlClient) OnSendspinToken(cb func() map[string]any) { c.sendspinTo
 func (c *ControlClient) OnIncubatorSatellite(cb func(IncubatorSatellite)) {
 	c.incubatorCallback = cb
 }
+
+// OnIncubatorPress is the controller's incubator_press: an action-button
+// tap it decided is a voice press, for the Echo's own satellite to act on
+// (start a call, cancel one, stop a ringing timer).
+func (c *ControlClient) OnIncubatorPress(cb func()) { c.incubatorPressCallback = cb }
 
 // IncubatorSatellite is the controller's incubator_satellite message: run
 // the Voice Incubator satellite (Enabled) under the identity the app
@@ -1055,6 +1061,11 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 				c.incubatorCallback(m)
 			}
 
+		case "incubator_press":
+			if c.incubatorPressCallback != nil {
+				c.incubatorPressCallback()
+			}
+
 		case "sendspin_token_request":
 			var reply map[string]any
 			if c.sendspinTokenCallback != nil {
@@ -1385,14 +1396,16 @@ func capabilities() []string {
 	// "incubator_satellite": this firmware can be a Voice Incubator satellite
 	// itself (internal/incubator), switched by the incubator_satellite
 	// message; whether it listens, and whether the app is connected, is
-	// incubator_state. Presence only so far: its HELLO says no capability.
+	// incubator_state. "incubator_calls" (with "mic": a call needs one): its
+	// satellite takes button calls, so the controller passes a voice press
+	// on as incubator_press rather than acting on it.
 	caps := []string{"speaker", "leds", "led_anim", "buttons",
 		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
 		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
 		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "ble_connect"}
 	if MicUnavailable() == "" {
-		caps = append(caps, "mic")
+		caps = append(caps, "mic", "incubator_calls")
 	}
 	if board.CurrentLayout().Speaker.Voicing != nil {
 		caps = append(caps, "stock_sound")
