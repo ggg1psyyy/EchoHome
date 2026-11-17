@@ -618,3 +618,84 @@ def test_an_address_mdns_cannot_carry_is_logged_not_raised(on_echo):
         await _state(on_echo["echo"], listening=True, port=6055)  # must not raise
         assert on_echo["registered"] == []
     asyncio.run(run())
+
+
+# ------------------------------------------------- button calls on the Echo
+
+def _calls_echo(on_echo):
+    echo = on_echo["echo"]
+    echo.capabilities = ["mic", "speaker", "incubator_satellite", "incubator_calls"]
+    echo.led_anim_capable = True
+    echo.led_scene = {"error_anim": {"pattern": "pulse"}}
+    echo.anims = []
+
+    async def send_led_anim(anim):
+        echo.anims.append(anim)
+    echo.send_led_anim = send_led_anim
+    return echo
+
+
+def test_a_voice_press_goes_to_the_echos_own_satellite(on_echo):
+    echo = _calls_echo(on_echo)
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True)
+        echo.sent.clear()
+        assert await inc.on_button_press(echo)
+        assert echo.sent == [{"type": "incubator_press"}]
+    asyncio.run(run())
+
+
+def test_with_no_app_connected_a_press_shows_the_error_ring(on_echo):
+    echo = _calls_echo(on_echo)
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=False)
+        echo.sent.clear()
+        assert await inc.on_button_press(echo), "the controller would start its own turn"
+        assert echo.sent == [] and echo.anims == [{"pattern": "pulse"}]
+    asyncio.run(run())
+
+
+def test_presence_only_firmware_keeps_the_controllers_button(on_echo):
+    echo = on_echo["echo"]  # incubator_satellite without incubator_calls
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True)
+        echo.sent.clear()
+        assert not await inc.on_button_press(echo)
+        assert echo.sent == []
+    asyncio.run(run())
+
+
+def test_an_echo_not_its_own_satellite_keeps_the_controllers_button(on_echo):
+    echo = _calls_echo(on_echo)
+    async def run():
+        assert not await inc.on_button_press(echo)  # never asked to listen
+        assert echo.sent == []
+    asyncio.run(run())
+
+
+def test_a_call_on_the_echo_shows_in_the_panel(on_echo):
+    echo = _calls_echo(on_echo)
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True, inCall=True)
+        assert inc.status_view(DEV)["inCall"] is True
+        await _state(echo, listening=True, port=6055, appConnected=True)
+        assert inc.status_view(DEV)["inCall"] is False
+    asyncio.run(run())
+
+
+def test_the_button_reaches_the_echo_only_as_a_voice_press():
+    """Holds, tap events, a tap with no microphone and a muted tap are the
+    controller's as for any Echo; only what would have been a turn (or its
+    cancel) goes to the Echo, and before either is acted on here."""
+    import _sources
+    src = _sources.code_only(_sources.def_source("handle_button_event"))
+    at = {k: src.index(k) for k in ("em_button.HOLD", "em_button.TAP_EVENT", "em_button.NO_MIC",
+                                    "em_button.BLOCKED", "em_incubator.on_button_press",
+                                    "em_button.CANCEL", "can_serve_turn")}
+    assert at["em_button.HOLD"] < at["em_button.TAP_EVENT"] < at["em_button.NO_MIC"] \
+        < at["em_button.BLOCKED"] < at["em_incubator.on_button_press"] \
+        < at["em_button.CANCEL"] < at["can_serve_turn"]

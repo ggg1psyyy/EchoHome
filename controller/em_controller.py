@@ -4361,6 +4361,8 @@ async def handle_button_event(device: Device, event: dict):
             log.info(f"[{device.device_id}] Dot button tap ignored — mic is muted")
             return
 
+        if await em_incubator.on_button_press(device):
+            return
         if action == em_button.CANCEL:
             log.info(f"[{device.device_id}] Dot button — cancelling voice turn")
             device.cancel_event.set()

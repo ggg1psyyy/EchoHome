@@ -94,6 +94,10 @@ BACKENDS = (BACKEND_HA, BACKEND_INCUBATOR)
 SETTINGS = (BACKEND_HA, BACKEND_INCUBATOR, ON_ECHO)
 
 FIRMWARE_CAPABILITY = "incubator_satellite"
+CALLS_CAPABILITY = "incubator_calls"
+"""Firmware whose satellite takes button calls: the controller passes a voice
+press on (incubator_press) and the Echo decides what it means there -- stop
+a ringing timer, cancel its call, or start one -- as only it knows which."""
 ECHO_PORT = 6055
 """Where the Echo's own satellite listens (the protocol's default port)."""
 
@@ -1046,6 +1050,7 @@ async def on_incubator_state(device, msg: dict) -> None:
     device_id = device.device_id
     st = msg.get("state") if isinstance(msg.get("state"), dict) else {}
     state = {"listening": bool(st.get("listening")), "appConnected": bool(st.get("appConnected")),
+             "inCall": bool(st.get("inCall")),
              "port": st.get("port") if isinstance(st.get("port"), int) else None,
              "error": str(st.get("error"))[:200] if st.get("error") else ""}
     async with _device_lock(device_id):
@@ -1067,6 +1072,25 @@ async def on_incubator_state(device, msg: dict) -> None:
             log.warning(f"[{device_id}] Incubator satellite on the Echo: {state['error']}")
     await em_events.push({"type": "device_update", "device_id": device_id,
                           "state": {"voiceIncubator": status_view(device_id)}})
+
+
+async def on_button_press(device) -> bool:
+    """A dot-button tap em_button has decided is a voice press (not a hold,
+    an event, a muted tap or a tap with no microphone), for an Echo that is
+    its own satellite: passed to the Echo, True. Without an app connected
+    there is nothing to call, so the error ring says so rather than silence.
+    False for any other Echo: the controller's own turn handles it."""
+    rec = _on_echo.get(device.device_id)
+    if rec is None or CALLS_CAPABILITY not in (getattr(device, "capabilities", None) or []):
+        return False
+    if not rec.state.get("appConnected"):
+        log.info(f"[{device.device_id}] Dot button: the Voice Incubator app is not connected to this Echo")
+        if device.led_anim_capable and (anim := device.led_scene.get("error_anim")):
+            await device.send_led_anim(anim)
+        return True
+    log.info(f"[{device.device_id}] Dot button → the Echo's own satellite")
+    await device.send_control({"type": "incubator_press"})
+    return True
 
 
 async def _teardown(device_id: str, sat: Satellite) -> None:
@@ -1147,7 +1171,8 @@ def status_view(device_id: str) -> Optional[dict]:
     if rec is not None:
         st = rec.state
         return {"port": rec.port, "listening": bool(st.get("listening")),
-                "appConnected": bool(st.get("appConnected")), "inCall": False, "onEcho": True}
+                "appConnected": bool(st.get("appConnected")),
+                "inCall": bool(st.get("inCall")), "onEcho": True}
     sat = _satellites.get(device_id)
     if sat is None:
         return {"port": None, "listening": False, "appConnected": False, "inCall": False}
