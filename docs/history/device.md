@@ -1070,6 +1070,22 @@ enabled it and nothing happened" this removes.
   under `-test.v`: the first run of the range checks on the real 32-bit
   target. Phase 1 hashes for reference: host `4d99a062`, 00LQ `2b79ae70`.
 
+- **2026-11-17, the Echo as its own Incubator satellite: who a reply's end
+  belongs to (00LQ, feat/integration).** The voice plane has one stats
+  slot, and a satellite reply's end must go to the satellite
+  (PLAYBACK_DRAINED), not the controller (it reads as a turn's
+  `playback_stats`; seen once on 00LQ, a cancel during a reply logging the
+  stream's barge window at the controller and the app waiting 12 s for the
+  fallback drain). `cmd/incubator.go` owns the plane from a satellite
+  period to its report, and at the satellite's own flush keeps it only if a
+  period sounded within 50 ms (`VoiceSoundingUntil`): a stream cut while
+  priming never reports. Whether it was playing is known only to the ALSA
+  loop, so the sign can misroute in two rare cases, both accepted: a stream
+  cut after a stall longer than that (its report goes to the controller),
+  and a priming stream cut just after another finished (ownership held
+  until the next satellite stream's report). The session lets an awaited
+  PLAYBACK_DRAINED go at any cut, so neither stalls the app.
+
 ## The external audio jack
 
 Three separate faults, all fixed 2026-08-09 (#80), and one non-fault worth
