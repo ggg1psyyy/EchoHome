@@ -25,6 +25,9 @@ type Config struct {
 	// Device is the Echo's microphone and speaker for calls. Nil is
 	// presence only: no calls, and the app's frames are read and dropped.
 	Device Device
+	// Monitor allows the app to listen live (MONITOR, monitor.go): the
+	// Echo's opt-in switch. Off, HELLO does not offer it.
+	Monitor bool
 }
 
 // State is what the satellite reports to the controller, which advertises
@@ -38,8 +41,11 @@ type State struct {
 	InCall bool `json:"inCall,omitempty"`
 	// WakeModels: how many wake word models the app has pushed it, which
 	// it is listening for.
-	WakeModels int    `json:"wakeModels,omitempty"`
-	Error      string `json:"error,omitempty"`
+	WakeModels int `json:"wakeModels,omitempty"`
+	// Monitored: the microphone is streaming to the app outside a call
+	// (its Test page listening live).
+	Monitored bool   `json:"monitored,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // keepAlive matters: an app host that loses power sends no FIN, and the
@@ -182,6 +188,7 @@ func (s *Server) hello() HelloInfo {
 		h.FeatureSize = mixednet.StreamFeatureSize
 		h.MaxPool = true
 		h.Listen = true // a HANGUP with listen opens the answer's call
+		h.Monitor = s.cfg.Monitor
 	}
 	return h
 }
@@ -238,10 +245,10 @@ func (s *Server) session() *session {
 func (s *Server) callChanged(sess *session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	in, n := sess.listening(), sess.wakeModels()
-	if s.sess == sess && !s.closed && (s.state.InCall != in || s.state.WakeModels != n) {
+	in, n, mon := sess.listening(), sess.wakeModels(), sess.monitoring()
+	if s.sess == sess && !s.closed && (s.state.InCall != in || s.state.WakeModels != n || s.state.Monitored != mon) {
 		st := s.state
-		st.InCall, st.WakeModels = in, n
+		st.InCall, st.WakeModels, st.Monitored = in, n, mon
 		s.setLocked(st)
 	}
 }
@@ -266,7 +273,7 @@ func (s *Server) serve(c net.Conn) {
 	}
 	log.Printf("[incubator] app connected from %s", c.RemoteAddr())
 	if s.cfg.Device != nil {
-		sess = newSession(c, s.cfg.Device, nil)
+		sess = newSession(c, s.cfg.Device, nil, s.cfg.Monitor)
 		sess.report = func() { s.callChanged(sess) }
 	}
 	s.mu.Lock()

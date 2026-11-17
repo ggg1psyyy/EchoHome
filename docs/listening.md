@@ -93,6 +93,31 @@ nothing from before a mute can lead a later call.
   to the controller and on to Home Assistant's speech-to-text, wherever the
   user configured that to run.
 
+## Letting the Voice Incubator app listen live (opt-in)
+
+An Echo that is its own Voice Incubator satellite can let the app's **Test
+page** listen to its microphone live, outside any call, and show what each
+wake word model hears. That is a **continuous stream** while the page
+listens, so it is **off unless turned on**, per Echo ("Let the app listen
+live", under the voice backend; firmware announcing `incubator_monitor`).
+
+- Off, the Echo does not offer it to the app (HELLO says no `monitor`) and
+  ignores a request for it: the switch is enforced on the Echo.
+- On, it streams only while the app asks (the page open), never during a call
+  (a call sends its own audio), and never muted. Nothing else bounds it: how
+  long the page stays open is the person's, and the app's.
+- The Echo reports it (`incubator_state` `monitored`) before the first audio
+  leaves, the dashboard then says it streams, and its ring pulses red for as
+  long as it does. That red **pulse** means the opposite of the mute ring's
+  solid red: audio is leaving.
+- A wake word heard meanwhile is shown on the page, never answered.
+- The app passes it to the page in the browser and keeps none of it
+  (voice_incubator `server.py` `_live`, `web.py`'s live socket, at
+  `3a6d7e7a`). Its speaker enrollment and wake word recording, which do
+  keep audio, need a second capture this Echo does not send, and the app
+  refuses both for it. The intercom (the microphone to another room) is not
+  offered.
+
 ## Wake word off from Home Assistant
 
 Home Assistant's **Wake word** picker on an Echo's device page turns its wake

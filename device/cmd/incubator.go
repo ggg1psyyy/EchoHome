@@ -85,6 +85,14 @@ func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
 // here the satellite in this process clears every path itself (a reply
 // longer than any TTL would otherwise go dark while it plays).
 func (e *echoParts) Show(r incubator.Ring) {
+	if r == incubator.RingMonitored {
+		// The Echo's own, never a scene's: a privacy indicator, as the mute
+		// ring is. Red as the VPE's ring blinks while monitored; a pulse,
+		// never the mute ring's solid red, which means the opposite.
+		e.srv.StartAnim(monitoredAnim)
+		e.duckFor(r)
+		return
+	}
 	snap := config.Get().Snapshot()
 	var raw json.RawMessage
 	if r == incubator.RingListening {
@@ -143,6 +151,10 @@ func (e *echoParts) duckFor(r incubator.Ring) {
 	})
 }
 
+// monitoredAnim is shown while the app listens live: no TTL, cleared by the
+// satellite the moment it stops.
+var monitoredAnim = server.AnimSpec{Pattern: "pulse", Colors: [][3]uint8{{255, 0, 0}}, PeriodMs: 1000}
+
 // ringSpecKey names each state's spec in incubatorRing.
 var ringSpecKey = map[incubator.Ring]string{
 	incubator.RingThinking:     "spin",
@@ -169,7 +181,7 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 		Device:   dev,
 	}
 	cc.OnIncubatorSatellite(func(m client.IncubatorSatellite) {
-		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port})
+		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port, Monitor: m.Monitor})
 	})
 	cc.OnIncubatorPress(func() {
 		if !incubatorMgr.Press() {

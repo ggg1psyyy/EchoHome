@@ -242,6 +242,7 @@ suppress it as they do any `led_anim`.
 | I6 | Cancelled (button, mute), the app gone, or `HANGUP` `wake_rejected`, `answered_elsewhere`, `timer_stopped`, `nothing_to_stop`, `no_answer`, `nothing_asked` | off | — |
 | I7 | `timer_ringing`, no call | amber pulse (`em_timers.TIMER_ANIM`), no TTL | `timer_stopped`, a press, the app gone |
 | I8 | `announcement` `active`, no call | meter (C3) | `active` false |
+| I9 | Monitored: the app listens live (`incubator_monitor`, opt-in), no call | red pulse, 1s period, no TTL, the Echo's own (never a scene's) | the app stops, a call, mute, the app gone |
 
 The app's sounds and its answer share one stream (voice_incubator
 `server.py` `Cues`): the "heard" sound plays the moment the command ends,
@@ -249,7 +250,7 @@ before `processing`, and the answer follows after `responding`, so only audio
 after `responding` is the answer. The app's error path says its apology
 without `responding`: the spinner stays until the error flash.
 
-A call outranks a timer and an announcement; a timer ringing at the end of a
+A call outranks monitoring, and monitoring a timer and an announcement; a timer ringing at the end of a
 call is shown instead of the outcome flash. Music already playing is ducked
 in every state but dark and the flashes (`Ring.Ducks`), as a voice turn ducks
 it from the wake to the end of the reply, and comes back 0.8 s after the ring

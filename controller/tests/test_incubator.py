@@ -476,7 +476,7 @@ def test_a_capable_echo_is_asked_to_listen_and_the_controller_stands_down(on_ech
         assert inc.get_status(DEV) is None, "the controller's satellite is up beside the Echo's"
         (msg,) = on_echo["echo"].sent
         assert msg == {"type": "incubator_satellite", "enabled": True, "name": inc.node_name(DEV),
-                       "mac": "02:ec:12:34:56:78", "port": inc.ECHO_PORT}
+                       "mac": "02:ec:12:34:56:78", "port": inc.ECHO_PORT, "monitor": False}
         # Not advertised until the Echo says it listens.
         assert on_echo["registered"] == []
         view = inc.status_view(DEV)
@@ -763,3 +763,61 @@ def test_both_scene_pushes_use_the_one_builder():
     built = [m for m, c in code.items() if "listening_anim\"]" in c and m != "em_scenes"
              and "listeningAnim" in c]
     assert built == [], f"a listeningAnim push built outside em_scenes.ring_push: {built}"
+
+
+def test_the_app_may_listen_live_only_where_the_switch_and_the_firmware_allow():
+    """incubatorMonitor true AND incubator_monitor announced: anything else is
+    off, and off is what the Echo is told (it then offers no monitoring)."""
+    import em_state
+    class Dev:
+        capabilities = ["incubator_satellite", inc.MONITOR_CAPABILITY]
+    em_state.devices["X1"] = Dev()
+    try:
+        assert inc.monitor_allowed({inc.MONITOR_KEY: True}, "X1") is True
+        for cfg in ({}, {inc.MONITOR_KEY: False}, {inc.MONITOR_KEY: "true"}, {inc.MONITOR_KEY: 1}):
+            assert inc.monitor_allowed(cfg, "X1") is False, cfg
+        Dev.capabilities = ["incubator_satellite"]
+        assert inc.monitor_allowed({inc.MONITOR_KEY: True}, "X1") is False
+    finally:
+        em_state.devices.pop("X1", None)
+    rec = inc.EchoSatellite("X1", "02:ec:12:34:56:78")
+    rec.monitor = True
+    assert rec.message(True)["monitor"] is True
+    assert rec.message(False)["monitor"] is False  # never offered to a satellite told to stop
+
+
+def test_the_privacy_line_says_the_echo_streams_while_it_reports_monitoring(on_echo):
+    import em_device_view
+    echo = _calls_echo(on_echo)
+    echo.listen_view = type("V", (), {"state": "local", "streams": False, "reason": ""})()
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True)
+        assert em_device_view._listen_json(echo)["streams"] is False
+        await _state(echo, listening=True, port=6055, appConnected=True, monitored=True)
+        view = em_device_view._listen_json(echo)
+        assert view["state"] == "monitored" and view["streams"] is True
+        assert inc.status_view(DEV)["monitored"] is True
+        await _state(echo, listening=True, port=6055, appConnected=True, monitored="yes")
+        assert em_device_view._listen_json(echo)["streams"] is False  # only true is true
+    asyncio.run(run())
+
+
+def test_the_monitor_switch_reaches_the_echo_through_reconcile(on_echo):
+    """Turned on, the next incubator_satellite says monitor (the Echo then
+    restarts its satellite and offers it); turned off, it says not; and never
+    to firmware that does not announce incubator_monitor."""
+    echo = on_echo["echo"]
+    async def run():
+        echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.MONITOR_CAPABILITY]
+        on_echo["config"][inc.MONITOR_KEY] = True
+        await inc.device_connected(DEV)
+        assert echo.sent[-1]["monitor"] is True
+        on_echo["config"][inc.MONITOR_KEY] = False
+        await inc.reconcile(DEV)
+        assert echo.sent[-1]["monitor"] is False
+        on_echo["config"][inc.MONITOR_KEY] = True
+        echo.capabilities = ["mic", "speaker", "incubator_satellite"]
+        await inc.reconcile(DEV)
+        assert echo.sent[-1]["monitor"] is False
+    asyncio.run(run())

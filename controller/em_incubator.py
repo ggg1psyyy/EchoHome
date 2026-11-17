@@ -95,6 +95,11 @@ SETTINGS = (BACKEND_HA, BACKEND_INCUBATOR, ON_ECHO)
 
 FIRMWARE_CAPABILITY = "incubator_satellite"
 CALLS_CAPABILITY = "incubator_calls"
+MONITOR_KEY = "incubatorMonitor"
+"""Per Echo, off by default: may the app listen live (its Test page, MONITOR,
+a continuous stream while it listens). Off is enforced on the Echo, which
+offers it only when told (incubator_satellite monitor)."""
+MONITOR_CAPABILITY = "incubator_monitor"
 """Firmware whose satellite takes button calls: the controller passes a voice
 press on (incubator_press) and the Echo decides what it means there -- stop
 a ringing timer, cancel its call, or start one -- as only it knows which."""
@@ -847,13 +852,15 @@ class EchoSatellite:
         self.name = node_name(device_id)
         self.mac = proto.normalise_mac(mac)
         self.port = port
+        self.monitor = False  # may the app listen live (MONITOR_KEY)
         self.address: Optional[str] = None
         self.state: dict = {}
         self._mdns_info: Optional[ServiceInfo] = None
 
     def message(self, enabled: bool) -> dict:
         return {"type": "incubator_satellite", "enabled": enabled,
-                "name": self.name, "mac": self.mac, "port": self.port}
+                "name": self.name, "mac": self.mac, "port": self.port,
+                "monitor": enabled and self.monitor}
 
 
 _on_echo: dict[str, EchoSatellite] = {}
@@ -948,7 +955,7 @@ async def reconcile(device_id: str) -> None:
                 # so the app never sees two under one MAC.
                 if sat is not None:
                     await _teardown(device_id, sat)
-                await _start_on_echo(device_id, loop)
+                await _start_on_echo(device_id, loop, monitor_allowed(cfg, device_id))
                 return
             if sat is None:
                 voice_port = await loop.run_in_executor(None, db.get_esphome_port, device_id)
@@ -974,11 +981,30 @@ async def reconcile(device_id: str) -> None:
         log.exception(f"[{device_id}] Incubator reconcile failed: {e}")
 
 
-async def _start_on_echo(device_id: str, loop) -> None:
+def monitor_allowed(config: dict, device_id: str) -> bool:
+    """Whether the app may listen live to this Echo: its switch is on and its
+    firmware can (MONITOR_CAPABILITY). Only True is ever sent as allowed."""
+    dev = em_state.devices.get(device_id)
+    return config.get(MONITOR_KEY) is True and \
+        MONITOR_CAPABILITY in (getattr(dev, "capabilities", None) or [])
+
+
+def monitored(device_id: str) -> bool:
+    """Whether the Echo REPORTS streaming its microphone to the app outside a
+    call (incubator_state monitored): the privacy line's source, never the
+    switch."""
+    rec = _on_echo.get(device_id)
+    return rec is not None and bool(rec.state.get("monitored"))
+
+
+async def _start_on_echo(device_id: str, loop, monitor: bool = False) -> None:
     rec = _on_echo.get(device_id)
     if rec is None:
         mac = await loop.run_in_executor(None, db.get_esphome_mac, device_id)
         rec = _on_echo[device_id] = EchoSatellite(device_id, mac)
+    # A change restarts the satellite on the Echo (the app reconnects and
+    # reads the new HELLO): so it goes in the message the Echo compares.
+    rec.monitor = monitor
     dev = em_state.devices.get(device_id)
     address = getattr(dev, "ip", None)
     if rec.address != address:
@@ -1051,6 +1077,7 @@ async def on_incubator_state(device, msg: dict) -> None:
     st = msg.get("state") if isinstance(msg.get("state"), dict) else {}
     state = {"listening": bool(st.get("listening")), "appConnected": bool(st.get("appConnected")),
              "inCall": bool(st.get("inCall")),
+             "monitored": st.get("monitored") is True,
              "wakeModels": st["wakeModels"] if type(st.get("wakeModels")) is int and st["wakeModels"] >= 0 else 0,
              "port": st.get("port") if isinstance(st.get("port"), int) else None,
              "error": str(st.get("error"))[:200] if st.get("error") else ""}
@@ -1182,6 +1209,7 @@ def status_view(device_id: str) -> Optional[dict]:
         return {"port": rec.port, "listening": bool(st.get("listening")),
                 "appConnected": bool(st.get("appConnected")),
                 "inCall": bool(st.get("inCall")), "wakeModels": st.get("wakeModels", 0),
+                "monitored": bool(st.get("monitored")), "monitorAllowed": rec.monitor,
                 "onEcho": True}
     sat = _satellites.get(device_id)
     if sat is None:

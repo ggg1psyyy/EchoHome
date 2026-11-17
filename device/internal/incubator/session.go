@@ -172,6 +172,11 @@ type session struct {
 	replying   bool // a call's reply is sounding (until its PLAYBACK_DRAINED)
 	shown      Ring // what the ring was last given
 	askBack    bool // a HANGUP asked for an answer: its call follows at once
+	// monitoring (monitor.go)
+	allowMonitor bool // the Echo's switch: HELLO said monitor
+	monitorAsked bool // the app's MONITOR active
+	monitored    bool // streaming now (monitorWantLocked), as reported
+	mon          *monitor
 
 	wake *wake // wake.go
 
@@ -186,10 +191,12 @@ type session struct {
 	drained   chan struct{}
 }
 
-func newSession(c net.Conn, dev Device, report func()) *session {
+func newSession(c net.Conn, dev Device, report func(), allowMonitor bool) *session {
 	s := &session{w: &writer{c: c}, dev: dev, report: report,
-		drained: make(chan struct{}, 1), wake: newWake(), muted: dev.Muted()}
+		drained: make(chan struct{}, 1), wake: newWake(), muted: dev.Muted(),
+		allowMonitor: allowMonitor, mon: newMonitor()}
 	go s.wakeLoop()
+	go s.monitorLoop()
 	return s
 }
 
@@ -199,7 +206,7 @@ func (s *session) wakeModels() int { return int(s.wake.models.Load()) }
 // syncMicLocked opens the microphone while something needs it (a wake word
 // model to run, a call listening) and closes it once nothing does.
 func (s *session) syncMicLocked() {
-	want := !s.closed && !s.muted && (s.wake.models.Load() > 0 || (s.call != nil && s.call.listening))
+	want := !s.closed && !s.muted && (s.wake.models.Load() > 0 || (s.call != nil && s.call.listening) || s.monitored)
 	if want == s.micOn {
 		return
 	}
@@ -249,6 +256,7 @@ func (s *session) press() {
 			s.report()
 		}
 	}
+	s.updateMonitor() // a call pauses it
 }
 
 // setMuted is the Echo's mute. Muted, a call is cancelled and the
@@ -256,13 +264,16 @@ func (s *session) press() {
 // starts over when it opens again, so no audio from while it was muted can
 // lead a later call.
 func (s *session) setMuted(muted bool) {
-	if muted {
-		s.cancel()
-	}
+	// Muted first, then the call cancelled: the call's end must not find the
+	// Echo unmuted and resume monitoring for an instant.
 	s.mu.Lock()
 	s.muted = muted
 	s.syncMicLocked()
 	s.mu.Unlock()
+	if muted {
+		s.cancel()
+	}
+	s.updateMonitor()
 }
 
 // cancel ends a call from the Echo's side.
@@ -275,6 +286,7 @@ func (s *session) cancel() {
 		s.cut()
 		s.after(was)
 	}
+	s.updateMonitor()
 }
 
 // after is what follows a change, without the lock: a report when the
@@ -322,6 +334,7 @@ func (s *session) armLocked(c *call, d time.Duration) {
 		was := s.endLocked("timeout")
 		s.mu.Unlock()
 		s.after(was)
+		s.updateMonitor() // a call paused it
 	})
 }
 
@@ -412,14 +425,22 @@ func (s *session) close() {
 	s.replying, s.timerRings, s.announcing = false, false, false
 	s.showLocked()
 	s.mu.Unlock()
+	s.updateMonitor() // off, and said so
+	s.stopMonitor()
 	s.stopWake()
 	s.endStreamHere()
 	s.after(was)
 }
 
-// handle is one frame from the app, on the reading goroutine.
+// handle is one frame from the app, on the reading goroutine. Monitoring
+// follows any change a message made (a call started or ended).
 func (s *session) handle(m Message, p []byte) error {
+	if m != AudioOut && m != ModelData {
+		defer s.updateMonitor()
+	}
 	switch m {
+	case Monitor:
+		s.monitorFrame(p)
 	case AudioOut:
 		if s.discard.Load() {
 			return nil // a cancelled call's, first: never a new call's reply

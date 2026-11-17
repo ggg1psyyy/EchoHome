@@ -69,7 +69,7 @@ SECTIONS: dict[str, dict] = {
             "controllerEndpoints",
             # Experimental, so beside the other things most fleets never
             # touch: the Voice Incubator app instead of Home Assistant.
-            "voiceBackend",
+            "voiceBackend", "incubatorMonitor",
         ],
     },
     "bluetooth": {

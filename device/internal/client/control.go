@@ -237,6 +237,9 @@ type IncubatorSatellite struct {
 	Name    string `json:"name"`
 	MAC     string `json:"mac"`
 	Port    int    `json:"port"`
+	// Monitor: the app may listen live (sent only to firmware announcing
+	// incubator_monitor; absent is off).
+	Monitor bool `json:"monitor"`
 }
 
 // SendIncubatorState reports the satellite's state (incubator_state): the
@@ -1405,13 +1408,16 @@ func capabilities() []string {
 	// wakeModels). "incubator_ring" (with "mic"): its satellite shows the app's state on
 	// the ring (thinking, the reply, the outcome, a ringing timer, an
 	// announcement) with the scene the controller pushes as incubatorRing.
+	// "incubator_monitor" (with "mic"): it can let the app listen live
+	// (MONITOR), off unless incubator_satellite's monitor allows it, and
+	// says so in incubator_state (monitored) while it streams.
 	caps := []string{"speaker", "leds", "led_anim", "buttons",
 		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
 		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
 		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "ble_connect"}
 	if MicUnavailable() == "" {
-		caps = append(caps, "mic", "incubator_calls", "incubator_wake", "incubator_ring")
+		caps = append(caps, "mic", "incubator_calls", "incubator_wake", "incubator_ring", "incubator_monitor")
 	}
 	if board.CurrentLayout().Speaker.Voicing != nil {
 		caps = append(caps, "stock_sound")

@@ -87,6 +87,7 @@ KINDS: dict[str, str] = {
     "wakeClipCapture": BOOL,
     "wakeClipMinScore": FLOAT,
     "voiceBackend": STR,
+    "incubatorMonitor": BOOL,
 }
 
 

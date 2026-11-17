@@ -2532,7 +2532,8 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 triggerCapable={!device.connected || !!device.owwTriggerCapable}
                 localCapable={!device.connected || !!device.owwLocalCapable}
                 incubatorOnEchoCapable={!device.connected || !!device.incubatorSatelliteCapable}
-                listen={device.connected ? device.listen : null}
+                incubatorMonitorCapable={!device.connected || !!device.incubatorMonitorCapable}
+                listen={device.connected ? deviceListen(device) : null}
                 wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
                 remoteVolumeArcCapable={!device.connected || !!device.remoteVolumeArcCapable}
@@ -9686,7 +9687,7 @@ const CONFIG_SECTIONS = {
   "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
   "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
   "ring": ["ledScene", "ledListenColor", "ledThinkColor", "remoteVolumeArc", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
-  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend"],
+  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorMonitor"],
   "bluetooth": ["bleProxyEnabled", "bleProxyConnections"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
 };
@@ -9816,8 +9817,20 @@ function onDeviceMode(config) {
 // What an Echo is actually doing with its microphone, from its own report
 // (em_listen.resolve via /api/devices `listen`). One line, and it never says
 // private unless the Echo said so: `streams === null` is "not known yet".
+// The listen state, or what the Echo's own Voice Incubator satellite reports
+// (voiceIncubator.monitored, pushed the moment it changes, where `listen`
+// arrives with the next poll): its microphone going to the app, live.
+function deviceListen(device) {
+  if (device.voiceIncubator?.monitored === true) {
+    return { state: 'monitored', streams: true,
+             reason: 'the Voice Incubator app is listening live (its Test page)' };
+  }
+  return device.listen;
+}
+
 function listenStatusText(listen) {
   switch (listen.state) {
+    case 'monitored':  return 'Now: streaming to the Voice Incubator app — its Test page is listening live';
     case 'local':      return 'Now: listening privately — nothing leaves this Echo until it hears the wake word';
     case 'degraded':   return `Now: button only — ${listen.reason}`;
     case 'controller': return 'Now: streaming continuously to the controller';
@@ -9832,11 +9845,13 @@ function listenStatusText(listen) {
 // 2026-09-27: too verbose). Counts only what Echoes have reported, so an
 // unknown is never folded into private.
 function listenFleetText(devices) {
-  const live = devices.filter(d => d.connected && d.listen);
-  const streaming = live.filter(d => d.listen.streams === true).length;
-  const unknown = live.filter(d => d.listen.streams === null).length;
+  const live = devices.filter(d => d.connected && d.listen).map(deviceListen);
+  const monitored = live.filter(l => l.state === 'monitored').length;
+  const streaming = live.filter(l => l.streams === true && l.state !== 'monitored').length;
+  const unknown = live.filter(l => l.streams === null).length;
   const parts = [];
   if (streaming) parts.push(`${streaming} of ${live.length} Echo${live.length === 1 ? '' : 'es'} stream${streaming === 1 ? 's' : ''} all the time`);
+  if (monitored) parts.push(`${monitored} streaming to the Voice Incubator app's Test page`);
   if (unknown) parts.push(`${unknown} not reported yet`);
   return parts.length ? parts.join(' · ') : null;
 }
@@ -9850,6 +9865,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             volumeCueCapable = true,
                             remoteVolumeArcCapable = true,
                             incubatorOnEchoCapable = true,
+                            incubatorMonitorCapable = true,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
                             wakeMicCapable = true,
@@ -10549,6 +10565,15 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
               { value: 'incubator_echo', label: 'Voice Incubator, on the Echo (experimental)', disabled: !incubatorOnEchoCapable },
             ]}
             onChange={v => set('voiceBackend', v)}/>
+          {(config.voiceBackend ?? 'ha') === 'incubator_echo' && (
+            <Toggle label="Let the app listen live"
+              sub={incubatorMonitorCapable
+                ? "off unless you turn it on: while the Voice Incubator app's Test page listens, this Echo streams its microphone to the app continuously, its ring pulsing red. Set fleet-wide, it applies to every Echo that does not override this section"
+                : "this Echo's firmware cannot stream to the app outside a call (it lacks incubator_monitor)"}
+              disabled={disabled || !incubatorMonitorCapable}
+              value={config.incubatorMonitor === true}
+              onChange={v => set('incubatorMonitor', v)}/>
+          )}
         </div>
         {subHeader('Turn processing')}
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>

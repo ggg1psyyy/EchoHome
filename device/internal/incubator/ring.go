@@ -22,13 +22,14 @@ const (
 	RingSpeaking     // a call's answer is sounding
 	RingTimer        // a timer rings here
 	RingAnnouncement // an announcement is playing
+	RingMonitored    // the app is listening live: the microphone streams
 	// The outcome, shown once as a call ends and cleared by its own short
 	// TTL: done (no reply was needed) or error (a timeout, a failed result).
 	RingDone
 	RingError
 )
 
-var ringNames = [...]string{"off", "listening", "thinking", "speaking", "timer", "announcement", "done", "error"}
+var ringNames = [...]string{"off", "listening", "thinking", "speaking", "timer", "announcement", "monitored", "done", "error"}
 
 func (r Ring) String() string {
 	if r >= 0 && int(r) < len(ringNames) {
@@ -42,7 +43,7 @@ func (r Ring) String() string {
 // voice turn ducks it under Home Assistant from the wake to the end of the
 // reply. Dark and the outcome flashes are not.
 func (r Ring) Ducks() bool {
-	return r != RingOff && r != RingDone && r != RingError
+	return r != RingOff && r != RingDone && r != RingError && r != RingMonitored
 }
 
 // ringLocked is what the ring should show now. s.mu held.
@@ -59,6 +60,8 @@ func (s *session) ringLocked() Ring {
 		return RingThinking // the "heard" sound included
 	case c != nil:
 		return RingOff // the answer played; the hang-up is awaited
+	case s.monitored:
+		return RingMonitored // above a timer and an announcement: audio is leaving
 	case s.timerRings:
 		return RingTimer
 	case s.announcing:

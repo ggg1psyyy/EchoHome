@@ -243,7 +243,8 @@ func TestARepliesFramesAfterACancelBeforeItPlayedAreDiscarded(t *testing.T) {
 
 func TestMusicIsDuckedFromListeningToTheEndOfTheAnswer(t *testing.T) {
 	want := map[Ring]bool{RingOff: false, RingListening: true, RingThinking: true,
-		RingSpeaking: true, RingTimer: true, RingAnnouncement: true, RingDone: false, RingError: false}
+		RingSpeaking: true, RingTimer: true, RingAnnouncement: true, RingDone: false, RingError: false,
+		RingMonitored: false}
 	for r, d := range want {
 		if r.Ducks() != d {
 			t.Errorf("%v ducks %v, want %v", r, r.Ducks(), d)

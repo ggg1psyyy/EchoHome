@@ -82,6 +82,12 @@ def _listen_json(live) -> dict | None:
     view = getattr(live, "listen_view", None)
     if view is None:
         return None
+    if em_incubator.monitored(getattr(live, "device_id", "")):
+        # The Echo says so (incubator_state monitored): its microphone goes
+        # to the Voice Incubator app, outside any call, while its Test page
+        # listens. Opt-in (em_incubator.MONITOR_KEY).
+        return {"state": "monitored", "streams": True,
+                "reason": "the Voice Incubator app is listening live (its Test page)"}
     return {"state": view.state, "streams": view.streams, "reason": view.reason}
 
 
@@ -232,13 +238,13 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # scoring: a toggle that silently does nothing on old firmware is worse
         # than no toggle, because it looks like the feature is broken.
         "owwShadowCapable": getattr(live, "oww_shadow_capable", False) if live else False,
-        # Separate from shadow: firmware in the field scores and reports
-        # without being able to act on it, and offering those "on" produces a
-        # device that never answers.
+        # Separate from shadow: firmware in the field scores and reports without
+        # being able to act on it; offered "on", it would never answer.
         "owwTriggerCapable": getattr(live, "oww_trigger_capable", False) if live else False,
         # Gates the dashboard's Identify button (#860); disabled with the reason, not silent.
         "identifyRingCapable": getattr(live, "identify_ring_capable", False) if live else False,
         "incubatorSatelliteCapable": "incubator_satellite" in (getattr(live, "capabilities", None) or []) if live else False,
+        "incubatorMonitorCapable": em_incubator.MONITOR_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
         # Firmware that asks to pair itself (the owner holds the button); for
         # older firmware on a plain link the dashboard offers Pair instead.
         "pairingCapable":   getattr(live, "pairing_capable", False) if live else False,

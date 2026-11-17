@@ -11,6 +11,9 @@ type Settings struct {
 	Name    string
 	MAC     string
 	Port    int
+	// Monitor: the app may listen live (the Echo's opt-in switch). A change
+	// restarts the satellite, so the app reconnects and reads the new HELLO.
+	Monitor bool
 }
 
 // Firewall opens and closes an inbound TCP port (internal/firewall on the
@@ -72,7 +75,7 @@ func (m *Manager) Apply(st Settings) {
 	if err := m.Firewall.Open(st.Port); err != nil {
 		log.Printf("[incubator] could not open port %d: %v", st.Port, err)
 	}
-	s, err := Listen(Config{Name: st.Name, MAC: st.MAC, Port: st.Port, Model: m.Model, Firmware: m.Firmware, Device: m.Device}, m.Send)
+	s, err := Listen(Config{Name: st.Name, MAC: st.MAC, Port: st.Port, Model: m.Model, Firmware: m.Firmware, Device: m.Device, Monitor: st.Monitor}, m.Send)
 	if err != nil {
 		m.Firewall.Close(st.Port)
 		log.Printf("[incubator] satellite not started: %v", err)

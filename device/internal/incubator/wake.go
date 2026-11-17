@@ -175,6 +175,16 @@ func (s *session) chunk(h heard) {
 	if listening {
 		c.push(pcm)
 	}
+	// Monitored (monitor.go): the chunk, then after the detector the report.
+	// Never during a call, whatever the flag says this instant.
+	mon := c == nil && s.mon.on.Load()
+	if mon {
+		if s.mon.fresh.Swap(false) {
+			s.monitorStart()
+		}
+		s.monitorAudio(pcm)
+		defer s.monitorReport()
+	}
 
 	w.detMu.Lock()
 	if w.det.Models() == 0 || w.fe == nil {
@@ -195,6 +205,13 @@ func (s *session) chunk(h heard) {
 	})
 	w.detMu.Unlock()
 	for _, d := range w.found {
+		if mon {
+			// Someone is listening, not talking to it: said, not answered
+			// ("stop" included).
+			log.Printf("[incubator] wake word %q heard while monitored, not answered", d.WakeWord)
+			s.mon.detected = append(s.mon.detected, d.ID)
+			continue
+		}
 		s.wakeHeard(d, h.n)
 	}
 }
@@ -227,6 +244,7 @@ func (s *session) wakeHeard(d mixednet.Detection, n uint64) {
 			d.WakeWord, p, m, cut, len(pre))
 		s.report()
 	}
+	s.updateMonitor()
 }
 
 // modelResult answers the model being received.

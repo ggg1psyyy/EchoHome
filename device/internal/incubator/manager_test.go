@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 type fakeFirewall struct {
@@ -164,5 +165,46 @@ func TestAnOutOfRangePortIsTheDefault(t *testing.T) {
 	}
 	if errors.Is(nil, nil) && m.port(Settings{Port: 6056}) != 6056 {
 		t.Error("a valid port was changed")
+	}
+}
+
+// The Echo's switch for listening live: a flip either way restarts the
+// satellite, so the app reconnects to a HELLO that says the new truth, and
+// a stream going when it is turned off stops with the old connection.
+func TestTheMonitorSwitchRestartsTheSatelliteBothWays(t *testing.T) {
+	m, _, _ := manager(t)
+	m.Device = &fakeEcho{}
+	p := freePort(t)
+	hello := func() (net.Conn, *Reader, map[string]any) {
+		c, r := dial(t, p)
+		t.Cleanup(func() { c.Close() })
+		return c, r, readHello(t, r)
+	}
+	m.Apply(Settings{Enabled: true, Name: "n", MAC: "m", Port: p})
+	_, r, h := hello()
+	if _, ok := h["monitor"]; ok {
+		t.Fatal("offered with the switch off")
+	}
+	m.Apply(Settings{Enabled: true, Name: "n", MAC: "m", Port: p, Monitor: true})
+	if _, _, err := r.Read(); err == nil {
+		t.Fatal("the app was kept across the switch")
+	}
+	c, r, h := hello()
+	if h["monitor"] != true {
+		t.Fatal("not offered with the switch on")
+	}
+	waitFor(t, "the session", func() bool { return m.server().session() != nil })
+	WriteJSON(c, Monitor, MonitorInfo{Active: true})
+	waitFor(t, "monitoring", func() bool { return m.server().session().monitoring() })
+	m.Apply(Settings{Enabled: true, Name: "n", MAC: "m", Port: p}) // off mid-stream
+	c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for {
+		if _, _, err := r.Read(); err != nil {
+			break // the stream went with the connection
+		}
+	}
+	_, _, h = hello()
+	if _, ok := h["monitor"]; ok {
+		t.Fatal("still offered after the switch went off")
 	}
 }
