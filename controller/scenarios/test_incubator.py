@@ -287,3 +287,51 @@ def test_a_tap_while_the_app_is_still_listening_cancels_the_call(scenario):
             row = (await wait_for(lambda: _turns(ctl, echo), 10, "the turn row"))[-1]
             assert row["outcome"] == "cancelled", row["outcome"]
     scenario(body)
+
+
+def test_an_echo_set_to_its_own_satellite_is_handed_over(scenario):
+    """The real controller with firmware that announces incubator_satellite
+    and is set to it: the controller's satellite stays down, the Echo is
+    asked to listen under the identity the app already knows (the ESPHome
+    node name and the stored MAC), and its reported state reaches the
+    device view."""
+    import aiohttp
+
+    async def body(ctl):
+        ctl.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('global_device_config', ?)",
+                    json.dumps({"voiceBackend": "incubator_echo"}))
+        echo = FakeEcho(ctl)
+        echo.capabilities = echo.capabilities + ["incubator_satellite"]
+        await echo.connect()
+        (msg,) = await wait_for(lambda: echo.sent("incubator_satellite"), 10, "the handover")
+        mac = ctl.query("SELECT esphome_mac FROM devices WHERE device_id = ?", echo.device_id)[0][0]
+        assert msg["enabled"] is True and msg["port"] == 6055
+        assert msg["name"] == f"echomuse-{echo.device_id[-12:].lower()}"
+        assert msg["mac"] == mac.lower()
+        # Never two under one MAC: nothing listens on the controller's port.
+        port = await wait_for(lambda: ctl.esphome_port(echo.device_id), 10, "the ESPHome port")
+        try:
+            _, w = await asyncio.open_connection("127.0.0.1", port + PORT_OFFSET)
+            w.close()
+            raise AssertionError("the controller's satellite is up beside the Echo's")
+        except OSError:
+            pass
+
+        await echo.send({"type": "incubator_state",
+                         "state": {"listening": True, "port": 6055, "appConnected": True}})
+        headers = {"Authorization": f"Bearer {ctl.admin_token()}"}
+        async with aiohttp.ClientSession(headers=headers) as s:
+            async def view():
+                async with s.get(f"http://127.0.0.1:{ctl.api_port}/api/devices") as r:
+                    for d in await r.json():
+                        if d["device_id"] == echo.device_id:
+                            return d.get("voiceIncubator")
+            vi = None
+            for _ in range(50):
+                vi = await view()
+                if vi and vi.get("listening"):
+                    break
+                await asyncio.sleep(0.1)
+        assert vi == {"port": 6055, "listening": True, "appConnected": True, "inCall": False, "onEcho": True}, vi
+        await echo.close()
+    scenario(body)

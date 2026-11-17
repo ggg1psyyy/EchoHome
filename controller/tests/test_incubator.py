@@ -427,3 +427,194 @@ def test_the_device_record_and_the_panel_carry_it():
     jsx = (_sources.CONTROLLER / "static" / "dashboard.jsx").read_text()
     assert "const vi = device.voiceIncubator;" in jsx
     assert "Voice Incubator connected" in jsx and "Waiting for the Voice Incubator app" in jsx
+
+
+# ------------------------------------------------------- the Echo's own satellite
+
+class FakeEcho:
+    """A connected Echo, as em_state.devices holds it: what the controller
+    sends it is kept."""
+
+    def __init__(self, capabilities, ip="192.0.2.10"):
+        self.device_id = DEV
+        self.ip = ip
+        self.capabilities = capabilities
+        self.sent = []
+
+    async def send_control(self, msg):
+        self.sent.append(msg)
+
+
+@pytest.fixture
+def on_echo(world, monkeypatch):
+    world["config"] = {"voiceBackend": "incubator_echo"}
+    echo = FakeEcho(["mic", "speaker", "incubator_satellite"])
+    monkeypatch.setitem(inc.em_state.devices, DEV, echo)
+    pushed = []
+
+    async def push(ev):
+        pushed.append(ev)
+    monkeypatch.setattr(inc.em_events, "push", push)
+    world["echo"], world["pushed"] = echo, pushed
+    yield world
+    inc._on_echo.clear()
+
+
+def _state(echo, **st):
+    return inc.on_incubator_state(echo, {"type": "incubator_state", "state": st})
+
+
+def test_the_setting_on_the_echo_is_the_incubator_backend():
+    assert inc.backend({"voiceBackend": "incubator_echo"}) == "incubator"
+    assert inc.wants_on_echo({"voiceBackend": "incubator_echo"})
+    assert not inc.wants_on_echo({"voiceBackend": "incubator"})
+
+
+def test_a_capable_echo_is_asked_to_listen_and_the_controller_stands_down(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        assert inc.get_status(DEV) is None, "the controller's satellite is up beside the Echo's"
+        (msg,) = on_echo["echo"].sent
+        assert msg == {"type": "incubator_satellite", "enabled": True, "name": inc.node_name(DEV),
+                       "mac": "02:ec:12:34:56:78", "port": inc.ECHO_PORT}
+        # Not advertised until the Echo says it listens.
+        assert on_echo["registered"] == []
+        view = inc.status_view(DEV)
+        assert view["onEcho"] and not view["listening"]
+    asyncio.run(run())
+
+
+def test_the_echo_is_advertised_at_its_own_address_while_it_listens(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        echo = on_echo["echo"]
+        await _state(echo, listening=True, port=6055, appConnected=False)
+        (info,) = on_echo["registered"]
+        assert info.type == proto.SERVICE_TYPE
+        assert info.name == f"{inc.node_name(DEV)}.{proto.SERVICE_TYPE}"
+        assert info.parsed_addresses() == ["192.0.2.10"] and info.port == 6055
+        assert info.properties == {b"mac": b"02:ec:12:34:56:78", b"protocol": b"2"}
+        await _state(echo, listening=True, port=6055, appConnected=True)
+        assert len(on_echo["registered"]) == 1, "advertised twice"
+        assert inc.status_view(DEV)["appConnected"]
+        await _state(echo, listening=False, port=6055)
+        assert len(on_echo["unregistered"]) == 1
+        assert on_echo["pushed"][-1]["state"]["voiceIncubator"]["listening"] is False
+    asyncio.run(run())
+
+
+def test_without_the_capability_the_controller_serves_it(on_echo):
+    on_echo["echo"].capabilities = ["mic", "speaker"]
+    async def run():
+        await inc.device_connected(DEV)
+        assert inc.get_status(DEV)["listening"], "no satellite for an Echo whose firmware cannot be one"
+        assert on_echo["echo"].sent == []
+    asyncio.run(run())
+
+
+def test_switching_to_the_controllers_satellite_stops_the_echos(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        echo = on_echo["echo"]
+        await _state(echo, listening=True, port=6055)
+        on_echo["config"] = {"voiceBackend": "incubator"}
+        await inc.reconcile(DEV)
+        assert echo.sent[-1]["enabled"] is False
+        assert len(on_echo["unregistered"]) == 1
+        assert inc.get_status(DEV)["listening"]
+        # One satellite to the app throughout: the same service name.
+        assert on_echo["registered"][-1].name == on_echo["registered"][0].name
+    asyncio.run(run())
+
+
+def test_switching_to_home_assistant_stops_the_echos(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)
+        on_echo["config"] = {"voiceBackend": "ha"}
+        await inc.reconcile(DEV)
+        assert on_echo["echo"].sent[-1]["enabled"] is False
+        assert inc.status_view(DEV) is None and DEV not in inc._on_echo
+    asyncio.run(run())
+
+
+def test_a_disconnect_withdraws_the_record_and_sends_nothing(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)
+        sent = len(on_echo["echo"].sent)
+        await inc.device_disconnected(DEV)
+        assert len(on_echo["unregistered"]) == 1
+        assert len(on_echo["echo"].sent) == sent, "a message to an Echo that is gone"
+    asyncio.run(run())
+
+
+def test_every_reconcile_resends_and_advertises_once(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)
+        await asyncio.gather(inc.reconcile(DEV), inc.reconcile(DEV))
+        assert [m["enabled"] for m in on_echo["echo"].sent] == [True, True, True]
+        assert len(on_echo["registered"]) == 1
+    asyncio.run(run())
+
+
+def test_a_new_address_is_advertised_anew(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)
+        on_echo["echo"].ip = "192.0.2.77"
+        await inc.reconcile(DEV)
+        assert len(on_echo["unregistered"]) == 1
+        await _state(on_echo["echo"], listening=True, port=6055)
+        assert on_echo["registered"][-1].parsed_addresses() == ["192.0.2.77"]
+    asyncio.run(run())
+
+
+def test_a_report_nobody_asked_for_is_ignored(on_echo):
+    on_echo["config"] = {"voiceBackend": "ha"}
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)
+        assert on_echo["registered"] == [] and DEV not in inc._on_echo
+    asyncio.run(run())
+
+
+def test_a_malformed_report_is_cleaned(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        echo = on_echo["echo"]
+        await inc.on_incubator_state(echo, {"type": "incubator_state", "state": "nonsense"})
+        await _state(echo, listening="yes", port="6055", appConnected=1, error="x" * 5000)
+        rec = inc._on_echo[DEV]
+        assert rec.port == inc.ECHO_PORT and len(rec.state["error"]) == 200
+        await _state(echo, listening=True, port=99999)
+        assert rec.port == inc.ECHO_PORT and on_echo["registered"][-1].port == inc.ECHO_PORT
+    asyncio.run(run())
+
+
+def test_switching_to_the_echos_satellite_closes_the_controllers_first(on_echo):
+    on_echo["config"] = {"voiceBackend": "incubator"}
+    async def run():
+        await inc.device_connected(DEV)
+        port = _port()
+        assert inc.get_status(DEV)["listening"]
+        on_echo["config"] = {"voiceBackend": "incubator_echo"}
+        await inc.reconcile(DEV)
+        # The controller's satellite is gone (listener closed, record
+        # withdrawn) before the Echo is asked: never two under one MAC.
+        assert inc.get_status(DEV) is None
+        assert len(on_echo["unregistered"]) == 1
+        with pytest.raises(OSError):
+            await _connect(port)
+        assert on_echo["echo"].sent[-1]["enabled"] is True
+    asyncio.run(run())
+
+
+def test_an_address_mdns_cannot_carry_is_logged_not_raised(on_echo):
+    on_echo["echo"].ip = "2001:db8::10"
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)  # must not raise
+        assert on_echo["registered"] == []
+    asyncio.run(run())

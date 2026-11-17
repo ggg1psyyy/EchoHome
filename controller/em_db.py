@@ -362,11 +362,11 @@ DEFAULT_DEVICE_CONFIG = {
     # delivered as a file, not by the config push (em_endpoints). Empty =
     # mDNS alone, which is how every fleet worked before it.
     "controllerEndpoints": [],
-    # voiceBackend: who answers this Echo — "ha" (Home Assistant's own voice
-    # pipeline, through its ESPHome satellite) or "incubator" (OHF-Voice's
-    # Voice Incubator app, through em_incubator). Anything else reads as
-    # "ha" (em_incubator.backend): an Echo never moves off the pipeline it
-    # has on a value nothing here serves.
+    # voiceBackend: who answers this Echo — "ha" (HA's own pipeline), or
+    # OHF-Voice's Voice Incubator app: "incubator" (em_incubator's satellite)
+    # or "incubator_echo" (the Echo's own firmware as satellite when it says
+    # incubator_satellite, else em_incubator's). Anything else reads as "ha"
+    # (em_incubator.backend): never moved off its pipeline by an unknown value.
     "voiceBackend": "ha",
 }
 

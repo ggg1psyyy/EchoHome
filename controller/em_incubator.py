@@ -67,6 +67,7 @@ from typing import Optional
 from zeroconf import ServiceInfo
 
 import em_db as db
+import em_events
 import em_incubator_proto as proto
 import em_oww_models
 import em_player
@@ -82,7 +83,19 @@ log = logging.getLogger("echomuse.incubator")
 CONFIG_KEY = "voiceBackend"
 BACKEND_HA = "ha"
 BACKEND_INCUBATOR = "incubator"
+ON_ECHO = "incubator_echo"
+"""The setting's third value: the Voice Incubator answers this Echo, and the
+Echo's own firmware is the satellite when it announces FIRMWARE_CAPABILITY.
+Until it does (older firmware, or offline at the decision) the controller's
+satellite serves it, as for "incubator". Either way the Echo's backend is the
+Incubator: Home Assistant offers no voice assistant for it, and nothing
+falls back to Home Assistant."""
 BACKENDS = (BACKEND_HA, BACKEND_INCUBATOR)
+SETTINGS = (BACKEND_HA, BACKEND_INCUBATOR, ON_ECHO)
+
+FIRMWARE_CAPABILITY = "incubator_satellite"
+ECHO_PORT = 6055
+"""Where the Echo's own satellite listens (the protocol's default port)."""
 
 PORT_OFFSET = 2000
 """Voice port + 2000: 18001 beside 16001 (voice) and 17001 (BLE proxy,
@@ -180,7 +193,18 @@ def backend(config: dict) -> str:
     """The Echo's voice backend. An unknown value is Home Assistant's: an
     Echo is never moved off the pipeline it has by a value nothing here can
     serve."""
-    return BACKEND_INCUBATOR if config.get(CONFIG_KEY) == BACKEND_INCUBATOR else BACKEND_HA
+    return BACKEND_INCUBATOR if config.get(CONFIG_KEY) in (BACKEND_INCUBATOR, ON_ECHO) else BACKEND_HA
+
+
+def wants_on_echo(config: dict) -> bool:
+    """Whether the setting asks for the Echo's own satellite (ON_ECHO)."""
+    return config.get(CONFIG_KEY) == ON_ECHO
+
+
+def echo_capable(device_id: str) -> bool:
+    """Whether the connected Echo's firmware can be the satellite itself."""
+    dev = em_state.devices.get(device_id)
+    return dev is not None and FIRMWARE_CAPABILITY in (getattr(dev, "capabilities", None) or [])
 
 
 def satellite_model(board: str | None) -> str:
@@ -805,6 +829,30 @@ class AppConnection:
 
 _satellites: dict[str, Satellite] = {}
 _online: set[str] = set()
+
+
+class EchoSatellite:
+    """An Echo whose own firmware is the satellite: the controller tells it to
+    listen (incubator_satellite) under the identity the app already knows it
+    by, and advertises it on the app's network -- the Echo's address, its port
+    -- while the Echo reports that it listens (incubator_state). The app then
+    connects to the Echo directly; nothing of the call crosses the controller."""
+
+    def __init__(self, device_id: str, mac: str, port: int = ECHO_PORT):
+        self.device_id = device_id
+        self.name = node_name(device_id)
+        self.mac = proto.normalise_mac(mac)
+        self.port = port
+        self.address: Optional[str] = None
+        self.state: dict = {}
+        self._mdns_info: Optional[ServiceInfo] = None
+
+    def message(self, enabled: bool) -> dict:
+        return {"type": "incubator_satellite", "enabled": enabled,
+                "name": self.name, "mac": self.mac, "port": self.port}
+
+
+_on_echo: dict[str, EchoSatellite] = {}
 _backends: dict[str, str] = {}
 """Each approved Echo's voice backend as last read from its config: filled at
 start for every one (before any connects, so Home Assistant's first read of
@@ -876,15 +924,27 @@ async def reconcile(device_id: str) -> None:
         async with _device_lock(device_id):
             loop = asyncio.get_running_loop()
             row = await loop.run_in_executor(None, db.get_device, device_id)
-            wanted = False
+            wanted = on_echo = False
             if row is not None and row["approved"]:
                 cfg = await loop.run_in_executor(None, db.get_effective_device_config, device_id)
                 wanted = backend(cfg) == BACKEND_INCUBATOR
+                on_echo = wanted and wants_on_echo(cfg) and echo_capable(device_id)
             _note_backend(device_id, BACKEND_INCUBATOR if wanted else BACKEND_HA)
             sat = _satellites.get(device_id)
-            if not wanted or device_id not in _online:
+            online = device_id in _online
+            if not wanted or not online or not on_echo:
+                # Off the Echo's own satellite: tell a connected Echo to stop.
+                await _end_on_echo(device_id, tell=online)
+            if not wanted or not online:
                 if sat is not None:
                     await _teardown(device_id, sat)
+                return
+            if on_echo:
+                # The Echo is the satellite: the controller's stands down first,
+                # so the app never sees two under one MAC.
+                if sat is not None:
+                    await _teardown(device_id, sat)
+                await _start_on_echo(device_id, loop)
                 return
             if sat is None:
                 voice_port = await loop.run_in_executor(None, db.get_esphome_port, device_id)
@@ -908,6 +968,105 @@ async def reconcile(device_id: str) -> None:
                     log.warning(f"[{device_id}] Incubator mDNS registration failed: {e}")
     except Exception as e:
         log.exception(f"[{device_id}] Incubator reconcile failed: {e}")
+
+
+async def _start_on_echo(device_id: str, loop) -> None:
+    rec = _on_echo.get(device_id)
+    if rec is None:
+        mac = await loop.run_in_executor(None, db.get_esphome_mac, device_id)
+        rec = _on_echo[device_id] = EchoSatellite(device_id, mac)
+    dev = em_state.devices.get(device_id)
+    address = getattr(dev, "ip", None)
+    if rec.address != address:
+        await _unadvertise(rec)  # a new address: the record must say it
+        rec.address = address
+    # Sent on every reconcile (each connect): the firmware keeps a running
+    # satellite and its app on an identical message, and answers with its
+    # state either way.
+    await dev.send_control(rec.message(True))
+    log.info(f"[{device_id}] Incubator satellite on the Echo asked to listen as {rec.name}")
+
+
+async def _end_on_echo(device_id: str, tell: bool) -> None:
+    rec = _on_echo.pop(device_id, None)
+    if rec is None:
+        return
+    await _unadvertise(rec)
+    dev = em_state.devices.get(device_id)
+    if tell and dev is not None:
+        try:
+            await dev.send_control(rec.message(False))
+        except Exception as e:
+            log.info(f"[{device_id}] incubator_satellite off not delivered: {e}")
+    log.info(f"[{device_id}] Incubator satellite on the Echo released")
+
+
+def _make_echo_mdns_info(rec: EchoSatellite) -> ServiceInfo:
+    # The same service and host names the controller's satellite uses, so the
+    # app sees one satellite throughout, now at the Echo's address.
+    return ServiceInfo(
+        proto.SERVICE_TYPE,
+        f"{rec.name}.{proto.SERVICE_TYPE}",
+        addresses=[socket.inet_aton(rec.address)],
+        port=rec.port,
+        properties=proto.txt_records(rec.mac),
+        server=f"{rec.name}-vi.local.",
+    )
+
+
+async def _advertise(rec: EchoSatellite) -> None:
+    azc = _azc()
+    if rec._mdns_info is not None or azc is None or not rec.address:
+        return
+    try:
+        # Inside the try: an address inet_aton refuses (IPv6, say) is logged,
+        # never raised into the control loop.
+        info = _make_echo_mdns_info(rec)
+        await azc.async_register_service(info, allow_name_change=True)
+        rec._mdns_info = info
+        log.info(f"[{rec.device_id}] mDNS registered: {info.name} → the Echo, port {rec.port}")
+    except Exception as e:
+        log.warning(f"[{rec.device_id}] Incubator mDNS registration failed: {e}")
+
+
+async def _unadvertise(rec: EchoSatellite) -> None:
+    azc = _azc()
+    if rec._mdns_info is not None and azc is not None:
+        try:
+            await azc.async_unregister_service(rec._mdns_info)
+        except Exception:
+            pass
+    rec._mdns_info = None
+
+
+async def on_incubator_state(device, msg: dict) -> None:
+    """em_controller's handler for incubator_state: the Echo's own satellite,
+    as it changes. Advertised while it listens, withdrawn otherwise; a report
+    from an Echo not asked to listen is logged and ignored."""
+    device_id = device.device_id
+    st = msg.get("state") if isinstance(msg.get("state"), dict) else {}
+    state = {"listening": bool(st.get("listening")), "appConnected": bool(st.get("appConnected")),
+             "port": st.get("port") if isinstance(st.get("port"), int) else None,
+             "error": str(st.get("error"))[:200] if st.get("error") else ""}
+    async with _device_lock(device_id):
+        rec = _on_echo.get(device_id)
+        if rec is None:
+            if state["listening"]:
+                log.info(f"[{device_id}] incubator_state listening, not asked to: ignored")
+            return
+        rec.state = state
+        if isinstance(state["port"], int) and 0 < state["port"] < 65536:
+            if state["port"] != rec.port:
+                await _unadvertise(rec)
+            rec.port = state["port"]
+        if state["listening"]:
+            await _advertise(rec)
+        else:
+            await _unadvertise(rec)
+        if state["error"]:
+            log.warning(f"[{device_id}] Incubator satellite on the Echo: {state['error']}")
+    await em_events.push({"type": "device_update", "device_id": device_id,
+                          "state": {"voiceIncubator": status_view(device_id)}})
 
 
 async def _teardown(device_id: str, sat: Satellite) -> None:
@@ -945,6 +1104,9 @@ async def start(host: str = "0.0.0.0") -> None:
 async def stop_all() -> None:
     for device_id, sat in list(_satellites.items()):
         await _teardown(device_id, sat)
+    for device_id in list(_on_echo):
+        # The Echo stops its own when the controller link goes.
+        await _end_on_echo(device_id, tell=False)
     _online.clear()
 
 
@@ -962,9 +1124,10 @@ async def device_deleted(device_id: str) -> None:
     _online.discard(device_id)
     _backends.pop(device_id, None)
     sat = _satellites.get(device_id)
-    if sat is not None:
-        async with _device_lock(device_id):
+    async with _device_lock(device_id):
+        if sat is not None:
             await _teardown(device_id, sat)
+        await _end_on_echo(device_id, tell=False)
     _locks.pop(device_id, None)
 
 
@@ -980,6 +1143,11 @@ def status_view(device_id: str) -> Optional[dict]:
     is for HA. No peer address: the panel needs none."""
     if backend_of(device_id) != BACKEND_INCUBATOR:
         return None
+    rec = _on_echo.get(device_id)
+    if rec is not None:
+        st = rec.state
+        return {"port": rec.port, "listening": bool(st.get("listening")),
+                "appConnected": bool(st.get("appConnected")), "inCall": False, "onEcho": True}
     sat = _satellites.get(device_id)
     if sat is None:
         return {"port": None, "listening": False, "appConnected": False, "inCall": False}

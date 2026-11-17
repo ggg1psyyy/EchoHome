@@ -5143,6 +5143,7 @@ CONTROL_HANDLERS = {
     "volume_state":     _on_volume_state,
     "stats":            _on_stats,
     "sendspin_status":  _on_sendspin_status,
+    "incubator_state":  em_incubator.on_incubator_state,
     "sendspin_token":   _on_sendspin_token,
     "wifi_result":      _on_wifi_result,
     "playback_stats":   _on_playback_stats,

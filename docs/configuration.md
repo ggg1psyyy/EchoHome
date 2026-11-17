@@ -751,6 +751,12 @@ for the Echo disappear until you switch back. Without the app running, the
 Echo answers nothing — it never falls back to Home Assistant. Setup, limits
 and what was tested: [Using the Voice Incubator](voice-incubator.md).
 
+A third value, **Voice Incubator, on the Echo** (`incubator_echo`), is
+work in progress in this fork: the Echo's own firmware is the satellite, and
+the controller only announces it on its network. Available only on firmware
+that can do it (otherwise disabled, with the reason); for now presence only,
+so an Echo set to it answers nothing yet.
+
 ## 06 — Bluetooth
 
 **Bluetooth proxy** — turns the Dot into a Home Assistant Bluetooth proxy.

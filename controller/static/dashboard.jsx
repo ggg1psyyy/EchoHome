@@ -2283,7 +2283,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                       // for an Echo on Home Assistant).
                       const vi = device.voiceIncubator;
                       if (vi) {
-                        const vat = vi.port != null ? ` · port ${vi.port}` : '';
+                        const vat = (vi.port != null ? ` · port ${vi.port}` : '') + (vi.onEcho ? ' on the Echo' : '');
                         if (vi.appConnected) return `Voice Incubator connected${vat}`;
                         if (vi.listening)    return `Waiting for the Voice Incubator app${vat}`;
                         return 'Voice Incubator · not listening';
@@ -2531,6 +2531,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 shadowCapable={!device.connected || !!device.owwShadowCapable}
                 triggerCapable={!device.connected || !!device.owwTriggerCapable}
                 localCapable={!device.connected || !!device.owwLocalCapable}
+                incubatorOnEchoCapable={!device.connected || !!device.incubatorSatelliteCapable}
                 listen={device.connected ? device.listen : null}
                 wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
@@ -9848,6 +9849,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             emosFleet = true, wakeCueCapable = true,
                             volumeCueCapable = true,
                             remoteVolumeArcCapable = true,
+                            incubatorOnEchoCapable = true,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
                             wakeMicCapable = true,
@@ -10531,14 +10533,20 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         {subHeader('Voice assistant')}
         <div style={{ ...inputStyle }}>
           <Select label="Voice backend"
-            sub={(config.voiceBackend ?? 'ha') === 'incubator'
-              ? "experimental: OHF-Voice's Voice Incubator app answers this Echo, found by mDNS on the controller's network. Without the app connected the Echo has no voice assistant: it never falls back to Home Assistant's"
-              : "Home Assistant's own voice pipeline, through the Echo's ESPHome satellite"}
+            sub={(config.voiceBackend ?? 'ha') === 'incubator_echo'
+              ? (incubatorOnEchoCapable
+                  ? "experimental: the Echo's own firmware is the Voice Incubator satellite; the controller only announces it on its network. Presence only for now: the app sees the Echo, but it answers nothing yet, and never falls back to Home Assistant's"
+                  : "this Echo's firmware cannot be the satellite itself (it lacks incubator_satellite): the controller's satellite serves it, as with Voice Incubator")
+              : ((config.voiceBackend ?? 'ha') === 'incubator'
+                  ? "experimental: OHF-Voice's Voice Incubator app answers this Echo, found by mDNS on the controller's network. Without the app connected the Echo has no voice assistant: it never falls back to Home Assistant's"
+                  : "Home Assistant's own voice pipeline, through the Echo's ESPHome satellite")
+                + (incubatorOnEchoCapable ? '' : ". On the Echo is unavailable: this Echo's firmware cannot be the satellite itself (incubator_satellite)")}
             disabled={disabled}
-            value={(config.voiceBackend ?? 'ha') === 'incubator' ? 'incubator' : 'ha'}
+            value={['incubator', 'incubator_echo'].includes(config.voiceBackend ?? 'ha') ? config.voiceBackend : 'ha'}
             options={[
               { value: 'ha', label: 'Home Assistant' },
               { value: 'incubator', label: 'Voice Incubator (experimental)' },
+              { value: 'incubator_echo', label: 'Voice Incubator, on the Echo (experimental)', disabled: !incubatorOnEchoCapable },
             ]}
             onChange={v => set('voiceBackend', v)}/>
         </div>
