@@ -1,0 +1,135 @@
+[
+ {
+  "hello": {
+   "aec": false,
+   "aec_lead_samples": null,
+   "firmware": "v9.9.9",
+   "intercom": false,
+   "listen": true,
+   "mac": "02:ec:01:23:45:67",
+   "max_pool": true,
+   "model": "echo-dot-2",
+   "model_slots": 6,
+   "monitor": false,
+   "monitor_aec": false,
+   "name": "echomuse-0123456789ab",
+   "protocol": 2,
+   "stop_word": true,
+   "wake_format": "mixednet"
+  },
+  "json": {
+   "bits_per_sample": 16,
+   "channels": 1,
+   "feature_size": 40,
+   "firmware": "v9.9.9",
+   "listen": true,
+   "mac": "02:ec:01:23:45:67",
+   "max_pool": true,
+   "model": "echo-dot-2",
+   "model_slots": 6,
+   "name": "echomuse-0123456789ab",
+   "output_buffer_bytes": 131072,
+   "preroll_ms": 1500,
+   "protocol": 2,
+   "sample_rate": 16000,
+   "stop_word": true,
+   "wake_format": "mixednet"
+  },
+  "length": 319,
+  "type": "HELLO"
+ },
+ {
+  "hello": {
+   "aec": false,
+   "aec_lead_samples": null,
+   "firmware": null,
+   "intercom": false,
+   "listen": false,
+   "mac": "02:ec:00:00:00:00",
+   "max_pool": false,
+   "model": null,
+   "model_slots": null,
+   "monitor": false,
+   "monitor_aec": false,
+   "name": "echomuse-bare",
+   "protocol": 2,
+   "stop_word": false,
+   "wake_format": null
+  },
+  "json": {
+   "bits_per_sample": 16,
+   "channels": 1,
+   "mac": "02:ec:00:00:00:00",
+   "name": "echomuse-bare",
+   "preroll_ms": 0,
+   "protocol": 2,
+   "sample_rate": 16000
+  },
+  "length": 132,
+  "type": "HELLO"
+ },
+ {
+  "json": {
+   "cutoff": 217,
+   "max_probability": 255,
+   "preroll_bytes": 48000,
+   "probability": 235,
+   "wake_word": "okay_nabu"
+  },
+  "length": 100,
+  "type": "CALL_START"
+ },
+ {
+  "json": {
+   "preroll_bytes": 0,
+   "wake_word": "follow_up"
+  },
+  "length": 43,
+  "type": "CALL_START"
+ },
+ {
+  "length": 4096,
+  "sha256": "d010f6d76d0eb4dce5d5b5b34014a8a157ec4380a66c24d7d455a9bf652db14a",
+  "type": "AUDIO_IN"
+ },
+ {
+  "json": {
+   "reason": "cancelled"
+  },
+  "length": 22,
+  "type": "CALL_END"
+ },
+ {
+  "json": {
+   "aec_dropped_bytes": 0,
+   "free_bytes": 1,
+   "mic_dropped_bytes": 0,
+   "queued_bytes": 2,
+   "queued_ms": 3,
+   "speaker_busy": true
+  },
+  "length": 111,
+  "type": "STATUS"
+ },
+ {
+  "length": 0,
+  "type": "PLAYBACK_DRAINED"
+ },
+ {
+  "json": {
+   "error": "unexpected feature size",
+   "id": "okay_nabu",
+   "models": 0,
+   "ok": false
+  },
+  "length": 74,
+  "type": "MODEL_RESULT"
+ },
+ {
+  "json": {
+   "type": "stop_timer"
+  },
+  "length": 21,
+  "type": "DEVICE_EVENT"
+ }
+]

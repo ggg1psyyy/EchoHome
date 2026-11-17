@@ -238,3 +238,21 @@ difference anywhere in the net fails the vectors, not only one that reaches
 the logit. It is built with `-fwrapv`, matching Go's wrapping int32
 arithmetic on the synthetic cases that overflow. `pack.py` prints each
 blob's op mix and shift range.
+
+# incubator_interop — `internal/incubator` against the app's own protocol.py
+
+`gen.py` reads the frames the Go codec writes, parses them the way the Voice
+Incubator app does (its `voice_incubator/protocol.py`: `HEADER`, `Message`,
+`Hello.parse`), and writes what the app made of them; it also writes every
+app-to-satellite message encoded by the app's own `encode`/`encode_json`. The
+app checkout is the one `tools/mixednet_ref/build.sh` makes, and `gen.py`
+checks `protocol.py`'s sha256. Plain `python3`; the module needs nothing
+installed.
+
+```bash
+cd device && MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/incubator -update
+```
+
+It holds the one trap that matters: the app reads a HELLO without
+`protocol` as protocol 1, a Voice PE with a second capture and mixednet wake
+words. With the constant set to 1 the interop test fails on five fields.
