@@ -181,6 +181,7 @@ func (s *Server) hello() HelloInfo {
 		h.WakeModels = &none
 		h.FeatureSize = mixednet.StreamFeatureSize
 		h.MaxPool = true
+		h.Listen = true // a HANGUP with listen opens the answer's call
 	}
 	return h
 }

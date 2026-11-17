@@ -173,6 +173,7 @@ type session struct {
 	muted      bool // the Echo's mute: no microphone at all
 	replying   bool // a call's reply is sounding (until its PLAYBACK_DRAINED)
 	shown      Ring // what the ring was last given
+	askBack    bool // a HANGUP asked for an answer: its call follows at once
 
 	wake *wake // wake.go
 
@@ -450,13 +451,29 @@ func (s *session) handle(m Message, p []byte) error {
 				return err
 			}
 		}
+		// With listen the app asks for an answer (its question and the
+		// sound saying it is the speaker's turn have played out: it ends and
+		// awaits its stream before this HANGUP, server.py _hang_up): the
+		// call that hears it starts at once, with nothing from before it,
+		// unless muted (PROTOCOL.md "Calls" 4).
+		muted := s.dev.Muted()
 		s.mu.Lock()
-		if c := s.call; c != nil {
+		c := s.call
+		if c != nil {
 			c.hangup = h.Reason
 		}
+		answer := h.Listen && c != nil && !muted && !s.closed
+		s.askBack = answer
 		was := s.endLocked("")
+		started := answer && s.startLocked(CallStartInfo{WakeWord: WakeFollowUp}, nil, s.wake.heard.Load())
+		s.askBack = false
 		s.mu.Unlock()
 		s.after(was)
+		if started {
+			log.Printf("[incubator] call started (follow_up)")
+			s.dev.ListenStarted()
+			s.report()
+		}
 	case ModelStart:
 		s.modelStart(p)
 	case ModelData:
@@ -627,7 +644,8 @@ func (s *session) streamEnd() {
 // drainedNow sends PLAYBACK_DRAINED; a call past its command then has
 // hangupWait for the app to hang up.
 func (s *session) drainedNow() {
-	s.w.frame(PlaybackDrained, nil)
+	// Settled here before the app hears it, so what it does next (a HANGUP
+	// with listen, say) finds the answer over.
 	s.mu.Lock()
 	if c := s.call; c != nil && !c.listening {
 		s.armLocked(c, hangupWait)
@@ -635,6 +653,7 @@ func (s *session) drainedNow() {
 	s.replying = false
 	s.showLocked()
 	s.mu.Unlock()
+	s.w.frame(PlaybackDrained, nil)
 }
 
 func (s *session) resetStream() {

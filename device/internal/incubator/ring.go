@@ -72,6 +72,9 @@ func (s *session) showLocked() {
 // the call already gone. The flash clears itself; the ring is then dark,
 // which is what it records.
 func (s *session) outcomeLocked(c *call, reason string) {
+	if s.askBack {
+		return // the answer's call follows at once: listening, with no flash or gap
+	}
 	if r := s.ringLocked(); r != RingOff || s.closed {
 		s.showLocked()
 		return

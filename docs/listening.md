@@ -65,7 +65,12 @@ or the like, or the reply's first audio), as a session ends at end of speech.
 The Echo closes it itself after 30 s, at mute, or when the app goes away; the
 reply then plays with the microphone closed. `listen_state` stays `local`
 throughout, so the Echo reports the listening as `inCall` in
-`incubator_state`.
+`incubator_state`. When the app asks something back ("Which room?"), the
+Echo opens the microphone again for the answer, without the wake word,
+once the question has played (unless muted): the same call, bounded the
+same way, starting with nothing from before it. The app can ask back
+again after each answer, with no wake word between; how long such a chain
+runs is the app's, not the Echo's.
 
 That satellite can also run the Voice Incubator app's own wake words, which
 the app pushes to it (firmware announcing `incubator_wake`). While it holds

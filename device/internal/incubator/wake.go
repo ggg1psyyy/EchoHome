@@ -316,8 +316,8 @@ func (s *session) modelEnd() {
 		return
 	}
 	log.Printf("[incubator] model %q loaded (%d model(s))", st.id, s.wake.models.Load())
+	s.modelsChanged() // listening before it says so
 	s.modelResult("")
-	s.modelsChanged()
 }
 
 func (s *session) load(cfg mixednet.ModelConfig, blob []byte) error {
