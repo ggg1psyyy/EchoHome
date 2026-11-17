@@ -38,12 +38,10 @@ func (f *fakeEcho) Play(p []byte) error {
 	}
 	return nil
 }
-func (f *fakeEcho) End()           { f.mu.Lock(); f.ends++; f.mu.Unlock() }
-func (f *fakeEcho) Flush()         { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
-func (f *fakeEcho) Muted() bool    { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
-func (f *fakeEcho) ListenStarted() {}
-func (f *fakeEcho) ListenEnded()   {}
-func (f *fakeEcho) Show(r Ring)    { f.mu.Lock(); f.rings = append(f.rings, r); f.mu.Unlock() }
+func (f *fakeEcho) End()        { f.mu.Lock(); f.ends++; f.mu.Unlock() }
+func (f *fakeEcho) Flush()      { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
+func (f *fakeEcho) Muted() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
+func (f *fakeEcho) Show(r Ring) { f.mu.Lock(); f.rings = append(f.rings, r); f.mu.Unlock() }
 
 // shown is what the ring was given, in order.
 func (f *fakeEcho) shown() []Ring {

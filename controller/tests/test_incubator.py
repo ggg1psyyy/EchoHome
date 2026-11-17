@@ -702,9 +702,10 @@ def test_the_wake_models_the_app_pushed_the_echo_show_in_the_panel(on_echo):
 
 
 def test_the_button_reaches_the_echo_only_as_a_voice_press():
-    """Holds, tap events, a tap with no microphone and a muted tap are the
-    controller's as for any Echo; only what would have been a turn (or its
-    cancel) goes to the Echo, and before either is acted on here."""
+    """Holds, tap events and a tap with no microphone are the controller's as
+    for any Echo; what would have been a turn (or its cancel) goes to the
+    Echo, before either is acted on here, and so does a muted tap, for the
+    Echo to stop a ringing timer (it does nothing else muted)."""
     import _sources
     src = _sources.code_only(_sources.def_source("handle_button_event"))
     at = {k: src.index(k) for k in ("em_button.HOLD", "em_button.TAP_EVENT", "em_button.NO_MIC",
@@ -713,6 +714,27 @@ def test_the_button_reaches_the_echo_only_as_a_voice_press():
     assert at["em_button.HOLD"] < at["em_button.TAP_EVENT"] < at["em_button.NO_MIC"] \
         < at["em_button.BLOCKED"] < at["em_incubator.on_button_press"] \
         < at["em_button.CANCEL"] < at["can_serve_turn"]
+    blocked = src[at["em_button.BLOCKED"]:src.index("em_button.CANCEL")]
+    assert "em_incubator.on_button_press(device, muted=True)" in blocked
+
+
+def test_a_muted_tap_reaches_the_echo_only_to_stop_a_timer(on_echo):
+    """Passed on (the Echo stops a ringing timer and otherwise does nothing,
+    its mute being its own); with no app connected, silent: no error ring for
+    a muted tap."""
+    echo = _calls_echo(on_echo)
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True)
+        echo.sent.clear()
+        assert await inc.on_button_press(echo, muted=True) is True
+        assert echo.sent == [{"type": "incubator_press"}]
+        await _state(echo, listening=True, port=6055, appConnected=False)
+        echo.sent.clear()
+        echo.anims = []
+        assert await inc.on_button_press(echo, muted=True) is True
+        assert echo.sent == [] and echo.anims == []
+    asyncio.run(run())
 
 
 def test_an_echo_that_shows_its_satellite_on_the_ring_gets_the_whole_scene():

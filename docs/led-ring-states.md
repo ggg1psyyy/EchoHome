@@ -250,7 +250,11 @@ after `responding` is the answer. The app's error path says its apology
 without `responding`: the spinner stays until the error flash.
 
 A call outranks a timer and an announcement; a timer ringing at the end of a
-call is shown instead of the outcome flash. The app's `timer_progress` and
+call is shown instead of the outcome flash. Music already playing is ducked
+in every state but dark and the flashes (`Ring.Ducks`), as a voice turn ducks
+it from the wake to the end of the reply, and comes back 0.8 s after the ring
+goes dark, so a question's answer call, which follows it a moment later,
+does not let it swell in between. The app's `timer_progress` and
 `night` events have no EchoMuse animation and are not shown. Firmware without
 `incubator_ring`, or an older controller that sends no `incubatorRing`, shows
 only I1 (a state with no spec goes dark).

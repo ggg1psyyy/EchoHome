@@ -47,6 +47,7 @@ type echoParts struct {
 
 	mu     sync.Mutex
 	ducked bool
+	gen    int // the duck's last change: a pending unduck stands only if none came since
 }
 
 func (e *echoParts) MicOpen(deliver func([]byte)) { e.dc.OpenCallMic(deliver) }
@@ -75,24 +76,6 @@ func (e *echoParts) Flush() {
 }
 func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
 
-// ListenStarted ducks music while the microphone goes to the app.
-func (e *echoParts) ListenStarted() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if !e.ducked && e.spk.MusicAudible(0) {
-		e.ducked = true
-		e.spk.SetDuck(config.Get().DuckDb)
-	}
-}
-
-// ListenEnded: the command has ended. The duck lasts until the reply has
-// played.
-func (e *echoParts) ListenEnded() {
-	if !incubatorOwnsVoice.Load() {
-		e.unduck()
-	}
-}
-
 // Show puts the satellite's state on the ring with the scene the controller
 // pushed: its listening ring (listeningAnim) and the rest (incubatorRing).
 // A state with no spec goes dark, so an older controller leaves the ring as
@@ -119,6 +102,45 @@ func (e *echoParts) Show(r incubator.Ring) {
 		spec.TTLSec = 0
 	}
 	e.srv.StartAnim(spec)
+	e.duckFor(r)
+}
+
+// unduckGrace is how long music waits, once the satellite goes quiet, before
+// it comes back up: a question's call for its answer starts a moment after
+// the question has played (the app hears PLAYBACK_DRAINED, then asks), and
+// music swelling in that gap and ducking again is what it would sound like.
+const unduckGrace = 800 * time.Millisecond
+
+// duckFor ducks music for as long as the satellite is doing something a
+// person listens to or speaks into, as a voice turn does under Home
+// Assistant (from the wake to the end of the reply): listening, thinking,
+// the reply, an announcement, a ringing timer. Dark, or an outcome flash,
+// and it comes back up after unduckGrace. Only music already playing is
+// ducked when it starts (MusicAudible), as at a wake.
+func (e *echoParts) duckFor(r incubator.Ring) {
+	active := r.Ducks()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.gen++
+	if active {
+		if !e.ducked && e.spk.MusicAudible(0) {
+			e.ducked = true
+			e.spk.SetDuck(config.Get().DuckDb)
+		}
+		return
+	}
+	if !e.ducked {
+		return
+	}
+	gen := e.gen
+	time.AfterFunc(unduckGrace, func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if e.gen == gen && e.ducked {
+			e.ducked = false
+			e.spk.SetDuck(0)
+		}
+	})
 }
 
 // ringSpecKey names each state's spec in incubatorRing.
@@ -129,15 +151,6 @@ var ringSpecKey = map[incubator.Ring]string{
 	incubator.RingTimer:        "timer",
 	incubator.RingDone:         "done",
 	incubator.RingError:        "error",
-}
-
-func (e *echoParts) unduck() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.ducked {
-		e.ducked = false
-		e.spk.SetDuck(0)
-	}
 }
 
 var incubatorEcho *echoParts
@@ -172,10 +185,7 @@ func incubatorStreamEnded() bool {
 		return false
 	}
 	if incubatorMgr != nil {
-		incubatorMgr.Drained()
-	}
-	if incubatorEcho != nil && !incubatorMgr.InCall() {
-		incubatorEcho.unduck()
+		incubatorMgr.Drained() // the ring goes dark, and the duck with it
 	}
 	return true
 }

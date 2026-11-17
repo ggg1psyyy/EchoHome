@@ -4356,9 +4356,10 @@ async def handle_button_event(device: Device, event: dict):
             return
 
         if action == em_button.BLOCKED:
-            # Only the TURN is blocked. The hold and tap-event above have
-            # already been forwarded, muted or not.
-            log.info(f"[{device.device_id}] Dot button tap ignored — mic is muted")
+            # Only the TURN is blocked (hold, tap-event: forwarded above). An
+            # Echo that is its own satellite stops a ringing timer, muted.
+            if not await em_incubator.on_button_press(device, muted=True):
+                log.info(f"[{device.device_id}] Dot button tap ignored — mic is muted")
             return
 
         if await em_incubator.on_button_press(device):

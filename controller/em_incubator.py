@@ -1075,15 +1075,23 @@ async def on_incubator_state(device, msg: dict) -> None:
                           "state": {"voiceIncubator": status_view(device_id)}})
 
 
-async def on_button_press(device) -> bool:
+async def on_button_press(device, muted: bool = False) -> bool:
     """A dot-button tap em_button has decided is a voice press (not a hold,
-    an event, a muted tap or a tap with no microphone), for an Echo that is
-    its own satellite: passed to the Echo, True. Without an app connected
-    there is nothing to call, so the error ring says so rather than silence.
-    False for any other Echo: the controller's own turn handles it."""
+    an event or a tap with no microphone), for an Echo that is its own
+    satellite: passed to the Echo, True. Without an app connected there is
+    nothing to call, so the error ring says so rather than silence.
+    False for any other Echo: the controller's own turn handles it.
+
+    A muted tap (`muted`) is passed on too: the Echo decides what it means in
+    the reference firmware's order, which stops a ringing timer before mute
+    is looked at (a timer can be stopped muted, as the controller's own
+    alarms are) and otherwise does nothing (its mute is its own). Muted with
+    no app, it stays silent, as any muted tap."""
     rec = _on_echo.get(device.device_id)
     if rec is None or CALLS_CAPABILITY not in (getattr(device, "capabilities", None) or []):
         return False
+    if muted and not rec.state.get("appConnected"):
+        return True
     if not rec.state.get("appConnected"):
         log.info(f"[{device.device_id}] Dot button: the Voice Incubator app is not connected to this Echo")
         if device.led_anim_capable and (anim := device.led_scene.get("error_anim")):

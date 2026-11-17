@@ -27,12 +27,10 @@ type Device interface {
 	End()
 	Flush()
 	Muted() bool
-	// ListenStarted and ListenEnded bracket the microphone going to the
-	// app: the duck of music.
-	ListenStarted()
-	ListenEnded()
-	// Show puts the satellite's state on the ring (ring.go). Called under
-	// the session's lock, in order: it must not block or call back.
+	// Show puts the satellite's state on the ring (ring.go), and is what
+	// the device ducks music by (any state but dark and the outcome
+	// flashes). Called under the session's lock, in order: it must not
+	// block or call back.
 	Show(r Ring)
 }
 
@@ -248,7 +246,6 @@ func (s *session) press() {
 		s.mu.Unlock()
 		if started {
 			log.Printf("[incubator] call started (manual)")
-			s.dev.ListenStarted()
 			s.report()
 		}
 	}
@@ -280,11 +277,10 @@ func (s *session) cancel() {
 	}
 }
 
-// after is what follows a change, without the lock: the ring and a report
-// when the microphone has just closed.
+// after is what follows a change, without the lock: a report when the
+// microphone has just closed.
 func (s *session) after(wasListening bool) {
 	if wasListening {
-		s.dev.ListenEnded()
 		s.report()
 	}
 }
@@ -471,7 +467,6 @@ func (s *session) handle(m Message, p []byte) error {
 		s.after(was)
 		if started {
 			log.Printf("[incubator] call started (follow_up)")
-			s.dev.ListenStarted()
 			s.report()
 		}
 	case ModelStart:

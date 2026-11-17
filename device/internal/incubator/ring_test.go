@@ -1,6 +1,7 @@
 package incubator
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -237,5 +238,37 @@ func TestARepliesFramesAfterACancelBeforeItPlayedAreDiscarded(t *testing.T) {
 	a.nothing(150 * time.Millisecond)
 	if !st.last().InCall {
 		t.Fatal("the cancelled call's answer closed the new call's microphone")
+	}
+}
+
+func TestMusicIsDuckedFromListeningToTheEndOfTheAnswer(t *testing.T) {
+	want := map[Ring]bool{RingOff: false, RingListening: true, RingThinking: true,
+		RingSpeaking: true, RingTimer: true, RingAnnouncement: true, RingDone: false, RingError: false}
+	for r, d := range want {
+		if r.Ducks() != d {
+			t.Errorf("%v ducks %v, want %v", r, r.Ducks(), d)
+		}
+	}
+}
+
+// Muted, a tap still stops a ringing timer (the reference's order: the
+// timer before mute), and otherwise does nothing.
+func TestAMutedPressStopsARingingTimer(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	echo.mu.Lock()
+	echo.muted = true
+	echo.mu.Unlock()
+	event(a, "timer_ringing", `{"timers":1}`)
+	rings(t, echo, RingTimer)
+	s.Press()
+	var de DeviceEventInfo
+	json.Unmarshal(a.expect(DeviceEvent), &de)
+	if de.Type != "stop_timer" {
+		t.Fatalf("DEVICE_EVENT %+v", de)
+	}
+	s.Press() // nothing rings now: muted, nothing happens
+	a.nothing(200 * time.Millisecond)
+	if echo.count(&echo.opens) != 0 {
+		t.Fatal("a muted press opened the microphone")
 	}
 }

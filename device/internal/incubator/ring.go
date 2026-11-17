@@ -37,6 +37,14 @@ func (r Ring) String() string {
 	return "?"
 }
 
+// Ducks says whether music is ducked under this state: whenever the
+// satellite is doing something a person listens to or speaks into, as a
+// voice turn ducks it under Home Assistant from the wake to the end of the
+// reply. Dark and the outcome flashes are not.
+func (r Ring) Ducks() bool {
+	return r != RingOff && r != RingDone && r != RingError
+}
+
 // ringLocked is what the ring should show now. s.mu held.
 func (s *session) ringLocked() Ring {
 	c := s.call

@@ -225,7 +225,6 @@ func (s *session) wakeHeard(d mixednet.Detection, n uint64) {
 		}
 		log.Printf("[incubator] call started (wake word %q, average %d, max %d, cutoff %d, %d byte pre-roll)",
 			d.WakeWord, p, m, cut, len(pre))
-		s.dev.ListenStarted()
 		s.report()
 	}
 }
