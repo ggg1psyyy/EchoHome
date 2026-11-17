@@ -141,7 +141,7 @@ func (s *session) press() {
 	case s.call != nil:
 		s.endLocked("cancelled")
 		s.mu.Unlock()
-		s.dev.Flush()
+		s.cut()
 		s.dev.CallEnded()
 		s.report()
 	case muted:
@@ -163,7 +163,7 @@ func (s *session) cancel() {
 	ended := s.endLocked("cancelled")
 	s.mu.Unlock()
 	if ended {
-		s.dev.Flush()
+		s.cut()
 		s.dev.CallEnded()
 		s.report()
 	}
@@ -172,7 +172,7 @@ func (s *session) cancel() {
 // startLocked opens a manual call. No pre-roll: nothing from before the
 // press leaves the Echo. What plays is cut, as a press means "listen to me".
 func (s *session) startLocked() bool {
-	s.dev.Flush()
+	s.cut()
 	if err := s.w.json(CallStart, CallStartInfo{WakeWord: WakeManual}); err != nil {
 		return false
 	}
@@ -377,6 +377,15 @@ func (s *session) resetStream() {
 	s.up = Upsampler{}
 	s.pending = s.pending[:0]
 	s.periods = 0
+}
+
+// cut stops what plays (a cancel; a new call) and lets a PLAYBACK_DRAINED
+// already awaited go at once: what it waited for will not play now, and a
+// stream cut before it began never reports its end. A report that comes
+// anyway is cleared by the next stream's end.
+func (s *session) cut() {
+	s.dev.Flush()
+	s.playbackDrained()
 }
 
 // playbackDrained is the speaker's report that the stream played out.

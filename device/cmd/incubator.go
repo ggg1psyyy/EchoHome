@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/wilbowes/EchoMuse/internal/bindings/speaker"
 	"github.com/wilbowes/EchoMuse/internal/client"
@@ -58,12 +59,19 @@ func (e *echoParts) Play(period []byte) error {
 
 func (e *echoParts) End() { e.spk.EndStream() }
 
-// Flush is the satellite cutting its own reply (a cancel, a new call): the
-// plane is no longer its, as a stream cut before it began to play never
-// reports its end, and the next controller stream's must not come here.
+// Flush is the satellite cutting its own reply (a cancel, a new call). A
+// stream cut while playing still reports its end, and that report is the
+// satellite's: sent to the controller, it read as a turn's playback_stats
+// (seen on 00LQ, 2026-11-17). One cut before it began to play never
+// reports, so the plane is given up, or the next controller stream's report
+// would come here. Whether it was playing is the ALSA loop's to know; a
+// period sounding now, or within a period of now, is the sign of it.
 func (e *echoParts) Flush() {
+	playing := time.Now().Before(e.spk.VoiceSoundingUntil().Add(50 * time.Millisecond))
 	e.spk.Flush()
-	incubatorOwnsVoice.Store(false)
+	if !playing {
+		incubatorOwnsVoice.Store(false)
+	}
 }
 func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
 

@@ -329,3 +329,23 @@ func TestACancelledCallLeavesTheNextReplyAlone(t *testing.T) {
 	a.send(AudioOutEnd, nil)
 	waitFor(t, "the next call's reply to play", func() bool { return echo.periods() > 0 })
 }
+
+func TestACancelDoesNotKeepTheAppWaitingForADrain(t *testing.T) {
+	// On 00LQ a cancel during a reply that had fully arrived left the app
+	// waiting out the fallback for a report the cut stream never gave.
+	s, _, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	for i := 0; i < 8; i++ { // a second of reply, all sent
+		a.send(AudioOut, make([]byte, 4000))
+	}
+	a.send(AudioOutEnd, nil)
+	time.Sleep(50 * time.Millisecond)
+	start := time.Now()
+	s.Press() // cancel
+	a.expect(CallEnd)
+	a.expect(PlaybackDrained)
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("PLAYBACK_DRAINED %v after the cancel", d)
+	}
+}
