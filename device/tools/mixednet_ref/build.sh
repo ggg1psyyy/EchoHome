@@ -1,0 +1,66 @@
+#!/bin/sh
+# Builds the mixednet reference harness from the Voice Incubator firmware's
+# executor at a pinned commit, sha256-checked, into $1 (default
+# /tmp/mixednet_ref), and packs real wake word models with the app's own
+# packer (also pinned) into $1/blobs. Nothing from it is vendored into the
+# firmware; it only produces internal/mixednet/testdata:
+#
+#   PYTHON=<python with numpy, tflite> tools/mixednet_ref/build.sh /tmp/mixednet_ref
+#   MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/mixednet -run Vectors -update
+set -eu
+REPO=https://github.com/OHF-Voice/firmware-voice-incubator.git
+COMMIT=64ce6c2aa9f17b779293626a76d36fd9169e06d8
+out=${1:-/tmp/mixednet_ref}
+here=$(cd "$(dirname "$0")" && pwd)
+mkdir -p "$out"
+src="$out/firmware-voice-incubator"
+if [ ! -d "$src/.git" ]; then
+	git init -q "$src"
+	git -C "$src" remote add origin "$REPO"
+fi
+git -C "$src" fetch -q --depth 1 origin "$COMMIT"
+git -C "$src" checkout -q "$COMMIT"
+dir="$src/components/voice_incubator"
+(cd "$dir" && sha256sum -c - <<SUMS
+e69b5fb66b823a0a8470e6c4a5bba450fba0d0cf1717bd6206ae5387ceb9642b  mixednet.h
+2326d004f6a189d8b785769f6b3c4fb29f9d7123752db4387c318378a75a22c7  mixednet.cpp
+59523a2ed06fc6b462dd844da063013d14ecd18281b502f0c86d06c26c80cded  mixednet_blob.h
+eeed5a26e6fe264bc6f7f0a52e1b31a124fac942aab8312bf79a6000b916ce8a  mixednet_blob.cpp
+SUMS
+)
+# -fwrapv: signed overflow wraps, as Go's int32 arithmetic does, so a synthetic
+# model that overflows an accumulator has one answer to be exact with.
+g++ -std=c++17 -O2 -fwrapv -DMIXEDNET_DEBUG -I"$dir" -o "$out/harness" \
+	"$here/harness.cpp" "$dir/mixednet.cpp" "$dir/mixednet_blob.cpp"
+echo "built $out/harness from $COMMIT"
+
+# Real models, packed by the app exactly as it would push them: its own test
+# fixture ("okay nabu" as the app trains it, so with max pooling) and three of the
+# built-in models it downloads, all Apache-2.0 (the models repo's README).
+APP_REPO=https://github.com/OHF-Voice/voice-incubator.git
+APP_COMMIT=3a6d7e7aba0520aa43f84c23f2fdd450c5fdf93e
+MODELS=https://huggingface.co/rhasspy/voice-incubator-models/resolve/e359089e2dfe430415b24410a089fdcf36fd5bf9/micro-wake-word
+app="$out/voice-incubator"
+if [ ! -d "$app/.git" ]; then
+	git init -q "$app"
+	git -C "$app" remote add origin "$APP_REPO"
+fi
+git -C "$app" fetch -q --depth 1 origin "$APP_COMMIT"
+git -C "$app" checkout -q "$APP_COMMIT"
+mkdir -p "$out/models" "$out/blobs"
+cp "$app/tests/fixtures/pooled.tflite" "$out/models/pooled.tflite"
+for m in okay_nabu hey_jarvis stop; do
+	curl -fsSL -o "$out/models/$m.tflite" "$MODELS/$m.tflite"
+done
+(cd "$out" && sha256sum -c - <<SUMS
+bda4af967baa1d18898f3b3478f741675c62e363d44d3de8255cd478afdad9d4  voice-incubator/voice_incubator/mixednet.py
+4a74678297f5b56396b88a4d63e3b1d3492547d2736d8af4afcfb33c71da5647  voice-incubator/voice_incubator/_mixednet_compiler.py
+d67397da43b1de3b5beb5fa1d229258a341b9451608013fb6e453cb9e6e06dbe  models/pooled.tflite
+d89128c4d16a72de429119fb2254ce46649553c2a24f5dd840175c80d7b9d094  models/okay_nabu.tflite
+21a7976add39ee24ec96c63d96b7aaa18e24d1d9824b963e451da8feb4b78b77  models/hey_jarvis.tflite
+b5a18c4ad681a89950dfade31011e1631bdcb333e93c84519a1a63ff4f071146  models/stop.tflite
+SUMS
+)
+for m in pooled okay_nabu hey_jarvis stop; do
+	"${PYTHON:-python3}" -I "$here/pack.py" "$app" "$out/models/$m.tflite" "$out/blobs/$m.blob"
+done

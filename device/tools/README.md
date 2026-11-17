@@ -159,3 +159,29 @@ Flags exist for `-threads`, `-xnnpack` and `-spinning` so the measured
 optimum can be re-derived on the hardware rather than trusted: on an Echo Dot
 Gen 2, one thread with XNNPACK and spinning **off** cost 36.2% of one core,
 where ORT's defaults cost 243%.
+
+# mixednet_ref — the reference for `internal/mixednet`'s vectors
+
+Builds a small harness around the Voice Incubator firmware's own C++
+mixednet executor (`OHF-Voice/firmware-voice-incubator`, fetched at a pinned
+commit and sha256-checked, never vendored), so the expected values in
+`internal/mixednet/testdata` come from upstream's code and never from the Go
+port. It also packs real wake word models with the app's own packer
+(`OHF-Voice/voice-incubator` at a pinned commit, through `pack.py`): the
+app's pooled test fixture and three built-in models from its models
+repository, each sha256-checked. Host only; needs `g++`, `git`, `curl`, and a
+Python with `numpy` and `tflite` (the app's pins: `numpy>=2,<3`,
+`tflite>=2.18,<3`).
+
+```bash
+PYTHON=<python with numpy, tflite> device/tools/mixednet_ref/build.sh /tmp/mixednet_ref
+cd device && MIXEDNET_REF=/tmp/mixednet_ref \
+    go test ./internal/mixednet -run Vectors -update
+```
+
+The harness prints, per invoke, the probability, the logit and an FNV-1a
+hash of the whole working arena (built with `MIXEDNET_DEBUG`), so a one-step
+difference anywhere in the net fails the vectors, not only one that reaches
+the logit. It is built with `-fwrapv`, matching Go's wrapping int32
+arithmetic on the synthetic cases that overflow. `pack.py` prints each
+blob's op mix and shift range.
