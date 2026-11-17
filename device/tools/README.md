@@ -222,7 +222,14 @@ And `stream_harness`, the reference for `internal/mixednet`'s `Stream`: the
 detector's `ModelStream`, declaration and methods cut verbatim from
 `wake_detector.h` and `.cpp` (both sha256-checked), over the firmware's
 executor, driven per frame as `process_features_` drives one wake word
-model. The C builds come first in `build.sh`; only the model packing needs
+model. And `detector_harness`, the reference for `internal/mixednet`'s
+`Detector`: the detector's model loading (`begin_model` to `clear_models`),
+`set_stop_armed` and `process_features_`, with the declarations they use,
+all cut verbatim from `wake_detector.h` and `.cpp`. Not the firmware's: the
+stand-ins for its ESP32 allocator, mutex and logging, the `WakeDetector`
+class shell (member list and initial values), `queue_detection_` (which
+prints) and `main`'s per-frame printing. The C builds come first in `build.sh`; only
+the model packing needs
 `PYTHON`.
 
 The harness prints, per invoke, the probability, the logit and an FNV-1a
