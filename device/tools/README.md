@@ -176,7 +176,7 @@ Python with `numpy` and `tflite` (the app's pins: `numpy>=2,<3`,
 ```bash
 PYTHON=<python with numpy, tflite> device/tools/mixednet_ref/build.sh /tmp/mixednet_ref
 cd device && MIXEDNET_REF=/tmp/mixednet_ref \
-    go test ./internal/mixednet -run Vectors -update
+    go test ./internal/mixednet -update
 ```
 
 It also builds `features_harness`, the reference for `internal/microfeatures`:
@@ -184,7 +184,11 @@ that package's vendored front end C, with the Voice Incubator detector's own
 configuration and scaling lines cut verbatim from its `wake_detector.cpp` (the
 file sha256-checked). Regenerate those vectors with
 `MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/microfeatures -update`.
-The C builds come first in `build.sh`; only the model packing needs
+And `stream_harness`, the reference for `internal/mixednet`'s `Stream`: the
+detector's `ModelStream`, declaration and methods cut verbatim from
+`wake_detector.h` and `.cpp` (both sha256-checked), over the firmware's
+executor, driven per frame as `process_features_` drives one wake word
+model. The C builds come first in `build.sh`; only the model packing needs
 `PYTHON`.
 
 The harness prints, per invoke, the probability, the logit and an FNV-1a

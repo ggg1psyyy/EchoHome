@@ -6,7 +6,7 @@
 # firmware; it only produces internal/mixednet/testdata:
 #
 #   PYTHON=<python with numpy, tflite> tools/mixednet_ref/build.sh /tmp/mixednet_ref
-#   MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/mixednet -run Vectors -update
+#   MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/mixednet -update
 set -eu
 REPO=https://github.com/OHF-Voice/firmware-voice-incubator.git
 COMMIT=64ce6c2aa9f17b779293626a76d36fd9169e06d8
@@ -56,6 +56,17 @@ done
 g++ -std=c++17 -O2 -I"$msf/include" -I"$msf/src" -I"$gen" -o "$out/features_harness" \
 	"$here/features_harness.cpp" $objs -lm
 echo "built $out/features_harness"
+
+# The stream harness: the firmware's ModelStream, declaration and methods cut
+# verbatim from wake_detector.h and wake_detector.cpp (both pinned here).
+(cd "$dir" && echo "45a7da96fa71491b71c39d70e9dca3197945e6a120de36db4d6c1cc77c8e4787  wake_detector.h" | sha256sum -c -)
+awk '/^struct ModelStream \{/,/^\};/' "$dir/wake_detector.h" > "$gen/stream_decl.inc"
+awk '/^bool ModelStream::setup/{p=1} /^bool WakeDetector::setup/{p=0} p' "$dir/wake_detector.cpp" > "$gen/stream_impl.inc"
+[ "$(wc -l < "$gen/stream_decl.inc")" -eq 19 ] && [ "$(wc -l < "$gen/stream_impl.inc")" -eq 54 ] ||
+	{ echo "ModelStream moved: re-check gen/stream_*.inc" >&2; exit 1; }
+g++ -std=c++17 -O2 -fwrapv -I"$dir" -I"$gen" -o "$out/stream_harness" \
+	"$here/stream_harness.cpp" "$dir/mixednet.cpp" "$dir/mixednet_blob.cpp"
+echo "built $out/stream_harness"
 
 # Real models, packed by the app exactly as it would push them: its own test
 # fixture ("okay nabu" as the app trains it, so with max pooling) and three of the

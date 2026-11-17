@@ -18,7 +18,7 @@ import (
 // it at a pinned commit, and -update runs it.
 //
 //	PYTHON=<python with numpy, tflite> tools/mixednet_ref/build.sh /tmp/mixednet_ref
-//	MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/mixednet -run Vectors -update
+//	MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/mixednet -update
 var update = flag.Bool("update", false, "regenerate testdata from the reference build (MIXEDNET_REF)")
 
 // realModels are blobs packed by the app's own packer (build.sh): its test
