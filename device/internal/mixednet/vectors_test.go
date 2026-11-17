@@ -225,3 +225,19 @@ func regenerateReal(t *testing.T) {
 		}
 	}
 }
+
+func TestInvokeAllocatesNothing(t *testing.T) {
+	blob, err := os.ReadFile(filepath.Join("testdata", "okay_nabu.blob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Parse(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := NewExecutor(m)
+	feats := make([]int8, m.InputFrames()*m.FeatureSize())
+	if n := testing.AllocsPerRun(50, func() { e.Invoke(feats) }); n != 0 {
+		t.Errorf("Invoke allocates %v times per call", n)
+	}
+}

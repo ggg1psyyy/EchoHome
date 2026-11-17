@@ -179,6 +179,14 @@ cd device && MIXEDNET_REF=/tmp/mixednet_ref \
     go test ./internal/mixednet -run Vectors -update
 ```
 
+It also builds `features_harness`, the reference for `internal/microfeatures`:
+that package's vendored front end C, with the Voice Incubator detector's own
+configuration and scaling lines cut verbatim from its `wake_detector.cpp` (the
+file sha256-checked). Regenerate those vectors with
+`MIXEDNET_REF=/tmp/mixednet_ref go test ./internal/microfeatures -update`.
+The C builds come first in `build.sh`; only the model packing needs
+`PYTHON`.
+
 The harness prints, per invoke, the probability, the logit and an FNV-1a
 hash of the whole working arena (built with `MIXEDNET_DEBUG`), so a one-step
 difference anywhere in the net fails the vectors, not only one that reaches

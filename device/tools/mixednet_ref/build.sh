@@ -34,6 +34,29 @@ g++ -std=c++17 -O2 -fwrapv -DMIXEDNET_DEBUG -I"$dir" -o "$out/harness" \
 	"$here/harness.cpp" "$dir/mixednet.cpp" "$dir/mixednet_blob.cpp"
 echo "built $out/harness from $COMMIT"
 
+# The front end harness: internal/microfeatures' vendored C (byte-identical to
+# the component release the Voice Incubator firmware builds against), and the
+# detector's own configuration and scaling lines, cut verbatim from its
+# wake_detector.cpp, whose whole text is pinned here.
+(cd "$dir" && echo "5316b6bf8a0e887084f06cfd35baf11cd0a5134919d6e137cd88a4aa98ab05c1  wake_detector.cpp" | sha256sum -c -)
+gen="$out/gen"
+mkdir -p "$gen"
+grep -E '^[[:space:]]*this->frontend_config_\.' "$dir/wake_detector.cpp" > "$gen/config.inc"
+awk '/constexpr int32_t value_scale = 256;/,/features\[i\] = static_cast<int8_t>/' "$dir/wake_detector.cpp" > "$gen/scale.inc"
+[ "$(wc -l < "$gen/config.inc")" -eq 15 ] && [ "$(wc -l < "$gen/scale.inc")" -eq 5 ] ||
+	{ echo "the detector's lines moved: re-check gen/*.inc" >&2; exit 1; }
+msf="$here/../../internal/microfeatures/libmsf"
+objs=""
+for c in "$msf"/src/*.c; do
+	o="$gen/$(basename "${c%.c}").o"
+	gcc -std=c11 -O2 -w -I"$msf/include" -I"$msf/src" -c "$c" -o "$o"
+	objs="$objs $o"
+done
+# shellcheck disable=SC2086
+g++ -std=c++17 -O2 -I"$msf/include" -I"$msf/src" -I"$gen" -o "$out/features_harness" \
+	"$here/features_harness.cpp" $objs -lm
+echo "built $out/features_harness"
+
 # Real models, packed by the app exactly as it would push them: its own test
 # fixture ("okay nabu" as the app trains it, so with max pooling) and three of the
 # built-in models it downloads, all Apache-2.0 (the models repo's README).
