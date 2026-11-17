@@ -223,6 +223,38 @@ Mute is the reference implementation of principle 5, and its behaviour is
 | C6 | Legacy `leds` frame | any unsuppressed | Atomically replaces any running animation (generation counter) | [today] |
 | C7 | No replacement within `ttlSec` | animation running | Dead-man clears the ring — protects against a controller that died mid-turn | [today] |
 
+### 4.4a The Echo's own Voice Incubator satellite (`incubator_ring`)
+
+Under "Voice Incubator, on the Echo" the controller runs no turns, so the
+Echo paints the app's state itself (`device/internal/incubator/ring.go`),
+with the scene the controller pushes: `listeningAnim` and `incubatorRing`
+(`em_scenes.ring_push`). One state at a time, painted only on a change and in
+order, through the same `StartAnim`, so mute, the volume arc and identify
+suppress it as they do any `led_anim`.
+
+| # | App state | Ring | Clears |
+|---|---|---|---|
+| I1 | A call listens (press or wake word) | listening ring (C1) | when the command ends |
+| I2 | The command ended (the app's first audio, its "heard" sound, or a command-ended event) | spinner (C2) | at the answer's first audio after `responding` |
+| I3 | The answer sounds | meter (C3), no TTL | at the Echo's playback report, even after the hang-up |
+| I4 | `HANGUP` `done` (or another reason not below) with no answer said | done flash, 1s | itself |
+| I5 | `HANGUP` `error` or `timeout`, a `result` with `ok` false, or the Echo's `CALL_END timeout` | error flash, 1s | itself |
+| I6 | Cancelled (button, mute), the app gone, or `HANGUP` `wake_rejected`, `answered_elsewhere`, `timer_stopped`, `nothing_to_stop`, `no_answer`, `nothing_asked` | off | — |
+| I7 | `timer_ringing`, no call | amber pulse (`em_timers.TIMER_ANIM`), no TTL | `timer_stopped`, a press, the app gone |
+| I8 | `announcement` `active`, no call | meter (C3) | `active` false |
+
+The app's sounds and its answer share one stream (voice_incubator
+`server.py` `Cues`): the "heard" sound plays the moment the command ends,
+before `processing`, and the answer follows after `responding`, so only audio
+after `responding` is the answer. The app's error path says its apology
+without `responding`: the spinner stays until the error flash.
+
+A call outranks a timer and an announcement; a timer ringing at the end of a
+call is shown instead of the outcome flash. The app's `timer_progress` and
+`night` events have no EchoMuse animation and are not shown. Firmware without
+`incubator_ring`, or an older controller that sends no `incubatorRing`, shows
+only I1 (a state with no spec goes dark).
+
 ### 4.5 Audio / link lifecycle
 
 | # | Event | State | Ring outcome | Status |

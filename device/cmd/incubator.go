@@ -75,15 +75,8 @@ func (e *echoParts) Flush() {
 }
 func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
 
-// ListenStarted lights the listening ring the controller pushed for this
-// Echo's own wake (none pushed: the ring is left alone) and ducks music.
+// ListenStarted ducks music while the microphone goes to the app.
 func (e *echoParts) ListenStarted() {
-	if raw := config.Get().Snapshot().ListeningAnim; len(raw) > 0 {
-		var spec server.AnimSpec
-		if err := json.Unmarshal(raw, &spec); err == nil && spec.Pattern != "" {
-			e.srv.StartAnim(spec)
-		}
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if !e.ducked && e.spk.MusicAudible(0) {
@@ -92,13 +85,50 @@ func (e *echoParts) ListenStarted() {
 	}
 }
 
-// ListenEnded clears the ring once the command has ended; the duck lasts
-// until the reply has played.
+// ListenEnded: the command has ended. The duck lasts until the reply has
+// played.
 func (e *echoParts) ListenEnded() {
-	e.srv.StartAnim(server.AnimSpec{Pattern: "off"})
 	if !incubatorOwnsVoice.Load() {
 		e.unduck()
 	}
+}
+
+// Show puts the satellite's state on the ring with the scene the controller
+// pushed: its listening ring (listeningAnim) and the rest (incubatorRing).
+// A state with no spec goes dark, so an older controller leaves the ring as
+// it was before incubator_ring (lit while listening, dark otherwise). The
+// meter and the timer's pulse are held until the satellite clears them:
+// their TTLs are a dead man for a controller that sends them from afar, and
+// here the satellite in this process clears every path itself (a reply
+// longer than any TTL would otherwise go dark while it plays).
+func (e *echoParts) Show(r incubator.Ring) {
+	snap := config.Get().Snapshot()
+	var raw json.RawMessage
+	if r == incubator.RingListening {
+		raw = snap.ListeningAnim
+	} else if r != incubator.RingOff {
+		var specs map[string]json.RawMessage
+		json.Unmarshal(snap.IncubatorRing, &specs)
+		raw = specs[ringSpecKey[r]]
+	}
+	var spec server.AnimSpec
+	if len(raw) == 0 || json.Unmarshal(raw, &spec) != nil || spec.Pattern == "" {
+		spec = server.AnimSpec{Pattern: "off"}
+	}
+	if r == incubator.RingSpeaking || r == incubator.RingAnnouncement || r == incubator.RingTimer {
+		spec.TTLSec = 0
+	}
+	e.srv.StartAnim(spec)
+}
+
+// ringSpecKey names each state's spec in incubatorRing.
+var ringSpecKey = map[incubator.Ring]string{
+	incubator.RingThinking:     "spin",
+	incubator.RingSpeaking:     "meter",
+	incubator.RingAnnouncement: "meter",
+	incubator.RingTimer:        "timer",
+	incubator.RingDone:         "done",
+	incubator.RingError:        "error",
 }
 
 func (e *echoParts) unduck() {

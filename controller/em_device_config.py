@@ -130,9 +130,8 @@ async def apply_live_config(device_id: str, live, effective: dict) -> None:
     # lit locally in the OLD scene's colours until the next reconnect.
     if live.led_anim_capable and live.led_scene.get("listening_anim"):
         try:
-            await live.send_control(
-                {"type": "config",
-                 "listeningAnim": live.led_scene["listening_anim"]})
+            await live.send_control(em_scenes.ring_push(
+                live.led_scene, getattr(live, "capabilities", None)))
         except Exception:
             pass  # device offline — next connect re-sends it
 

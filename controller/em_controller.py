@@ -5440,9 +5440,8 @@ async def handle_control(ws: WebSocketServerProtocol, secure: bool = False):
         # controller's frame still lands within an RTT and takes over — the
         # device just stops being two hops behind its own event.
         if device.led_anim_capable and device.led_scene.get("listening_anim"):
-            await device.send_control(
-                {"type": "config",
-                 "listeningAnim": device.led_scene["listening_anim"]})
+            await device.send_control(em_scenes.ring_push(
+                device.led_scene, device.capabilities))
         # Initialise volume from stored config — device will report its real
         # value via volume_state on connect, but this seeds a sane default
         # in the window before that first message arrives.

@@ -33,8 +33,9 @@ UNLISTED = {
 # ConfigMessage fields that are not config values. sendspinName is the
 # device's label, pushed beside the config rather than stored in it.
 # wakeWordEnabled is HA's picker state (em_wakeword), stored and sent apart
-# from device config.
-NOT_CONFIG = {"type", "hasBeamforming", "listeningAnim",
+# from device config. incubatorRing is the scene's, as listeningAnim is
+# (em_scenes.ring_push).
+NOT_CONFIG = {"type", "hasBeamforming", "listeningAnim", "incubatorRing",
               "consolePassword", "consoleTimeoutMin", "sendspinName",
               "wakeWordEnabled"}
 

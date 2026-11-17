@@ -184,6 +184,14 @@ type Device struct {
 	// keeps the old behaviour.
 	ListeningAnim json.RawMessage
 
+	// IncubatorRing carries the rest of the scene for the Voice Incubator
+	// satellite the Echo runs itself (internal/incubator), raw JSON: an
+	// object of led_anim specs, "spin" (thinking), "meter" (a reply or an
+	// announcement sounding), "done", "error" and "timer" (a timer
+	// ringing), each optional. Nil until the controller sends it (only to
+	// firmware announcing incubator_ring); a state with no spec goes dark.
+	IncubatorRing json.RawMessage
+
 	// Output is the speaker output chain's configuration (eqBands,
 	// eqLoudness, bassGuard*, limiter*). Held here whether or not the
 	// controller has handed the chain to this device, so the values are
@@ -369,6 +377,9 @@ func (d *Device) Apply(msg ConfigMessage) {
 	if msg.ListeningAnim != nil {
 		d.ListeningAnim = msg.ListeningAnim
 	}
+	if msg.IncubatorRing != nil {
+		d.IncubatorRing = msg.IncubatorRing
+	}
 	applyOutput(&d.Output, msg)
 }
 
@@ -541,6 +552,7 @@ func (d *Device) Snapshot() ConfigMessage {
 		SendspinName:        d.SendspinName,
 		RemoteVolumeArc:     &remoteVolumeArc,
 		ListeningAnim:       d.ListeningAnim,
+		IncubatorRing:       d.IncubatorRing,
 	}
 }
 
@@ -631,6 +643,9 @@ type ConfigMessage struct {
 	// Carried as raw JSON so this package does not depend on the
 	// animation renderer's types.
 	ListeningAnim json.RawMessage `json:"listeningAnim,omitempty"`
+
+	// IncubatorRing: the Incubator satellite's other ring specs (Device's).
+	IncubatorRing json.RawMessage `json:"incubatorRing,omitempty"`
 }
 
 // clampMicGainDb bounds the fixed mic gain to a sane range: 0dB (unity —

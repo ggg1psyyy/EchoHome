@@ -28,9 +28,12 @@ type Device interface {
 	Flush()
 	Muted() bool
 	// ListenStarted and ListenEnded bracket the microphone going to the
-	// app: the ring and the duck.
+	// app: the duck of music.
 	ListenStarted()
 	ListenEnded()
+	// Show puts the satellite's state on the ring (ring.go). Called under
+	// the session's lock, in order: it must not block or call back.
+	Show(r Ring)
 }
 
 const (
@@ -69,6 +72,14 @@ var (
 var commandEnded = map[string]bool{
 	"processing": true, "recognized": true, "not_recognized": true,
 	"responding": true, "result": true,
+}
+
+// callEvents are the EVENTs about a call itself (the controller's
+// satellite's CALL_EVENTS): the first marks where its own traffic begins.
+var callEvents = map[string]bool{
+	"processing": true, "recognized": true, "not_recognized": true,
+	"responding": true, "result": true,
+	"listening": true, "wake_rejected": true, "wake_overturned": true,
 }
 
 // writer sends whole frames from several goroutines: one lock, one write a
@@ -110,6 +121,20 @@ type call struct {
 	listening bool
 	preroll   []byte // sent first: the audio before a detection
 	from      uint64 // the last chunk before it (wake.heard): later ones are its
+	// stale: the call cut audio the app was playing outside it (a ring, an
+	// announcement), whose frames still in flight are not its reply. Until
+	// the app's first message about the call (callEvents, HANGUP) they are
+	// dropped, as the controller's satellite drops them (Call.stale).
+	stale bool
+	// what the app said of it, for the ring. The app's sounds and its answer
+	// share one stream (voice_incubator server.py Cues): the "heard" sound
+	// plays the moment the command ends, the answer after `responding`. So
+	// the first audio closes the microphone, and only audio after
+	// `responding` is the answer.
+	responding bool   // `responding`: the answer is being said
+	spoke      bool   // the answer has sounded
+	failed     bool   // a `result` with ok false
+	hangup     string // the HANGUP's reason
 }
 
 // push hands a chunk to the call's sender, or drops and counts it.
@@ -138,13 +163,16 @@ type session struct {
 	dev    Device
 	report func() // the listening state changed; called without the lock
 
-	mu         sync.Mutex // guards call, timer, timerRings, closed, micOn
+	mu         sync.Mutex // guards call, timer, timerRings, announcing, closed, micOn
 	call       *call      // nil when not in a call
 	timer      *time.Timer
 	timerRings bool
+	announcing bool
 	closed     bool
 	micOn      bool
 	muted      bool // the Echo's mute: no microphone at all
+	replying   bool // a call's reply is sounding (until its PLAYBACK_DRAINED)
+	shown      Ring // what the ring was last given
 
 	wake *wake // wake.go
 
@@ -204,6 +232,7 @@ func (s *session) press() {
 		s.mu.Unlock()
 	case s.timerRings:
 		s.timerRings = false
+		s.showLocked()
 		s.mu.Unlock()
 		s.w.json(DeviceEvent, DeviceEventInfo{Type: "stop_timer"})
 	case s.call != nil:
@@ -265,17 +294,20 @@ func (s *session) after(wasListening bool) {
 // stream the app left open is ended (flushed first, so a reply blocked on a
 // full voice plane lets go of it).
 func (s *session) startLocked(info CallStartInfo, preroll []byte, from uint64) bool {
+	stale := s.timerRings || s.announcing || s.streamOpen()
 	s.dev.Flush()
 	s.endStreamHere()
 	s.playbackDrained()
 	if err := s.w.json(CallStart, info); err != nil {
 		return false
 	}
-	c := &call{mic: make(chan []byte, micQueue), done: make(chan struct{}), listening: true, preroll: preroll, from: from}
+	c := &call{mic: make(chan []byte, micQueue), done: make(chan struct{}), listening: true, preroll: preroll, from: from, stale: stale}
 	s.call = c
 	s.armLocked(c, listenLimit)
 	go s.sendMic(c)
 	s.syncMicLocked()
+	s.replying = false // endStreamHere ended any reply still open
+	s.showLocked()
 	return true
 }
 
@@ -336,8 +368,10 @@ func (s *session) endLocked(reason string) bool {
 		if reason == "cancelled" {
 			s.discard.Store(true)
 		}
+		s.replying = false // cut (a cancel), or long over (a timeout)
 		s.w.json(CallEnd, CallEndInfo{Reason: reason})
 	}
+	s.outcomeLocked(c, reason)
 	log.Printf("[incubator] call ended (%s)", shown)
 	return was
 }
@@ -378,6 +412,8 @@ func (s *session) close() {
 	s.closed = true
 	was := s.endLocked("")
 	s.syncMicLocked()
+	s.replying, s.timerRings, s.announcing = false, false, false
+	s.showLocked()
 	s.mu.Unlock()
 	s.stopWake()
 	s.endStreamHere()
@@ -388,9 +424,24 @@ func (s *session) close() {
 func (s *session) handle(m Message, p []byte) error {
 	switch m {
 	case AudioOut:
+		if s.discard.Load() {
+			return nil // a cancelled call's, first: never a new call's reply
+		}
+		if s.staleCall() {
+			return nil // the ring or announcement the call cut
+		}
 		s.commandOver("reply")
 		return s.audio(p)
 	case AudioOutEnd:
+		if s.discard.Load() {
+			s.streamEnd() // the cancelled stream's end
+			return nil
+		}
+		if s.staleCall() {
+			// Its stream was ended here when the call cut it.
+			log.Printf("[incubator] AUDIO_OUT_END of the playback a call cut — dropped")
+			return nil
+		}
 		s.streamEnd()
 	case Hangup:
 		var h HangupInfo
@@ -400,6 +451,9 @@ func (s *session) handle(m Message, p []byte) error {
 			}
 		}
 		s.mu.Lock()
+		if c := s.call; c != nil {
+			c.hangup = h.Reason
+		}
 		was := s.endLocked("")
 		s.mu.Unlock()
 		s.after(was)
@@ -420,7 +474,23 @@ func (s *session) handle(m Message, p []byte) error {
 				s.timerRings = true
 			case "timer_stopped":
 				s.timerRings = false
+			case "announcement":
+				var d struct {
+					Active bool `json:"active"`
+				}
+				json.Unmarshal(e.Data, &d)
+				s.announcing = d.Active
 			}
+			if c := s.call; c != nil && callEvents[e.Type] {
+				c.stale = false
+				switch e.Type {
+				case "result":
+					c.failed = resultFailed(e.Data)
+				case "responding":
+					c.responding = true
+				}
+			}
+			s.showLocked()
 			s.mu.Unlock()
 			if commandEnded[e.Type] {
 				s.commandOver(e.Type)
@@ -434,9 +504,15 @@ func (s *session) handle(m Message, p []byte) error {
 func (s *session) commandOver(why string) {
 	s.mu.Lock()
 	was := s.stopListeningLocked(why)
-	if c := s.call; c != nil && why == "reply" && s.timer != nil {
-		s.timer.Stop() // the reply is playing: no limit cuts it
+	if c := s.call; c != nil && why == "reply" {
+		if s.timer != nil {
+			s.timer.Stop() // the reply is playing: no limit cuts it
+		}
+		if c.responding {
+			c.spoke, s.replying = true, true
+		}
 	}
+	s.showLocked() // the ring after it: endLocked shows the outcome instead
 	s.mu.Unlock()
 	s.after(was)
 }
@@ -462,6 +538,22 @@ func (s *session) audio(p []byte) error {
 		s.pending = append(s.pending[:0], s.pending[PeriodBytes:]...)
 	}
 	return nil
+}
+
+// staleCall says whether the call in progress still waits for its own
+// traffic, the audio arriving being the playback it cut.
+func (s *session) staleCall() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.call != nil && s.call.stale
+}
+
+// streamOpen says whether a stream is playing here: periods sent and no
+// AUDIO_OUT_END yet.
+func (s *session) streamOpen() bool {
+	s.playMu.Lock()
+	defer s.playMu.Unlock()
+	return s.periods > 0 || len(s.pending) > 0
 }
 
 // endStreamHere ends, for the speaker, a stream the app left open: it
@@ -540,6 +632,8 @@ func (s *session) drainedNow() {
 	if c := s.call; c != nil && !c.listening {
 		s.armLocked(c, hangupWait)
 	}
+	s.replying = false
+	s.showLocked()
 	s.mu.Unlock()
 }
 

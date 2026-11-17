@@ -21,7 +21,7 @@ def test_the_controller_pushes_the_listening_anim_at_registration():
     src = (CONTROLLER / "em_controller.py").read_text()
     block = src[src.index("device.led_scene     = em_scenes.resolve(config)"):]
     block = block[:2000]
-    assert '"listeningAnim"' in block, \
+    assert "em_scenes.ring_push(" in block, \
         "registration must hand the device its listening animation"
     assert "led_anim_capable" in block, \
         "firmware without local animation must keep the old behaviour"
@@ -37,7 +37,7 @@ def test_the_controller_updates_it_on_a_live_scene_change():
     src = _sources.def_source("apply_live_config")
     body = src[src.index("live.led_scene = em_scenes.resolve(effective)"):]
     body = body[:1200]
-    assert '"listeningAnim"' in body, \
+    assert "em_scenes.ring_push(" in body, \
         "a live scene change must refresh the device's cached animation"
 
 
@@ -116,3 +116,9 @@ def test_the_private_path_darkens_a_loser_and_cues_a_device_with_no_ha():
     cede = code[code.index("else:"):]
     assert "_leds_turn_end(device)" in standdown
     assert "leds_off(device)" in cede and "_leds_turn_end" not in cede
+
+
+def test_the_one_builder_carries_the_listening_anim():
+    import em_scenes
+    scene = em_scenes.resolve({})
+    assert em_scenes.ring_push(scene, [])["listeningAnim"] == scene["listening_anim"]

@@ -713,3 +713,31 @@ def test_the_button_reaches_the_echo_only_as_a_voice_press():
     assert at["em_button.HOLD"] < at["em_button.TAP_EVENT"] < at["em_button.NO_MIC"] \
         < at["em_button.BLOCKED"] < at["em_incubator.on_button_press"] \
         < at["em_button.CANCEL"] < at["can_serve_turn"]
+
+
+def test_an_echo_that_shows_its_satellite_on_the_ring_gets_the_whole_scene():
+    import em_scenes
+    import em_timers
+    scene = em_scenes.resolve({"ledScene": "custom", "ledThinkColor": "#112233"})
+    plain = em_scenes.ring_push(scene, ["led_anim", "incubator_satellite"])
+    assert plain == {"type": "config", "listeningAnim": scene["listening_anim"]}
+    msg = em_scenes.ring_push(scene, ["led_anim", em_scenes.RING_CAPABILITY])
+    ring = msg["incubatorRing"]
+    assert msg["listeningAnim"] == scene["listening_anim"]
+    assert ring == {"spin": scene["spin_anim"], "meter": scene["meter_anim"],
+                    "done": scene["done_anim"], "error": scene["error_anim"],
+                    "timer": em_timers.TIMER_ANIM}
+    assert ring["spin"]["colors"][0] == [0x11, 0x22, 0x33]  # the scene's, not a default
+    assert em_scenes.RING_CAPABILITY == "incubator_ring"  # device/internal/client/control.go
+
+
+def test_both_scene_pushes_use_the_one_builder():
+    """At registration and on a live scene change: built apart, they drift
+    (the #263 bug was the second one missing)."""
+    import _sources
+    code = {p.stem: _sources.code_only(_sources.source(p)) for p in _sources.MODULES}
+    assert "em_scenes.ring_push(" in code["em_controller"]
+    assert "em_scenes.ring_push(" in code["em_device_config"]
+    built = [m for m, c in code.items() if "listening_anim\"]" in c and m != "em_scenes"
+             and "listeningAnim" in c]
+    assert built == [], f"a listeningAnim push built outside em_scenes.ring_push: {built}"

@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wilbowes/EchoMuse/internal/mixednet"
 )
 
 // fakeEcho is the Echo's side of a call: a microphone the test feeds and a
@@ -21,6 +23,7 @@ type fakeEcho struct {
 	flushes int
 	muted   bool
 	block   chan struct{} // when set, Play waits on it
+	rings   []Ring
 }
 
 func (f *fakeEcho) MicOpen(d func([]byte)) { f.mu.Lock(); f.deliver = d; f.opens++; f.mu.Unlock() }
@@ -40,6 +43,14 @@ func (f *fakeEcho) Flush()         { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
 func (f *fakeEcho) Muted() bool    { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
 func (f *fakeEcho) ListenStarted() {}
 func (f *fakeEcho) ListenEnded()   {}
+func (f *fakeEcho) Show(r Ring)    { f.mu.Lock(); f.rings = append(f.rings, r); f.mu.Unlock() }
+
+// shown is what the ring was given, in order.
+func (f *fakeEcho) shown() []Ring {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Ring(nil), f.rings...)
+}
 
 func (f *fakeEcho) speak(pcm []byte) {
 	f.mu.Lock()
@@ -444,7 +455,36 @@ func TestAStreamTheAppLeftOpenDoesNotSwallowTheNextCallsReply(t *testing.T) {
 		t.Fatalf("the abandoned stream was ended %d times, want once", echo.ends)
 	}
 	before := echo.periods()
+	// The app's first message about a call is its `listening` event (sent
+	// for every call before the command can end: server.py after the wake
+	// word's check, and _listen), which is how the call's own audio is told
+	// from the cut ring's frames still in flight.
+	a.send(Event, []byte(`{"type":"listening"}`))
 	a.send(AudioOut, make([]byte, 4000))
 	a.send(AudioOutEnd, nil)
 	waitFor(t, "the call's reply", func() bool { return echo.periods() > before })
+}
+
+func TestACutRingsFramesAreNotTheCallsReply(t *testing.T) {
+	// A wake over a ringing timer or an announcement: the app cancels that
+	// playback, but frames already sent still arrive. Taken for the reply
+	// they would close the microphone at once.
+	s, echo, st, a := connectApp(t)
+	a.send(Event, []byte(`{"type":"timer_ringing"}`))
+	a.send(AudioOut, make([]byte, 4000))
+	waitFor(t, "the ring's periods", func() bool { return echo.periods() > 0 })
+	s.session().wakeHeard(mixednet.Detection{WakeWord: "w"}, 0)
+	a.expect(CallStart)
+	before := echo.periods()
+	a.send(AudioOut, make([]byte, 4000)) // the ring's, in flight
+	a.send(AudioOutEnd, nil)
+	a.nothing(200 * time.Millisecond)
+	if !st.last().InCall || echo.periods() != before {
+		t.Fatalf("the ring's frames were taken for the reply (inCall %v, %d periods played)",
+			st.last().InCall, echo.periods()-before)
+	}
+	a.send(Event, []byte(`{"type":"processing"}`))
+	waitFor(t, "the command to end", func() bool { return !st.last().InCall })
+	a.send(AudioOut, make([]byte, 4000))
+	waitFor(t, "the reply", func() bool { return echo.periods() > before })
 }

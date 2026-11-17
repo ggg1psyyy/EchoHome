@@ -18,7 +18,13 @@ resolve(config) returns everything em_controller's LED helpers need:
   spin_frame  — fn(pos) -> list of 12 {id,r,g,b} dicts for spinner frame N
 """
 
+import em_timers
+
 NUM_LEDS = 12
+
+RING_CAPABILITY = "incubator_ring"
+"""Firmware whose own Voice Incubator satellite shows the app's state on the
+ring (device/internal/incubator ring.go) with the specs in incubatorRing."""
 
 # The device's own "no controller" orange, at full brightness — allLEDs(255*br,
 # 40*br, 0) in device/cmd/server.go's pulseOrange. Reused rather than picked so
@@ -293,6 +299,28 @@ def resolve(config: dict) -> dict:
             "ttlSec": 1,
         },
     }
+
+
+def incubator_ring(scene: dict) -> dict:
+    """The rest of a scene for the Voice Incubator satellite an Echo runs
+    itself: what the ring shows for it under Home Assistant, by the same
+    specs -- the spinner while the command is worked on, the meter while the
+    reply or an announcement sounds, the outcome flashes, and em_timers'
+    amber pulse for a ringing timer. Its listening ring is listeningAnim."""
+    return {"spin": scene["spin_anim"], "meter": scene["meter_anim"],
+            "done": scene["done_anim"], "error": scene["error_anim"],
+            "timer": dict(em_timers.TIMER_ANIM)}
+
+
+def ring_push(scene: dict, capabilities) -> dict:
+    """The config message that keeps an Echo's local rings in step with its
+    scene, at registration and on every scene change (one builder, so the
+    two sends cannot drift): listeningAnim (#263), and incubatorRing for
+    firmware announcing RING_CAPABILITY."""
+    msg = {"type": "config", "listeningAnim": scene["listening_anim"]}
+    if RING_CAPABILITY in (capabilities or ()):
+        msg["incubatorRing"] = incubator_ring(scene)
+    return msg
 
 
 def announcement_ring(*, capable: bool, turn_running: bool, alarm_ringing: bool) -> bool:
