@@ -60,10 +60,11 @@ An Echo that is its own Voice Incubator satellite (voice backend "Voice
 Incubator, on the Echo", firmware announcing `incubator_calls`) answers the
 button itself. From the press, and with nothing from before it, the
 microphone goes **straight to the Voice Incubator app**, not through the
-controller, until the app hangs up. That includes the reply, because the
-app's endpointer needs the audio after the command. The Echo ends the call
-itself after 30 s, at mute, or when the app goes away. `listen_state` stays
-`local` throughout, so the Echo reports the call as `inCall` in
+controller, until the app says the command has ended (its `processing` event
+or the like, or the reply's first audio), as a session ends at end of speech.
+The Echo closes it itself after 30 s, at mute, or when the app goes away; the
+reply then plays with the microphone closed. `listen_state` stays `local`
+throughout, so the Echo reports the listening as `inCall` in
 `incubator_state`.
 
 ### What is honest to claim, and what is not

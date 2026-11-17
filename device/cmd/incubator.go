@@ -75,9 +75,9 @@ func (e *echoParts) Flush() {
 }
 func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
 
-// CallStarted lights the listening ring the controller pushed for this
+// ListenStarted lights the listening ring the controller pushed for this
 // Echo's own wake (none pushed: the ring is left alone) and ducks music.
-func (e *echoParts) CallStarted() {
+func (e *echoParts) ListenStarted() {
 	if raw := config.Get().Snapshot().ListeningAnim; len(raw) > 0 {
 		var spec server.AnimSpec
 		if err := json.Unmarshal(raw, &spec); err == nil && spec.Pattern != "" {
@@ -92,8 +92,9 @@ func (e *echoParts) CallStarted() {
 	}
 }
 
-// CallEnded clears the ring; the duck lasts until the reply has played.
-func (e *echoParts) CallEnded() {
+// ListenEnded clears the ring once the command has ended; the duck lasts
+// until the reply has played.
+func (e *echoParts) ListenEnded() {
 	e.srv.StartAnim(server.AnimSpec{Pattern: "off"})
 	if !incubatorOwnsVoice.Load() {
 		e.unduck()

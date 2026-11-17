@@ -27,17 +27,20 @@ type Device interface {
 	End()
 	Flush()
 	Muted() bool
-	CallStarted()
-	CallEnded()
+	// ListenStarted and ListenEnded bracket the microphone going to the
+	// app: the ring and the duck.
+	ListenStarted()
+	ListenEnded()
 }
 
 const (
 	// PeriodBytes is one voice-plane period: 2048 samples at 48 kHz.
 	PeriodBytes = 4096
-	// CallLimit is the Echo's own cap on a call, from CALL_START, reply
-	// included (the reference firmware's 30 s): no app can hold the
-	// microphone open longer.
-	CallLimit = 30 * time.Second
+	// ListenLimit is the Echo's own cap on the microphone going to the app,
+	// from CALL_START to the end of the command: the private session's
+	// maxOpen, and the controller's satellite's CALL_MAX_S. No app can hold
+	// the microphone open longer.
+	ListenLimit = 30 * time.Second
 	// micQueue is how much microphone audio may wait for the socket: about
 	// 2.5 s in the wake stream's 80 ms chunks. Past it, audio is dropped and
 	// counted, never left to block the microphone path.
@@ -47,12 +50,26 @@ const (
 
 // Variables so the tests need not wait them out.
 var (
-	callLimit = CallLimit
+	listenLimit = ListenLimit
+	// replyWait is how long the app has, once the command ended, to begin
+	// its reply (the controller's TTS wait); hangupWait, once a reply has
+	// played, to hang up (its HANGUP_WAIT_S). Past either the Echo ends the
+	// call: CALL_END timeout.
+	replyWait  = 30 * time.Second
+	hangupWait = 10 * time.Second
 	// drainGrace is how long past a stream's own length a missing playback
 	// report is waited for before PLAYBACK_DRAINED is sent anyway: the app
 	// would otherwise stall 30 s.
 	drainGrace = 3 * time.Second
 )
+
+// commandEnded are the EVENTs that mean the app has stopped listening to
+// the command (the controller's satellite's COMMAND_ENDED): the microphone
+// closes. So does the first AUDIO_OUT of a call.
+var commandEnded = map[string]bool{
+	"processing": true, "recognized": true, "not_recognized": true,
+	"responding": true, "result": true,
+}
 
 // writer sends whole frames from several goroutines: one lock, one write a
 // frame, a deadline so a stalled app cannot hold a sender forever.
@@ -83,29 +100,38 @@ func (w *writer) json(m Message, v any) error {
 	return w.frame(m, b)
 }
 
-// call is one call's microphone: frames go from the microphone path to the
-// socket through mic, never blocking the microphone; done ends both sides.
+// call is one call. While listening its microphone frames go from the
+// microphone path to the socket through mic, never blocking the
+// microphone; done ends both sides.
 type call struct {
-	mic     chan []byte
-	done    chan struct{}
-	dropped atomic.Int64
+	mic       chan []byte
+	done      chan struct{}
+	dropped   atomic.Int64
+	listening bool
 }
 
 // session is one app connection: calls, playback and the button's meaning.
+//
+// A call listens from CALL_START until the command ends (an EVENT in
+// commandEnded, or the reply's first audio), as a private session does
+// until end of speech; then it stays open, microphone closed, until the
+// app's HANGUP. The reply is never cut by a limit: the limits are on
+// listening, on the reply beginning, and on the hang-up after it.
 type session struct {
 	w      *writer
 	dev    Device
-	report func() // the call state changed; called without the lock
+	report func() // the listening state changed; called without the lock
 
-	mu         sync.Mutex
-	call       *call // nil when not in a call
-	callTimer  *time.Timer
+	mu         sync.Mutex // guards call, timer, timerRings, closed
+	call       *call      // nil when not in a call
+	timer      *time.Timer
 	timerRings bool
 	closed     bool
 
 	discard atomic.Bool // after a cancel, until the stream's end
 
-	// playback, owned by the reading goroutine
+	// playback: the reading goroutine's, and a new call's (endStreamHere)
+	playMu    sync.Mutex
 	up        Upsampler
 	pending   []byte // 48 kHz bytes short of a period
 	periods   int
@@ -118,10 +144,11 @@ func newSession(c net.Conn, dev Device, report func()) *session {
 		drained: make(chan struct{}, 1)}
 }
 
-func (s *session) inCall() bool {
+// listening says whether the microphone is going to the app.
+func (s *session) listening() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.call != nil
+	return s.call != nil && s.call.listening
 }
 
 // press is the action button as the controller passes it on, having
@@ -139,54 +166,57 @@ func (s *session) press() {
 		s.mu.Unlock()
 		s.w.json(DeviceEvent, DeviceEventInfo{Type: "stop_timer"})
 	case s.call != nil:
-		s.endLocked("cancelled")
+		was := s.endLocked("cancelled")
 		s.mu.Unlock()
 		s.cut()
-		s.dev.CallEnded()
-		s.report()
+		s.after(was)
 	case muted:
 		s.mu.Unlock()
 	default:
 		started := s.startLocked()
 		s.mu.Unlock()
 		if started {
-			s.dev.CallStarted()
+			s.dev.ListenStarted()
 			s.report()
 		}
 	}
 }
 
-// cancel ends a call from the Echo's side (mute): the microphone stops at
-// once, the app is told.
+// cancel ends a call from the Echo's side (mute).
 func (s *session) cancel() {
 	s.mu.Lock()
-	ended := s.endLocked("cancelled")
+	open := s.call != nil
+	was := s.endLocked("cancelled")
 	s.mu.Unlock()
-	if ended {
+	if open {
 		s.cut()
-		s.dev.CallEnded()
+		s.after(was)
+	}
+}
+
+// after is what follows a change, without the lock: the ring and a report
+// when the microphone has just closed.
+func (s *session) after(wasListening bool) {
+	if wasListening {
+		s.dev.ListenEnded()
 		s.report()
 	}
 }
 
 // startLocked opens a manual call. No pre-roll: nothing from before the
-// press leaves the Echo. What plays is cut, as a press means "listen to me".
+// press leaves the Echo. What plays is cut, as a press means "listen to me",
+// and a stream the app left open is ended (flushed first, so a reply
+// blocked on a full voice plane lets go of it).
 func (s *session) startLocked() bool {
-	s.cut()
+	s.dev.Flush()
+	s.endStreamHere()
+	s.playbackDrained()
 	if err := s.w.json(CallStart, CallStartInfo{WakeWord: WakeManual}); err != nil {
 		return false
 	}
-	c := &call{mic: make(chan []byte, micQueue), done: make(chan struct{})}
+	c := &call{mic: make(chan []byte, micQueue), done: make(chan struct{}), listening: true}
 	s.call = c
-	s.callTimer = time.AfterFunc(callLimit, func() {
-		s.mu.Lock()
-		ended := s.call == c && s.endLocked("timeout")
-		s.mu.Unlock()
-		if ended {
-			s.dev.CallEnded()
-			s.report()
-		}
-	})
+	s.armLocked(c, listenLimit)
 	go s.sendMic(c)
 	s.dev.MicOpen(func(pcm []byte) {
 		select {
@@ -204,34 +234,67 @@ func (s *session) startLocked() bool {
 	return true
 }
 
-// endLocked closes the call, the microphone first so nothing more leaves.
-// The caller then calls dev.CallEnded and report, without the lock.
-// reason "" is the app's HANGUP or its going away: no CALL_END back. What is
-// queued to play keeps playing, except after a cancel (the caller flushes).
+// armLocked (re)starts the call's one timer: past it the Echo ends the call.
+func (s *session) armLocked(c *call, d time.Duration) {
+	if s.timer != nil {
+		s.timer.Stop()
+	}
+	s.timer = time.AfterFunc(d, func() {
+		s.mu.Lock()
+		if s.call != c {
+			s.mu.Unlock()
+			return
+		}
+		was := s.endLocked("timeout")
+		s.mu.Unlock()
+		s.after(was)
+	})
+}
+
+// stopListeningLocked closes the microphone: the command has ended. The
+// call stays open for its reply, with replyWait to begin it.
+func (s *session) stopListeningLocked(why string) bool {
+	c := s.call
+	if c == nil || !c.listening {
+		return false
+	}
+	s.dev.MicClose()
+	close(c.done)
+	c.listening = false
+	s.armLocked(c, replyWait)
+	if n := c.dropped.Load(); n > 0 {
+		log.Printf("[incubator] listening ended (%s), %d microphone bytes dropped", why, n)
+	} else {
+		log.Printf("[incubator] listening ended (%s)", why)
+	}
+	return true
+}
+
+// endLocked closes the call, the microphone first so nothing more leaves,
+// and reports whether it was still listening (the caller then calls after,
+// without the lock). reason "" is the app's HANGUP or its going away: no
+// CALL_END back. What is queued keeps playing, except after a cancel (the
+// caller cuts it).
 func (s *session) endLocked(reason string) bool {
 	c := s.call
 	if c == nil {
 		return false
 	}
-	s.dev.MicClose()
-	close(c.done)
+	shown := reason
+	if shown == "" {
+		shown = "hangup"
+	}
+	was := s.stopListeningLocked(shown)
+	s.timer.Stop()
 	s.call = nil
-	s.callTimer.Stop()
 	if reason != "" {
 		if reason == "cancelled" {
 			s.discard.Store(true)
 		}
 		s.w.json(CallEnd, CallEndInfo{Reason: reason})
 	}
-	if reason == "" {
-		reason = "hangup"
-	}
-	if n := c.dropped.Load(); n > 0 {
-		log.Printf("[incubator] call ended (%s), %d microphone bytes dropped", reason, n)
-	} else {
-		log.Printf("[incubator] call ended (%s)", reason)
-	}
-	return true
+	log.Printf("[incubator] call ended (%s)", shown)
+	return was
 }
 
 func (s *session) sendMic(c *call) {
@@ -251,26 +314,21 @@ func (s *session) sendMic(c *call) {
 	}
 }
 
-// close ends whatever runs: the app went away. On the reading goroutine,
-// so a stream cut short by the app's leaving is ended for the speaker too.
+// close ends whatever runs: the app went away.
 func (s *session) close() {
 	s.mu.Lock()
 	s.closed = true
-	ended := s.endLocked("")
+	was := s.endLocked("")
 	s.mu.Unlock()
-	if s.periods > 0 || len(s.pending) > 0 {
-		s.dev.End()
-	}
-	if ended {
-		s.dev.CallEnded()
-		s.report()
-	}
+	s.endStreamHere()
+	s.after(was)
 }
 
 // handle is one frame from the app, on the reading goroutine.
 func (s *session) handle(m Message, p []byte) error {
 	switch m {
 	case AudioOut:
+		s.commandOver("reply")
 		return s.audio(p)
 	case AudioOutEnd:
 		s.streamEnd()
@@ -282,12 +340,9 @@ func (s *session) handle(m Message, p []byte) error {
 			}
 		}
 		s.mu.Lock()
-		ended := s.endLocked("")
+		was := s.endLocked("")
 		s.mu.Unlock()
-		if ended {
-			s.dev.CallEnded()
-			s.report()
-		}
+		s.after(was)
 	case Event:
 		var e EventInfo
 		if Decode(m, p, &e) == nil {
@@ -299,9 +354,23 @@ func (s *session) handle(m Message, p []byte) error {
 				s.timerRings = false
 			}
 			s.mu.Unlock()
+			if commandEnded[e.Type] {
+				s.commandOver(e.Type)
+			}
 		}
 	}
 	return nil
+}
+
+// commandOver closes the microphone if the call still listens.
+func (s *session) commandOver(why string) {
+	s.mu.Lock()
+	was := s.stopListeningLocked(why)
+	if c := s.call; c != nil && why == "reply" && s.timer != nil {
+		s.timer.Stop() // the reply is playing: no limit cuts it
+	}
+	s.mu.Unlock()
+	s.after(was)
 }
 
 // audio plays AUDIO_OUT as it arrives, in calls and out of them. Play
@@ -311,6 +380,8 @@ func (s *session) audio(p []byte) error {
 	if s.discard.Load() {
 		return nil
 	}
+	s.playMu.Lock()
+	defer s.playMu.Unlock()
 	if s.periods == 0 && len(s.pending) == 0 {
 		s.playStart = time.Now()
 	}
@@ -325,6 +396,20 @@ func (s *session) audio(p []byte) error {
 	return nil
 }
 
+// endStreamHere ends, for the speaker, a stream the app left open: it
+// stops sending a stream whose task it cancels (a call it ended, a ring
+// stopped), with no AUDIO_OUT_END. Left open, the speaker would discard
+// the NEXT stream up to its end after the next cut. Unanswered: nothing
+// is waiting for it.
+func (s *session) endStreamHere() {
+	s.playMu.Lock()
+	defer s.playMu.Unlock()
+	if s.periods > 0 || len(s.pending) > 0 {
+		s.dev.End()
+		s.resetStream()
+	}
+}
+
 // streamEnd is AUDIO_OUT_END: the filter's tail and the last period,
 // padded, are played and the stream ended; PLAYBACK_DRAINED follows once
 // the speaker reports it played, or at once for a stream that played
@@ -333,11 +418,14 @@ func (s *session) audio(p []byte) error {
 func (s *session) streamEnd() {
 	if s.discard.Swap(false) {
 		// The cancelled stream's end: the speaker is discarding until it.
+		s.playMu.Lock()
 		s.dev.End()
 		s.resetStream()
-		s.w.frame(PlaybackDrained, nil)
+		s.playMu.Unlock()
+		s.drainedNow()
 		return
 	}
+	s.playMu.Lock()
 	s.pending = s.up.Flush(s.pending)
 	for len(s.pending) > 0 {
 		period := make([]byte, PeriodBytes)
@@ -350,15 +438,18 @@ func (s *session) streamEnd() {
 	}
 	played, start := s.periods, s.playStart
 	s.resetStream()
+	if played > 0 {
+		select {
+		case <-s.drained: // a report from before this stream
+		default:
+		}
+		s.dev.End()
+	}
+	s.playMu.Unlock()
 	if played == 0 {
-		s.w.frame(PlaybackDrained, nil)
+		s.drainedNow()
 		return
 	}
-	select {
-	case <-s.drained: // a report from before this stream
-	default:
-	}
-	s.dev.End()
 	length := time.Duration(played) * PeriodBytes / 2 * time.Second / 48000
 	wait := time.Until(start.Add(length)) + length + drainGrace
 	go func() {
@@ -369,8 +460,19 @@ func (s *session) streamEnd() {
 		case <-t.C:
 			log.Printf("[incubator] no playback report; PLAYBACK_DRAINED sent anyway")
 		}
-		s.w.frame(PlaybackDrained, nil)
+		s.drainedNow()
 	}()
+}
+
+// drainedNow sends PLAYBACK_DRAINED; a call past its command then has
+// hangupWait for the app to hang up.
+func (s *session) drainedNow() {
+	s.w.frame(PlaybackDrained, nil)
+	s.mu.Lock()
+	if c := s.call; c != nil && !c.listening {
+		s.armLocked(c, hangupWait)
+	}
+	s.mu.Unlock()
 }
 
 func (s *session) resetStream() {

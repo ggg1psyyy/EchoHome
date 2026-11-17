@@ -35,11 +35,11 @@ func (f *fakeEcho) Play(p []byte) error {
 	}
 	return nil
 }
-func (f *fakeEcho) End()         { f.mu.Lock(); f.ends++; f.mu.Unlock() }
-func (f *fakeEcho) Flush()       { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
-func (f *fakeEcho) Muted() bool  { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
-func (f *fakeEcho) CallStarted() {}
-func (f *fakeEcho) CallEnded()   {}
+func (f *fakeEcho) End()           { f.mu.Lock(); f.ends++; f.mu.Unlock() }
+func (f *fakeEcho) Flush()         { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
+func (f *fakeEcho) Muted() bool    { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
+func (f *fakeEcho) ListenStarted() {}
+func (f *fakeEcho) ListenEnded()   {}
 
 func (f *fakeEcho) speak(pcm []byte) {
 	f.mu.Lock()
@@ -217,13 +217,16 @@ func TestAMissingPlaybackReportDoesNotStallTheApp(t *testing.T) {
 }
 
 func TestTheAppIsStillHeardWhileADrainIsAwaited(t *testing.T) {
-	s, echo, _, a := connectApp(t)
+	s, _, _, a := connectApp(t)
 	s.Press()
 	a.expect(CallStart)
 	a.send(AudioOut, make([]byte, 320))
 	a.send(AudioOutEnd, nil) // no speaker report comes
 	a.send(Hangup, nil)
-	waitFor(t, "the hang-up to be read", func() bool { return echo.count(&echo.closes) == 1 })
+	time.Sleep(100 * time.Millisecond)
+	// Had the hang-up gone unread, this press would cancel the call.
+	s.Press()
+	a.expect(CallStart)
 }
 
 func TestARingingTimerIsStoppedNotTalkedOver(t *testing.T) {
@@ -241,9 +244,9 @@ func TestARingingTimerIsStoppedNotTalkedOver(t *testing.T) {
 }
 
 func TestTheEchoEndsACallTheAppNeverDoes(t *testing.T) {
-	old := callLimit
-	callLimit = 100 * time.Millisecond
-	defer func() { callLimit = old }()
+	old := listenLimit
+	listenLimit = 100 * time.Millisecond
+	defer func() { listenLimit = old }()
 	s, echo, st, a := connectApp(t)
 	s.Press()
 	a.expect(CallStart)
@@ -348,4 +351,86 @@ func TestACancelDoesNotKeepTheAppWaitingForADrain(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Fatalf("PLAYBACK_DRAINED %v after the cancel", d)
 	}
+}
+
+func TestTheMicrophoneClosesWhenTheCommandEnds(t *testing.T) {
+	s, echo, st, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	waitFor(t, "inCall", func() bool { return st.last().InCall })
+	a.send(Event, []byte(`{"type":"processing"}`))
+	waitFor(t, "the microphone closed", func() bool { return echo.count(&echo.closes) == 1 })
+	waitFor(t, "inCall cleared", func() bool { return !st.last().InCall })
+	echo.speak(make([]byte, 2560))
+	a.nothing(150 * time.Millisecond) // no AUDIO_IN after the command
+	// The call itself is still open: a press cancels it.
+	s.Press()
+	var ce CallEndInfo
+	json.Unmarshal(a.expect(CallEnd), &ce)
+	if ce.Reason != "cancelled" {
+		t.Fatalf("CALL_END %+v", ce)
+	}
+}
+
+func TestTheReplysFirstAudioEndsTheCommandToo(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	a.send(AudioOut, make([]byte, 320))
+	waitFor(t, "the microphone closed", func() bool { return echo.count(&echo.closes) == 1 })
+}
+
+func TestNoLimitCutsALongReply(t *testing.T) {
+	defer func(l, r, h time.Duration) { listenLimit, replyWait, hangupWait = l, r, h }(listenLimit, replyWait, hangupWait)
+	listenLimit, replyWait, hangupWait = 150*time.Millisecond, 150*time.Millisecond, 150*time.Millisecond
+	s, _, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	a.send(Event, []byte(`{"type":"processing"}`))
+	for i := 0; i < 10; i++ { // 500 ms of reply, past every limit
+		a.send(AudioOut, make([]byte, 640))
+		time.Sleep(50 * time.Millisecond)
+	}
+	a.send(AudioOutEnd, nil)
+	a.nothing(100 * time.Millisecond) // no CALL_END while it played
+	s.Drained()
+	a.expect(PlaybackDrained)
+	// Played, and no HANGUP: the Echo ends the call.
+	var ce CallEndInfo
+	json.Unmarshal(a.expect(CallEnd), &ce)
+	if ce.Reason != "timeout" {
+		t.Fatalf("CALL_END %+v", ce)
+	}
+}
+
+func TestAReplyThatNeverBeginsEndsTheCall(t *testing.T) {
+	defer func(r time.Duration) { replyWait = r }(replyWait)
+	replyWait = 100 * time.Millisecond
+	s, _, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	a.send(Event, []byte(`{"type":"processing"}`))
+	var ce CallEndInfo
+	json.Unmarshal(a.expect(CallEnd), &ce)
+	if ce.Reason != "timeout" {
+		t.Fatalf("CALL_END %+v", ce)
+	}
+}
+
+func TestAStreamTheAppLeftOpenDoesNotSwallowTheNextCallsReply(t *testing.T) {
+	// The app cancels a ring or a reply mid-send with no AUDIO_OUT_END. A
+	// new call ends that stream for the speaker, which would otherwise
+	// discard everything after the call's cut up to the next end.
+	s, echo, _, a := connectApp(t)
+	a.send(AudioOut, make([]byte, 4000)) // a ring, abandoned
+	waitFor(t, "the ring's periods", func() bool { return echo.periods() > 0 })
+	s.Press()
+	a.expect(CallStart)
+	if echo.count(&echo.ends) != 1 {
+		t.Fatalf("the abandoned stream was ended %d times, want once", echo.ends)
+	}
+	before := echo.periods()
+	a.send(AudioOut, make([]byte, 4000))
+	a.send(AudioOutEnd, nil)
+	waitFor(t, "the call's reply", func() bool { return echo.periods() > before })
 }

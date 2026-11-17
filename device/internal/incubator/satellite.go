@@ -196,7 +196,7 @@ func (s *Server) Drained() {
 // InCall says whether the microphone is going to the app.
 func (s *Server) InCall() bool {
 	sess := s.session()
-	return sess != nil && sess.inCall()
+	return sess != nil && sess.listening()
 }
 
 func (s *Server) session() *session {
@@ -211,7 +211,7 @@ func (s *Server) session() *session {
 func (s *Server) callChanged(sess *session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	in := sess.inCall()
+	in := sess.listening()
 	if s.sess == sess && !s.closed && s.state.InCall != in {
 		st := s.state
 		st.InCall = in
