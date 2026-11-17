@@ -10535,7 +10535,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
           <Select label="Voice backend"
             sub={(config.voiceBackend ?? 'ha') === 'incubator_echo'
               ? (incubatorOnEchoCapable
-                  ? "experimental: the Echo's own firmware is the Voice Incubator satellite; the controller only announces it on its network. Presence only for now: the app sees the Echo, but it answers nothing yet, and never falls back to Home Assistant's"
+                  ? "experimental: the Echo's own firmware is the Voice Incubator satellite, with the app's wake words and its ring; the controller only announces it on its network, and it never falls back to Home Assistant's"
                   : "this Echo's firmware cannot be the satellite itself (it lacks incubator_satellite): the controller's satellite serves it, as with Voice Incubator")
               : ((config.voiceBackend ?? 'ha') === 'incubator'
                   ? "experimental: OHF-Voice's Voice Incubator app answers this Echo, found by mDNS on the controller's network. Without the app connected the Echo has no voice assistant: it never falls back to Home Assistant's"
