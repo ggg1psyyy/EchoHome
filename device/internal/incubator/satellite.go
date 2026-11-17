@@ -20,15 +20,21 @@ type Config struct {
 	Port     int
 	Model    string
 	Firmware string
+	// Device is the Echo's microphone and speaker for calls. Nil is
+	// presence only: no calls, and the app's frames are read and dropped.
+	Device Device
 }
 
 // State is what the satellite reports to the controller, which advertises
 // the Echo on the app's network only while Listening.
 type State struct {
-	Listening    bool   `json:"listening"`
-	Port         int    `json:"port"`
-	AppConnected bool   `json:"appConnected"`
-	Error        string `json:"error,omitempty"`
+	Listening    bool `json:"listening"`
+	Port         int  `json:"port"`
+	AppConnected bool `json:"appConnected"`
+	// InCall: the microphone is going to the app now. listen_state cannot
+	// say so (it is "local" throughout), so this does.
+	InCall bool   `json:"inCall,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 // keepAlive matters: an app host that loses power sends no FIN, and the
@@ -37,9 +43,9 @@ type State struct {
 // three missed and the connection is dropped.
 var keepAlive = net.KeepAliveConfig{Enable: true, Idle: 10 * time.Second, Interval: 5 * time.Second, Count: 3}
 
-// Server is a satellite's listener: one app at a time, HELLO first. This is
-// presence only: it says no capability, so the app pushes no models and
-// starts no calls; frames it sends are read and dropped.
+// Server is a satellite's listener: one app at a time, HELLO first. With a
+// Device it takes calls started by the button (Press) and plays the app's
+// audio; it announces no wake word, so the app pushes no models.
 type Server struct {
 	cfg     Config
 	ln      net.Listener
@@ -47,6 +53,7 @@ type Server struct {
 
 	mu     sync.Mutex // guards app, closed and state, and orders reports
 	app    net.Conn
+	sess   *session
 	closed bool
 	state  State
 	wg     sync.WaitGroup
@@ -163,12 +170,63 @@ func (s *Server) hello() HelloInfo {
 	return h
 }
 
+// Press is the action button, passed on by the controller as a press (not
+// a hold, not an event). Without an app connected it does nothing.
+func (s *Server) Press() {
+	if sess := s.session(); sess != nil {
+		sess.press()
+	}
+}
+
+// Cancel ends a call the Echo must end itself (mute).
+func (s *Server) Cancel() {
+	if sess := s.session(); sess != nil {
+		sess.cancel()
+	}
+}
+
+// Drained is the speaker's report that the stream the satellite last ended
+// has played out.
+func (s *Server) Drained() {
+	if sess := s.session(); sess != nil {
+		sess.playbackDrained()
+	}
+}
+
+// InCall says whether the microphone is going to the app.
+func (s *Server) InCall() bool {
+	sess := s.session()
+	return sess != nil && sess.inCall()
+}
+
+func (s *Server) session() *session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sess
+}
+
+// callChanged reports the call state; never called with a session's lock.
+func (s *Server) callChanged(sess *session) {
+	in := sess.inCall()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sess == sess && !s.closed && s.state.InCall != in {
+		st := s.state
+		st.InCall = in
+		s.setLocked(st)
+	}
+}
+
 func (s *Server) serve(c net.Conn) {
 	defer s.wg.Done()
+	var sess *session
 	defer func() {
+		if sess != nil {
+			sess.close()
+		}
 		c.Close()
 		s.mu.Lock()
-		s.app = nil
+		s.app, s.sess = nil, nil
 		if !s.closed {
 			s.setLocked(State{Listening: true, Port: s.cfg.Port})
 		}
@@ -178,14 +236,19 @@ func (s *Server) serve(c net.Conn) {
 		return
 	}
 	log.Printf("[incubator] app connected from %s", c.RemoteAddr())
+	if s.cfg.Device != nil {
+		sess = newSession(c, s.cfg.Device, nil)
+		sess.report = func() { s.callChanged(sess) }
+	}
 	s.mu.Lock()
 	if !s.closed {
+		s.sess = sess
 		s.setLocked(State{Listening: true, Port: s.cfg.Port, AppConnected: true})
 	}
 	s.mu.Unlock()
 	r := NewReader(c)
 	for {
-		m, _, err := r.Read()
+		m, p, err := r.Read()
 		if err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
 				log.Printf("[incubator] app connection: %v", err)
@@ -197,6 +260,13 @@ func (s *Server) serve(c net.Conn) {
 			// Not a message an app sends: logged and ignored, as the spec says
 			// of an unknown type.
 			log.Printf("[incubator] ignored message %#x", byte(m))
+			continue
+		}
+		if sess != nil {
+			if err := sess.handle(m, p); err != nil {
+				log.Printf("[incubator] %#x from the app: %v", byte(m), err)
+				return
+			}
 		}
 	}
 }

@@ -30,6 +30,9 @@ type Manager struct {
 	Send     func(State)
 	Model    string
 	Firmware string
+	// Device is the Echo's microphone and speaker for calls (nil: presence
+	// only).
+	Device Device
 
 	mu   sync.Mutex
 	s    *Server
@@ -69,7 +72,7 @@ func (m *Manager) Apply(st Settings) {
 	if err := m.Firewall.Open(st.Port); err != nil {
 		log.Printf("[incubator] could not open port %d: %v", st.Port, err)
 	}
-	s, err := Listen(Config{Name: st.Name, MAC: st.MAC, Port: st.Port, Model: m.Model, Firmware: m.Firmware}, m.Send)
+	s, err := Listen(Config{Name: st.Name, MAC: st.MAC, Port: st.Port, Model: m.Model, Firmware: m.Firmware, Device: m.Device}, m.Send)
 	if err != nil {
 		m.Firewall.Close(st.Port)
 		log.Printf("[incubator] satellite not started: %v", err)
@@ -104,4 +107,41 @@ func (m *Manager) Running() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.s != nil
+}
+
+func (m *Manager) server() *Server {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.s
+}
+
+// Press passes the action button to the satellite; false when none runs,
+// so the caller knows nothing acted on it.
+func (m *Manager) Press() bool {
+	s := m.server()
+	if s == nil {
+		return false
+	}
+	s.Press()
+	return true
+}
+
+// Cancel ends a call, if one is open (mute).
+func (m *Manager) Cancel() {
+	if s := m.server(); s != nil {
+		s.Cancel()
+	}
+}
+
+// Drained passes on the speaker's report that a satellite stream played out.
+func (m *Manager) Drained() {
+	if s := m.server(); s != nil {
+		s.Drained()
+	}
+}
+
+// InCall says whether a call holds the microphone.
+func (m *Manager) InCall() bool {
+	s := m.server()
+	return s != nil && s.InCall()
 }
