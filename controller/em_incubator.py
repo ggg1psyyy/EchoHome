@@ -225,9 +225,9 @@ async def reconcile(device_id: str) -> None:
                 # Off the Echo's own satellite: tell a connected Echo to stop.
                 await _end_on_echo(device_id, tell=online)
                 if wanted and online:
-                    log.warning(f"[{device_id}] set to the Voice Incubator, but the controller no "
-                                f"longer hosts satellites (EchoHome): set it to 'Voice Incubator, "
-                                f"on the Echo' (needs EchoHome firmware)")
+                    log.warning(f"[{device_id}] this Echo's firmware cannot be its own Voice "
+                                f"Incubator satellite (no {FIRMWARE_CAPABILITY}), and the "
+                                f"controller hosts none since EchoHome: update its firmware")
                 return
             # Standalone wherever the firmware can be: the Echo keeps its
             # satellite whatever the switch says (EchoHome firmware), so it is
