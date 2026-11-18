@@ -9834,7 +9834,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
               reason on firmware that ignores the key. */}
           <Select label="Wake word microphone"
             sub={wakeMicCapable
-              ? 'Centre unless that mic has failed; MK1 to MK6 are the ones around the edge'
+              ? 'Centre unless that mic has failed; MK1 to MK6 are the ones around the edge. On EchoHome firmware the Echo keeps its own choice, the Wake word microphone in Home Assistant, and this only gives an Echo that has none its first value'
               : 'needs newer firmware on this Echo'}
             disabled={!wakeMicCapable}
             value={config.wakeMic ?? 0}

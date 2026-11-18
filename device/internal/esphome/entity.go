@@ -160,6 +160,56 @@ func (w *Switch) Value() bool {
 	return w.value
 }
 
+// Select is one of a fixed list of options and takes commands
+// (ListEntitiesSelectResponse), as Switch does: a command calls OnCommand,
+// which applies it and calls Set with the option that resulted; the state HA
+// shows is only ever what Set reported. A command naming no listed option
+// never reaches OnCommand.
+type Select struct {
+	base
+	Desc      *api.ListEntitiesSelectResponse
+	OnCommand func(option string)
+	mu        sync.Mutex
+	value     string
+	have      bool
+}
+
+func (e *Select) Key() uint32         { return e.Desc.Key }
+func (e *Select) Info() proto.Message { return e.Desc }
+
+func (e *Select) State() proto.Message {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return &api.SelectStateResponse{Key: e.Desc.Key, State: e.value, MissingState: !e.have}
+}
+
+// Set records the option and sends it to subscribed clients if it changed.
+func (e *Select) Set(option string) {
+	e.mu.Lock()
+	same := e.have && e.value == option
+	e.value, e.have = option, true
+	e.mu.Unlock()
+	if !same {
+		e.changed(e)
+	}
+}
+
+// Value is the option last Set.
+func (e *Select) Value() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.value
+}
+
+func (e *Select) listed(option string) bool {
+	for _, o := range e.Desc.Options {
+		if o == option {
+			return true
+		}
+	}
+	return false
+}
+
 // MediaPlayer is the Echo's media player (ListEntitiesMediaPlayerResponse):
 // commands go to OnCommand; HA sees the state Set reports.
 type MediaPlayer struct {

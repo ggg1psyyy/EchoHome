@@ -24,6 +24,9 @@ const DefaultPath = "/data/local/etc/echomuse/settings.json"
 
 type record struct {
 	Values map[string]bool `json:"values"`
+	// Ints are the settings that are a number, not a switch (the wake word
+	// microphone), kept by the same rules.
+	Ints map[string]int `json:"ints,omitempty"`
 }
 
 // Store is the Echo's owned settings. Safe for concurrent use.
@@ -36,11 +39,16 @@ type Store struct {
 // Load reads the store at path; unreadable is empty (the firmware's
 // defaults then decide, and are seeded).
 func Load(path string) *Store {
-	s := &Store{path: path, rec: record{Values: map[string]bool{}}}
+	s := &Store{path: path, rec: record{Values: map[string]bool{}, Ints: map[string]int{}}}
 	if b, err := os.ReadFile(path); err == nil {
 		var r record
-		if json.Unmarshal(b, &r) == nil && r.Values != nil {
-			s.rec.Values = r.Values
+		if json.Unmarshal(b, &r) == nil {
+			if r.Values != nil {
+				s.rec.Values = r.Values
+			}
+			if r.Ints != nil {
+				s.rec.Ints = r.Ints
+			}
 		}
 	}
 	return s
@@ -78,6 +86,35 @@ func (s *Store) Seed(key string, v bool) bool {
 		return kept
 	}
 	s.rec.Values[key] = v
+	s.saveLocked()
+	return v
+}
+
+// IntValue is the numeric key's value in force, if there is one.
+func (s *Store) IntValue(key string) (int, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.rec.Ints[key]
+	return v, ok
+}
+
+// SetLocalInt keeps a number set on the Echo.
+func (s *Store) SetLocalInt(key string, v int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rec.Ints[key] = v
+	return s.saveLocked()
+}
+
+// SeedInt returns the numeric key's kept value, keeping `v` first if it has
+// none.
+func (s *Store) SeedInt(key string, v int) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if kept, ok := s.rec.Ints[key]; ok {
+		return kept
+	}
+	s.rec.Ints[key] = v
 	s.saveLocked()
 	return v
 }

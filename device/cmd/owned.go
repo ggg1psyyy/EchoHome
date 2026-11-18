@@ -1,15 +1,18 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/owned"
 	"github.com/wilbowes/EchoMuse/internal/server"
+	"github.com/wilbowes/EchoMuse/pkg/board"
 )
 
 // The settings Home Assistant changes on the Echo itself, as switches on its
@@ -27,6 +30,7 @@ const (
 	ownedRemoteVolumeArc = "remoteVolumeArc"
 	ownedMonitor         = "incubatorMonitor"
 	ownedBLEProxy        = "bleProxyEnabled"
+	ownedWakeMic         = "wakeMic" // a number: ownedSettings' Ints
 )
 
 // The entity keys of the Echo's own settings: 20 and up, clear of the
@@ -37,6 +41,7 @@ const (
 	esphomeRemoteVolumeArcKey = 22
 	esphomeLiveListeningKey   = 23
 	esphomeBLEProxyKey        = 27
+	esphomeWakeMicKey         = 28
 )
 
 var (
@@ -44,6 +49,7 @@ var (
 	ownedSrv      *server.Server
 	ownedSwitch   = map[string]*esphome.Switch{}
 	muteSwitch    *esphome.Switch
+	wakeMicSelect *esphome.Select
 )
 
 // setupOwned loads the store and builds the switches; their values are put
@@ -73,7 +79,82 @@ func setupOwned(s *server.Server, muteRingCapable bool) []esphome.Entity {
 		"mdi:ear-hearing", false)
 	cfgSwitch(ownedBLEProxy, esphomeBLEProxyKey, "bluetooth_proxy", "Bluetooth proxy",
 		"mdi:bluetooth", bleProxyOn())
+	if client.MicUnavailable() == "" {
+		out = append(out, wakeMicEntity())
+	}
 	return out
+}
+
+// The wake word microphone (wakeMic): the one microphone the Echo listens on,
+// for its wake word and its calls alike (the beamformer never locks since
+// EchoHome). 0 is the board's default, its centre mic, or its first edge mic
+// where it has none; 1..N pick an edge mic. An escape hatch for a dead centre
+// mic (#705; Sidrat's), kept on the Echo like the switches above.
+func wakeMicOptions() []string {
+	mics := board.CurrentLayout().Mics
+	first := "Centre"
+	if mics.Centre < 0 {
+		first = "Default (MK1)"
+	}
+	opts := []string{first}
+	for i := range mics.Perimeter {
+		opts = append(opts, fmt.Sprintf("MK%d", i+1))
+	}
+	return opts
+}
+
+func wakeMicEntity() *esphome.Select {
+	opts := wakeMicOptions()
+	wakeMicSelect = &esphome.Select{Desc: &api.ListEntitiesSelectResponse{ObjectId: "wake_word_mic", Key: esphomeWakeMicKey,
+		Name: "Wake word microphone", Icon: "mdi:microphone", Options: opts,
+		EntityCategory: api.EntityCategory_ENTITY_CATEGORY_CONFIG}}
+	wakeMicSelect.OnCommand = func(option string) {
+		for i, o := range opts {
+			if o == option {
+				setWakeMic(i)
+				return
+			}
+		}
+	}
+	now := wakeMicNow()
+	if v, ok := ownedSettings.IntValue(ownedWakeMic); ok {
+		now = v
+	}
+	showWakeMic(now)
+	return wakeMicSelect
+}
+
+// wakeMicNow is the value in force.
+func wakeMicNow() int {
+	if v := config.Get().Snapshot().WakeMic; v != nil {
+		return *v
+	}
+	return 0
+}
+
+// showWakeMic puts a value on the select, the default for one it has no
+// option for.
+func showWakeMic(v int) {
+	if wakeMicSelect == nil {
+		return
+	}
+	opts := wakeMicSelect.Desc.Options
+	if v < 0 || v >= len(opts) {
+		v = 0
+	}
+	wakeMicSelect.Set(opts[v])
+}
+
+// setWakeMic is Home Assistant's choice: kept, in force from the next
+// microphone batch (streamMic reads it every period), and shown.
+func setWakeMic(v int) {
+	if err := ownedSettings.SetLocalInt(ownedWakeMic, v); err != nil {
+		log.Printf("[settings] wakeMic could not be kept: %v", err)
+		return
+	}
+	log.Printf("[settings] wakeMic set to %d from Home Assistant", v)
+	config.Get().Apply(config.ConfigMessage{WakeMic: &v})
+	showWakeMic(v)
 }
 
 // muteEntity is Home Assistant's "Software Mute" (internal/softmute): the
@@ -105,6 +186,10 @@ func applyOwnedAtBoot() {
 		if v, ok := ownedSettings.Value(key); ok {
 			applyOwned(key, v)
 		}
+	}
+	if v, ok := ownedSettings.IntValue(ownedWakeMic); ok {
+		config.Get().Apply(config.ConfigMessage{WakeMic: &v})
+		showWakeMic(v)
 	}
 }
 
@@ -165,6 +250,14 @@ func reconcileOwnedConfig() {
 	if v := ownedSettings.Seed(ownedBLEProxy, bleProxyOn()); v != bleProxyOn() {
 		config.Get().Apply(config.ConfigMessage{BleProxyEnabled: &v})
 	}
+	// The controller still pushes wakeMic for firmware from before EchoHome:
+	// here it only seeds an Echo that has no choice of its own yet, so a mic
+	// picked on the dashboard before the upgrade carries over (Sidrat).
+	if now := wakeMicNow(); ownedSettings.SeedInt(ownedWakeMic, now) != now {
+		v, _ := ownedSettings.IntValue(ownedWakeMic)
+		config.Get().Apply(config.ConfigMessage{WakeMic: &v})
+	}
+	showWakeMic(wakeMicNow())
 	for key, now := range map[string]bool{ownedMuteRing: config.Get().MuteRingOn(),
 		ownedRemoteVolumeArc: config.Get().RemoteVolumeArcEnabled(), ownedBLEProxy: bleProxyOn()} {
 		if w := ownedSwitch[key]; w != nil {

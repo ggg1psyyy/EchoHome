@@ -310,6 +310,31 @@ func TestASwitchCommandIsAppliedAndReported(t *testing.T) {
 	}
 }
 
+// A select command naming a listed option reaches OnCommand; any other is
+// ignored, and HA sees only the option Set reports.
+func TestASelectCommandIsAppliedOnlyForAListedOption(t *testing.T) {
+	var e *Select
+	var got []string
+	e = &Select{Desc: &api.ListEntitiesSelectResponse{ObjectId: "wake_mic", Key: 28, Name: "Mic",
+		Options: []string{"Centre", "MK1"}},
+		OnCommand: func(o string) { got = append(got, o); e.Set(o) }}
+	e.Set("Centre")
+	s := New(DeviceInfo{Name: "n"}, e)
+	c := dialServer(t, s)
+	c.send(&api.SubscribeStatesRequest{})
+	if st, ok := c.recv().(*api.SelectStateResponse); !ok || st.State != "Centre" || st.MissingState {
+		t.Fatalf("%v", st)
+	}
+	c.send(&api.SelectCommandRequest{Key: 28, State: "MK9"}) // not an option: ignored
+	c.send(&api.SelectCommandRequest{Key: 28, State: "MK1"})
+	if st, ok := c.recv().(*api.SelectStateResponse); !ok || st.Key != 28 || st.State != "MK1" {
+		t.Fatalf("%v", st)
+	}
+	if len(got) != 1 || got[0] != "MK1" {
+		t.Fatalf("OnCommand got %v", got)
+	}
+}
+
 // The server's timers (keepalive, the time refresh) must read Go's monotonic
 // clock, never the wall clock it may itself step: stored as Unix time, an
 // hour's step back read as an hour to wait (bench, 00LQ, 2026-11-18).
