@@ -1128,6 +1128,17 @@ enabled it and nothing happened" this removes.
   cpuPct averages read 17-19% the day before and 16-22% since. 33-40 °C, no
   dropped microphone audio logged.
 
+- **2026-11-18, the Echo announcing its own satellite (incubator_mdns,
+  fe72d4b) and VLANs (00LQ).** The Echo's record (zeroconf RegisterProxy,
+  host `<name>-vi`) was sent, but the app is on another VLAN and mDNS does
+  not cross: with the controller standing down the app lost the Echo
+  ("Satellite went away", no new "appeared" for minutes). The controller's
+  record is what bridges VLANs (announced on its own network, at the Echo's
+  address), so it announces as before, beside the Echo's (f2fad2d). Both
+  under the same instance name and host register without a rename, and the
+  app connected within a second. The Echo's own record matters only where
+  the app shares its network, or without a controller.
+
 ## The external audio jack
 
 Three separate faults, all fixed 2026-08-09 (#80), and one non-fault worth
