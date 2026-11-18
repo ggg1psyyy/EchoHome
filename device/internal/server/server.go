@@ -114,11 +114,16 @@ func NewServer(buttonController buttons.Controller, microphone mic.Microphone, s
 	// Restore persisted mute state before the persist hook is wired, so the
 	// restore itself doesn't rewrite the file. Mute is device-sovereign —
 	// it must come back with or without a controller.
-	if st, ok := loadDeviceState(statePath); ok && st.Muted {
-		server.mute.RestoreMuted() // ADC only; LEDs painted after init below
+	if st, ok := loadDeviceState(statePath); ok {
+		if st.Muted {
+			server.mute.RestoreMuted() // ADC only; LEDs painted after init below
+		}
+		if st.SoftMuted {
+			server.mute.RestoreSoft()
+		}
 	}
 	server.mute.persist = func() {
-		saveDeviceState(statePath, deviceState{Muted: server.mute.IsMuted()})
+		saveDeviceState(statePath, deviceState{Muted: server.mute.HardMuted(), SoftMuted: server.mute.SoftMuted()})
 	}
 
 	go func() {
@@ -155,6 +160,8 @@ func NewServer(buttonController buttons.Controller, microphone mic.Microphone, s
 		// button LED now.
 		if server.mute.IsMuted() {
 			server.mute.showMuteLEDs()
+		}
+		if server.mute.HardMuted() {
 			setMuteButtonLED(true)
 		}
 		// Amazon's privacy driver boots unmuted whatever we restored.
@@ -207,7 +214,7 @@ func (s *Server) SetMuteRing(on bool) {
 	s.mute.mu.Lock()
 	changed := s.mute.ringOff == on
 	s.mute.ringOff = !on
-	muted := s.mute.muted
+	muted := s.mute.muted || s.mute.soft
 	s.mute.mu.Unlock()
 	if changed && muted {
 		s.mute.showMuteLEDs()
@@ -269,10 +276,18 @@ func (s *Server) SetMuteChangeCallback(cb func(muted bool)) {
 	s.mute.SetOnMuteChange(cb)
 }
 
-// IsMuted returns true when the mic is muted — used to block dot button.
+// IsMuted returns true when the mic is muted, by the button or by Home
+// Assistant — every check of whether the microphone may be used.
 func (s *Server) IsMuted() bool {
 	return s.mute.IsMuted()
 }
+
+// HardMuted is the button's mute alone.
+func (s *Server) HardMuted() bool { return s.mute.HardMuted() }
+
+// SetSoftMute is Home Assistant's mute (softmute): the microphones zeroed
+// in software, the button's mute and light untouched.
+func (s *Server) SetSoftMute(on bool) { s.mute.SetSoft(on) }
 
 // CancelVolumeDisplay releases the volume arc's 2s hold on the ring so a
 // turn's listening frame can paint immediately. See volumeController.

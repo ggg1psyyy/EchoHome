@@ -57,7 +57,7 @@ func (m *muteController) reconcilePrivacy(retries int) {
 		log.Printf("Mute: %v", err)
 		return
 	}
-	switch decidePrivacy(m.IsMuted(), driver) {
+	switch decidePrivacy(m.HardMuted(), driver) {
 	case privacyEnterDriver:
 		log.Println("Mute: privacy driver was unmuted while we are muted — muting it")
 		if err := internalLed.EnterPrivacy(); err != nil {
@@ -65,8 +65,6 @@ func (m *muteController) reconcilePrivacy(retries int) {
 		}
 	case privacyMuteOurs:
 		log.Println("Mute: privacy driver is muted and cannot be unmuted from software — muting to match")
-		if !m.IsMuted() {
-			m.Toggle()
-		}
+		m.muteHard()
 	}
 }

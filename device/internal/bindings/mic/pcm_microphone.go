@@ -17,6 +17,7 @@ import (
 	"github.com/Binozo/GoTinyAlsa/pkg/pcm"
 	"github.com/Binozo/GoTinyAlsa/pkg/tinyalsa"
 	"github.com/wilbowes/EchoMuse/internal/bindings/codec"
+	"github.com/wilbowes/EchoMuse/internal/softmute"
 	"github.com/wilbowes/EchoMuse/pkg/board"
 	pkgmic "github.com/wilbowes/EchoMuse/pkg/mic"
 )
@@ -315,6 +316,12 @@ func (p *PcmMicrophone) readLoop() {
 		// library reused one buffer, and a batch still queued in stream was
 		// overwritten by the next read — repeated or torn audio (#607).
 		buf := audio
+		if softmute.On() {
+			// Home Assistant's mute: the microphones silenced here, before
+			// anything sees them, as the ADC mute silences them in hardware.
+			mics := board.CurrentLayout().Mics
+			softmute.Zero(buf, int(frames), bytesPerFrame, mics.Channels, mics.NumMics())
+		}
 		if len(buf) > 0 {
 			p.idxMu.Lock()
 			p.recent[p.next%len(p.recent)] = batchPos{unsafe.Pointer(&buf[0]), framesTotal - frames}

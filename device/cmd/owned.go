@@ -18,8 +18,9 @@ import (
 // change outlives a reboot with no controller, reported to the controller
 // (settings_changed), which stores it as this Echo's own setting and pushes
 // it back; until that push carries it, the Echo's value stands against the
-// controller's (owned.Store.Reconcile). The mute is a switch too; it is the
-// Echo's already (state.json), so it needs none of this.
+// controller's (owned.Store.Reconcile). The mute is a switch too: Home
+// Assistant's soft mute, the Echo's already (state.json), so it needs none
+// of this.
 
 const (
 	ownedMuteRing        = "muteRing"
@@ -72,25 +73,21 @@ func setupOwned(cc *client.ControlClient, s *server.Server, muteRingCapable bool
 	return out
 }
 
-// muteSource: a mute made by hand only the hand undoes (owned.MuteSource).
-var muteSource owned.MuteSource
-
-// muteEntity is the mute as a switch, as a Voice PE has it.
+// muteEntity is the mute as a switch, as a Voice PE has it
+// (home-assistant-voice.yaml master_mute_switch): it is Home Assistant's
+// soft mute (internal/softmute), which HA turns on and off; the button's
+// hard mute is apart, and only the button undoes it. The switch shows
+// muted while either is on, so HA turning it off under the button's mute
+// changes nothing it shows.
 func muteEntity(s *server.Server) *esphome.Switch {
 	muteSwitch = &esphome.Switch{Desc: &api.ListEntitiesSwitchResponse{ObjectId: "mute", Key: esphomeMuteKey,
 		Name: "Mute", Icon: "mdi:microphone-off"}}
 	muteSwitch.OnCommand = func(on bool) {
-		toggle, ok := muteSource.Command(on, s.IsMuted())
-		if !ok {
-			log.Printf("[esphome] unmute from Home Assistant refused: muted by hand, only the button unmutes")
-			muteSwitch.Set(true)
-			return
+		if !on && s.HardMuted() {
+			log.Printf("[esphome] unmute from Home Assistant: the button's mute stays, only the button undoes it")
 		}
-		if toggle {
-			s.MuteToggle() // the mute callback reports the result
-		}
+		s.SetSoftMute(on) // the mute callback reports the result
 	}
-	muteSource.Boot(s.IsMuted())
 	muteSwitch.Set(s.IsMuted())
 	return muteSwitch
 }
@@ -187,9 +184,8 @@ func reportOwned() {
 	}
 }
 
-// esphomeMuteSwitch follows the mute, and records who made it.
+// esphomeMuteSwitch follows the mute.
 func esphomeMuteSwitch(muted bool) {
-	muteSource.Changed(muted)
 	if muteSwitch != nil {
 		muteSwitch.Set(muted)
 	}

@@ -22,6 +22,8 @@ const statePath = "/data/local/etc/echomuse/state.json"
 
 type deviceState struct {
 	Muted bool `json:"muted"`
+	// SoftMuted is Home Assistant's mute (muteController.soft).
+	SoftMuted bool `json:"softMuted,omitempty"`
 }
 
 // loadDeviceState reads the persisted state. ok=false means no usable state
