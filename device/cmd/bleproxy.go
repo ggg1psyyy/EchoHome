@@ -14,13 +14,11 @@ import (
 // for voice and music) goes to Home Assistant directly, as from an ESPHome
 // bluetooth_proxy, so presence (Bermuda, Private BLE Device) keeps working
 // with no controller. Passive only: no connection slots. On while the
-// Bluetooth proxy setting is (bleProxyEnabled, the Echo's own: its HA switch
-// and the dashboard's), and each batch still goes to the controller as
-// before.
+// Bluetooth proxy setting is (bleProxyEnabled, the Echo's own: its HA
+// switch, cmd/owned.go).
 
 var bleRefs struct {
 	scanner *bluetooth.Scanner
-	bridge  *bluetooth.Bridge
 }
 
 // esphomeBLEFollow sets the Echo's server's proxy flags from the setting.

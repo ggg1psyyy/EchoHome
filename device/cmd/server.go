@@ -331,49 +331,14 @@ func main() {
 		s.StartAnim(spec)
 	})
 
-	// BLE proxy scanner — passive scan over /dev/stpbt, batches forwarded to
-	// the controller on the DATA plane where the controller can read them
-	// there, and on the control plane otherwise (#404). Armed from env
-	// defaults here and toggled live on config push (bleProxyEnabled,
-	// applyBleConfig).
-	//
-	// The plane is chosen per batch rather than once at registration: the
-	// control connection can drop and re-register against a different
-	// controller without this callback being rebuilt, and a stale choice
-	// would either strand the adverts or put them back on the liveness
-	// channel. It is two map reads on a path that runs a few times a second.
-	bleScanner := bluetooth.NewScanner(func(batch []bluetooth.Advert) {
-		if controlClient.HasFeature(client.FeatureBleAdvertsData) {
-			payload, err := json.Marshal(map[string]interface{}{"adverts": batch})
-			if err != nil {
-				log.Printf("[cmd] ble adverts: marshal failed: %v", err)
-				return
-			}
-			// Dropped rather than falling back: see DataClient.SendBleAdverts.
-			dataClient.SendBleAdverts(payload)
-			esphomeAdverts(batch)
-			return
-		}
-		controlClient.SendBleAdverts(batch)
-		esphomeAdverts(batch)
-	})
-	// Connections for Home Assistant's active proxy (#656). Every Dot reports
-	// the same public Bluetooth address, so links use a random static one
-	// derived from the serial. The bridge speaks only to a controller that
-	// announced ble_connect; to any other, results would be frames it ignores.
-	bleScanner.Conns().SetOwnAddress(bluetooth.StaticRandomAddr(deviceID))
-	bleBridge := bluetooth.NewBridge(bleScanner.Conns(), func(msg []byte) {
-		if controlClient.HasFeature(client.FeatureBleConnect) {
-			dataClient.SendBleGatt(msg)
-		}
-	})
-	dataClient.OnBleGatt(func(msg []byte) {
-		if controlClient.HasFeature(client.FeatureBleConnect) {
-			bleBridge.Handle(msg)
-		}
-	})
-	applyBleConfig(bleScanner, bleBridge)
-	bleRefs.scanner, bleRefs.bridge = bleScanner, bleBridge
+	// BLE proxy scanner: passive scan over /dev/stpbt, each batch to the
+	// Echo's own ESPHome device, Home Assistant's Bluetooth proxy
+	// (cmd/bleproxy.go). Toggled by Home Assistant's switch there
+	// (bleProxyEnabled, applyBleConfig). The controller no longer takes
+	// adverts or bridges connections (EchoHome).
+	bleScanner := bluetooth.NewScanner(esphomeAdverts)
+	applyBleConfig(bleScanner)
+	bleRefs.scanner = bleScanner
 
 	// The BLE scan costs this device's WiFi dearly (see Scanner.Yield), so it
 	// stops whenever the link carries something that cannot wait: the user's
@@ -574,9 +539,6 @@ func main() {
 	go pcmSpeaker.WatchJackRouting(ctx)
 
 	controlClient.OnDisconnected(func() {
-		// A Bluetooth link's results have nowhere to go now, and a
-		// controller that comes back starts from no links.
-		bleBridge.DropAll()
 		linkMu.Lock()
 		defer linkMu.Unlock()
 		controllerUp.Store(false)
@@ -661,9 +623,6 @@ func main() {
 		}
 		pulseKind = ""
 		linkMu.Unlock()
-		// Who runs the output chain is decided by THIS controller's ack, and
-		// settled before any of its audio can arrive.
-		pcmSpeaker.SetOutputChainActive(controlClient.HasFeature(client.FeatureOutputChain))
 		// Session restored: the ring goes back to the controller, the mute
 		// ring reasserts below if it applies, and the buttons work again.
 		s.SetLinkDown(false)
@@ -727,7 +686,6 @@ func main() {
 		reconcileOwnedConfig() // first: the Echo's own settings stand over the push
 		applyHardwareConfig(msg)
 		s.SetRemoteVolumeArc(config.Get().RemoteVolumeArcEnabled())
-		applyESPHome(config.Get().ESPHomeServerOn())
 		incubatorSaveSoon() // the ring's scene, for a standalone satellite
 		s.SetMuteRing(config.Get().MuteRingOn())
 		pcmSpeaker.SetResponseGainDB(config.Get().ResponseGainDB())
@@ -735,7 +693,6 @@ func main() {
 		// above. Active is re-read from the ack on every push: a reconnect
 		// can land on a controller that does not hand the chain over.
 		pcmSpeaker.SetOutputChain(config.Get().OutputChain())
-		pcmSpeaker.SetOutputChainActive(controlClient.HasFeature(client.FeatureOutputChain))
 		// startupVolume is the controller's persisted record of this
 		// device's volume (updated on every volume_state report) — restore
 		// it through the Server, not a raw tinymix write: SeedVolume keeps
@@ -745,7 +702,7 @@ func main() {
 			s.SeedVolume(msg.StartupVolume)
 		}
 		applyAecConfig(canceller, dataClient)
-		applyBleConfig(bleScanner, bleBridge)
+		applyBleConfig(bleScanner)
 		esphomeBLEFollow()
 		applySendspinConfig(pcmSpeaker, controlClient, s, deviceID)
 		applyShadowConfig(dataClient, controlClient, pcmSpeaker, s)
@@ -1731,13 +1688,10 @@ func syncListenState(dc *client.DataClient, cc *client.ControlClient, force bool
 	}
 }
 
-func applyBleConfig(scanner *bluetooth.Scanner, bridge *bluetooth.Bridge) {
+func applyBleConfig(scanner *bluetooth.Scanner) {
 	snap := config.Get().Snapshot()
-	proxy := snap.BleProxyEnabled != nil && *snap.BleProxyEnabled
-	scanner.SetEnabled(proxy)
+	scanner.SetEnabled(snap.BleProxyEnabled != nil && *snap.BleProxyEnabled)
 	sendspinProxy(scanner.Enabled())
-	// Connections live inside the scan session, so they need the proxy on.
-	bridge.SetEnabled(proxy && snap.BleProxyConnections != nil && *snap.BleProxyConnections)
 }
 
 func allLEDs(r, g, b uint8) []led.Led {

@@ -1406,12 +1406,6 @@ func capabilities() []string {
 	// Without it the controller offers the admin a Pair action instead,
 	// since the device cannot ask.
 	//
-	// "ble_connect": this firmware can hold Bluetooth LE connections for the
-	// controller and speak GATT over them (#656), exchanging requests and
-	// results as ble-gatt frames on the data plane. It does so only against
-	// a controller announcing the same feature, and only while
-	// bleProxyConnections is on.
-	//
 	// "identify_ring": this firmware handles the identify message (#860) by
 	// taking the whole ring for 30 s, above turns, replies, the mute ring and
 	// the volume arc. There is no fallback on a firmware without it: the
@@ -1451,7 +1445,7 @@ func capabilities() []string {
 		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
 		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
-		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "esphome_noise", "ble_connect"}
+		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "esphome_noise"}
 	if MicUnavailable() == "" {
 		caps = append(caps, "mic", "incubator_calls", "incubator_wake", "incubator_ring", "incubator_monitor")
 	}
@@ -1702,19 +1696,6 @@ func (c *ControlClient) HasFeature(name string) bool {
 	return c.features[name]
 }
 
-// FeatureBleAdvertsData is announced by a controller that can read BLE
-// advertisement batches off the DATA plane (frameTypeBleAdverts). Without
-// it the device must keep using the control plane, because an old
-// controller ignores unknown frame types and would drop every advert in
-// silence.
-const FeatureBleAdvertsData = "ble_adverts_data"
-
-// FeatureBleConnect is announced by a controller that drives Bluetooth LE
-// connections through this device (frameTypeBleGatt both ways). Without it
-// nothing is sent: an older controller ignores the frame, and a result nobody
-// reads is a connection held for nobody.
-const FeatureBleConnect = "ble_connect"
-
 // FeatureListenSession is announced by a controller that understands
 // private-listening sessions: listen_state, session-tagged oww_wake, the
 // frameTypeListen audio frame, and the listen_* replies. Without it the device
@@ -1722,22 +1703,6 @@ const FeatureBleConnect = "ble_connect"
 // wake-stream frames are arriving — a device that went quiet on it would be
 // deaf.
 const FeatureListenSession = "listen_session"
-
-// FeatureOutputChain is announced by a controller that sends this device's
-// audio UNPROCESSED and leaves EQ, bass guard and limiter to the device.
-// Absent, the controller is still processing and the device must not.
-const FeatureOutputChain = "output_chain"
-
-// SendBleAdverts forwards a batch of BLE advertisements to the controller
-// (bluetooth_proxy path). adverts is marshalled as-is — []bluetooth.Advert,
-// whose Data field JSON-encodes as base64. Safe for concurrent use —
-// silently drops if not connected (adverts are ephemeral by nature).
-func (c *ControlClient) SendBleAdverts(adverts interface{}) {
-	_ = c.writeJSON(map[string]interface{}{
-		"type":    "ble_adverts",
-		"adverts": adverts,
-	})
-}
 
 // SendWifiScanResult reports scan results (or a scan error) upstream.
 // networks is marshalled as-is; pass nil with errMsg on failure.

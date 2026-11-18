@@ -132,7 +132,7 @@ func applyOwned(key string, v bool) {
 	case ownedBLEProxy:
 		config.Get().Apply(config.ConfigMessage{BleProxyEnabled: &v})
 		if bleRefs.scanner != nil {
-			applyBleConfig(bleRefs.scanner, bleRefs.bridge)
+			applyBleConfig(bleRefs.scanner)
 		}
 		esphomeBLEFollow()
 	case ownedMonitor:

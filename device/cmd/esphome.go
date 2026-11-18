@@ -17,7 +17,6 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/bindings/speaker"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/clock"
-	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
@@ -25,19 +24,15 @@ import (
 	"github.com/wilbowes/EchoMuse/pkg/board"
 )
 
-// The Echo's own ESPHome API server (internal/esphome), run while the
-// config's esphomeServer says so: Home Assistant can then connect to the
-// Echo itself, as it does to a Voice PE. While the controller still presents
-// the Echo to HA, the Echo's server is a separate device in HA, under its
-// own name ("echohome-<serial>") and MAC, so it never takes over the
-// controller's entry. The entities' keys and object ids are the
-// controller's (em_esphome.py, test-pinned), but HA keys its entities on
-// the device's MAC too: for them to carry over, the day the Echo takes over
-// it must also adopt the controller's MAC (em_db.get_esphome_mac).
+// The Echo's own ESPHome API server (internal/esphome): Home Assistant
+// connects to the Echo itself, as it does to a Voice PE, under the Echo's
+// own name ("echohome-<serial>") and MAC. The entity keys and object ids
+// began as the controller's emulated satellite's (removed in EchoHome) and
+// are append-only.
 //
-// The switch is kept on the Echo (esphomeOnPath), so the server starts at
-// boot with no controller, and the Echo takes its clock from Home Assistant
-// (esphomeTime), as ESPHome's homeassistant time does.
+// It runs from boot, with or without a controller, and the Echo takes its
+// clock from Home Assistant (esphomeTime), as ESPHome's homeassistant time
+// does.
 //
 // Encrypted (ESPHome's Noise transport) with a key Home Assistant sets, as
 // it sets one on an ESPHome device with no key in its YAML: the Echo starts
@@ -84,10 +79,6 @@ type esphomeEcho struct {
 }
 
 var esphomeOnEcho *esphomeEcho
-
-// esphomeOnPath, present, means the server is on: read at boot, so it
-// serves with no controller; written only when the switch changes.
-const esphomeOnPath = "/data/local/etc/echomuse/esphome.on"
 
 // esphomeKeyPath is the server's key, base64 as Home Assistant takes it.
 const esphomeKeyPath = "/data/local/etc/echomuse/esphome.key"
@@ -216,29 +207,11 @@ func setupESPHome(cc *client.ControlClient, s *server.Server, spk *speaker.PcmSp
 	e.entries = append(e.entries, ledRingEntities()...)
 	e.entries = append(e.entries, multiTapEntity())
 	esphomeOnEcho = e
-	if _, err := os.Stat(esphomeOnPath); err == nil {
-		// Seeded into the config too: a controller that does not know the
-		// key leaves it as it is, rather than turning the server off.
-		on := true
-		config.Get().Apply(config.ConfigMessage{ESPHomeServer: &on})
-		applyESPHome(true)
-	}
-}
-
-// keepESPHomeOn records the switch for the next boot.
-func keepESPHomeOn(on bool) {
-	_, err := os.Stat(esphomeOnPath)
-	switch had := err == nil; {
-	case on && !had:
-		err = atomicfile.Write(esphomeOnPath, []byte("1\n"), 0o600)
-	case !on && had:
-		err = os.Remove(esphomeOnPath)
-	default:
-		return
-	}
-	if err != nil {
-		log.Printf("[esphome] could not keep the switch: %v", err)
-	}
+	// Always on (EchoHome): the Echo's ESPHome device is how Home Assistant
+	// reaches it, as with a Voice PE. Until HA adds it and sets its key, the
+	// API is open to whoever provisions it first (api_encryption_
+	// provisionable), as on any ESPHome device without a key in its YAML.
+	applyESPHome(true)
 }
 
 // applyESPHome starts or stops the server, as the config says.
@@ -247,7 +220,6 @@ func applyESPHome(on bool) {
 	if e == nil {
 		return
 	}
-	keepESPHomeOn(on)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	switch {
