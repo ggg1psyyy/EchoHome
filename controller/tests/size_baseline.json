@@ -1,13 +1,12 @@
 {
  "files": {
-  "em_controller.py": 2447,
+  "em_controller.py": 2008,
   "em_db.py": 3414
  },
  "functions": {
-  "em_controller.Device.__init__": 175,
-  "em_controller.handle_control": 361,
+  "em_controller.handle_control": 342,
   "em_db.record_device_stats": 206,
-  "em_device_view.merge_device": 163,
+  "em_device_view.merge_device": 156,
   "em_ota._run_update_locked": 229,
   "em_routes_provision._post_provision_emos_image": 157,
   "em_scenes.resolve": 159,

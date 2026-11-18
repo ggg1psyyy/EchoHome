@@ -109,17 +109,6 @@ def test_turn_state_ttls_are_bounded():
     assert scene["spin_anim"]["ttlSec"] <= 180
 
 
-def test_meter_ttl_scales_with_response_length():
-    """
-    The meter TTL must always exceed the response it is showing — a fixed
-    value would clear the ring part-way through a long answer, which is the
-    exact bug the playback_stats rendezvous fixes at the other end.
-    """
-    assert em_scenes.meter_ttl(0.5) >= 30           # short clips get a floor
-    for seconds in (5, 30, 120, 600):
-        assert em_scenes.meter_ttl(seconds) > seconds * 1.5
-
-
 def test_outcome_cues_are_self_clearing_and_distinct():
     """
     Cues must retire on the device's own ticker (no follow-up message to

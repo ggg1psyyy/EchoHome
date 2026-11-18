@@ -49,8 +49,6 @@ def test_the_grace_task_checks_for_a_replacement():
 def test_the_grace_window_exists_and_is_documented():
     src = (CONTROLLER / "em_controller.py").read_text()
     assert "CONTROL_RECONNECT_GRACE_S" in src
-    # The data-plane constant this mirrors:
-    assert "DATA_RECONNECT_GRACE_S = 3.0" in src
 
 
 def test_the_stale_connection_guard_survives():

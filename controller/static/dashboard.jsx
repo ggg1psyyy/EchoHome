@@ -190,14 +190,6 @@ const API = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// owwModel display label: stock names ("hey_jarvis_v0.1") and custom model
-// file paths ("/app/data/oww_models/hey_clara.onnx") both prettify.
-function wwModelLabel(v) {
-  if (!v) return '—';
-  if (v.endsWith('.onnx')) v = v.split('/').pop().replace(/\.onnx$/, '');
-  return v.replace(/_v[\d.]+$/, '').replace(/_/g, ' ');
-}
-
 function uptime(s) {
   if (!s) return '—';
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
@@ -1133,311 +1125,6 @@ function Shell({ deviceId, token, height = 320 }) {
   );
 }
 
-// ─── Turn observability (Status tab) ─────────────────────────────────────────
-// Stat tiles + a stage-breakdown bar per recent turn. Colors validated
-// (dataviz six-checks) against the panel surface #dfdbd3: CVD ΔE 26.3,
-// contrast ≥3:1, chroma ≥0.1. Identity is never color-alone: legend + the
-// tooltip name each stage.
-const TURN_STAGES = [
-  { key: 'listen',     label: 'Listening',  color: '#4468a8' },
-  { key: 'transcribe', label: 'Transcribe', color: '#1f8a55' },
-  { key: 'respond',    label: 'Respond',    color: '#96660a' },
-];
-
-function turnSegments(t) {
-  // Stage durations from the trace timestamps; -1 = never reached.
-  const vad = t.vad_end_ms >= 0 ? t.vad_end_ms : -1;
-  const stt = t.stt_ms     >= 0 ? t.stt_ms     : -1;
-  const tts = t.tts_url_ms >= 0 ? t.tts_url_ms : -1;
-  const listen     = vad >= 0 ? vad : Math.max(t.total_ms || 0, 0);
-  const transcribe = (stt >= 0 && vad >= 0) ? Math.max(stt - vad, 0) : 0;
-  const respond    = (tts >= 0 && stt >= 0) ? Math.max(tts - stt, 0) : 0;
-  return { listen, transcribe, respond, shown: listen + transcribe + respond };
-}
-
-function WakeSampleReview({ deviceId, isAdmin }) {
-  const [samples, setSamples] = useState([]);
-  const [playing, setPlaying] = useState(null);
-  const [zipError, setZipError] = useState('');
-  const audioRef = useRef(null);
-  const urlsRef = useRef({});
-  const mono = "var(--font-mono)";
-
-  const load = async () => {
-    if (!isAdmin) return;
-    try { setSamples(await API.get(`/api/devices/${deviceId}/wake-samples?limit=50`) || []); }
-    catch {}
-  };
-  useEffect(() => {
-    load();
-    const timer = setInterval(load, 5000);
-    return () => {
-      clearInterval(timer);
-      if (audioRef.current) audioRef.current.pause();
-      Object.values(urlsRef.current).forEach(URL.revokeObjectURL);
-      urlsRef.current = {};
-    };
-  }, [deviceId, isAdmin]);
-
-  const sampleUrl = async sample => {
-    if (urlsRef.current[sample.id]) return urlsRef.current[sample.id];
-    try {
-      const url = URL.createObjectURL(await API.blob(
-        `/api/devices/${deviceId}/wake-samples/${sample.id}/audio`));
-      urlsRef.current[sample.id] = url;
-      return url;
-    } catch { return null; }
-  };
-  const play = async sample => {
-    if (audioRef.current) audioRef.current.pause();
-    if (playing === sample.id) { audioRef.current = null; setPlaying(null); return; }
-    const url = await sampleUrl(sample);
-    if (!url) return;
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.onended = audio.onerror = () => setPlaying(p => p === sample.id ? null : p);
-    setPlaying(sample.id);
-    audio.play().catch(() => setPlaying(null));
-  };
-  const label = async (sample, value) => {
-    try {
-      await API.patch(`/api/devices/${deviceId}/wake-samples/${sample.id}`, { label: value });
-      setSamples(rows => rows.map(row => row.id === sample.id ? { ...row, label: value } : row));
-    } catch {}
-  };
-  const remove = async sample => {
-    if (!window.confirm('Delete this saved wake sample?')) return;
-    try {
-      await API.del(`/api/devices/${deviceId}/wake-samples/${sample.id}`);
-      setSamples(rows => rows.filter(row => row.id !== sample.id));
-      if (urlsRef.current[sample.id]) URL.revokeObjectURL(urlsRef.current[sample.id]);
-      delete urlsRef.current[sample.id];
-    } catch {}
-  };
-  const download = async sample => {
-    const url = await sampleUrl(sample);
-    if (!url) return;
-    const a = document.createElement('a'); a.href = url;
-    a.download = `wake-sample-${sample.id}.wav`; a.click();
-  };
-  // One archive of every retained sample, grouped one folder per label —
-  // API.blob for the Bearer header, and a late revoke because the zip is too
-  // big to cache in urlsRef for a button pressed once in a while.
-  const downloadZip = async () => {
-    setZipError('');
-    try {
-      const url = URL.createObjectURL(await API.blob(
-        `/api/devices/${deviceId}/wake-samples/zip`));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `wake-samples-${deviceId}.zip`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    } catch (e) { setZipError(e.error || e.message || 'Could not download the samples'); }
-  };
-
-  if (!isAdmin || !samples.length) return null;
-  return <div style={{ marginTop: 'var(--space-8)', borderTop: '1px solid var(--track)', paddingTop: 'var(--space-6)' }}>
-    <div className="em-label" style={{ marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center' }}>
-      <span style={{ flex: 1 }}>Wake-word samples</span>
-      {zipError && <span role="alert" style={{ color: 'var(--error)', marginRight: 'var(--space-4)' }}>{zipError}</span>}
-      <button onClick={downloadZip} title="Download every retained sample as one ZIP, grouped by label" style={{ background: 'none', border: 0, color: 'var(--text2)', cursor: 'pointer' }}>⤓ all (.zip)</button>
-    </div>
-    <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-      {samples.map(sample => <div key={sample.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-2) var(--space-1)', borderBottom: '1px solid var(--hairline)', fontFamily: mono, fontSize: 'var(--fs-sm)' }}>
-        <span style={{ color: 'var(--muted)', minWidth: '16ch', flexShrink: 0, whiteSpace: 'nowrap' }}>{new Date(sample.ts * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-        <button onClick={() => play(sample)} title="Play wake sample" style={{ background: 'none', border: 0, color: 'var(--text2)', cursor: 'pointer' }}>{playing === sample.id ? '▮' : '▶'}</button>
-        <span style={{ flex: 1, color: 'var(--text2)' }}>{sample.kind}{sample.score != null ? ` · controller ${sample.score.toFixed(3)}` : ''}{sample.threshold != null ? ` / ${sample.threshold.toFixed(2)}` : ''}{sample.device_score != null ? ` · Echo ${sample.device_score.toFixed(3)}` : ''}{sample.trigger_source ? ` · ${sample.trigger_source}` : ''}</span>
-        <select value={sample.label} onChange={e => label(sample, e.target.value)} aria-label="Wake sample label" className="em-inset em-input"
-          style={{ '--em-inset-pad': 'var(--space-1) var(--space-3)', '--em-inset-radius': 'var(--radius-sm)', fontSize: 'var(--fs-sm)', maxWidth: 105 }}>
-          <option value="unreviewed">Review…</option><option value="wake">Wake word</option><option value="not_wake">Not wake word</option><option value="uncertain">Unsure</option>
-        </select>
-        <button onClick={() => download(sample)} title="Download WAV" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer' }}>⤓</button>
-        <button onClick={() => remove(sample)} title="Delete sample" style={{ background: 'none', border: 0, color: 'var(--muted)', cursor: 'pointer' }}>×</button>
-      </div>)}
-    </div>
-  </div>;
-}
-
-function TurnObservability({ turns, deviceId, deviceLabel, recordingsOn, nearMisses, stateLabel, stateColor, isAdmin }) {
-  const [hover, setHover] = useState(null); // index into `recent`
-  const mono = "var(--font-mono)";
-
-  // Saved utterances — play in place or download the WAV. Both go through
-  // one fetched object URL per turn (API.blob; see the auth note there), so
-  // playing then downloading costs one transfer, not two.
-  const [playing, setPlaying] = useState(null);   // turn_id currently sounding
-  const [gone, setGone]       = useState(() => new Set()); // 404 = pruned
-  const audioRef = useRef(null);
-  const urlsRef  = useRef({});    // turn_id -> object URL
-
-  const stopAudio = () => {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    setPlaying(null);
-  };
-
-  // Retention is a small per-device file count, far shorter than the turn
-  // history, so a row naming a recording that no longer exists is ordinary.
-  // Mark it gone and drop its controls rather than surfacing an error.
-  const audioUrl = async t => {
-    if (urlsRef.current[t.turn_id]) return urlsRef.current[t.turn_id];
-    try {
-      const url = URL.createObjectURL(await API.blob(
-        `/api/devices/${deviceId}/turns/${t.turn_id}/audio`));
-      urlsRef.current[t.turn_id] = url;
-      return url;
-    } catch {
-      setGone(g => new Set(g).add(t.turn_id));
-      return null;
-    }
-  };
-
-  const toggleAudio = async t => {
-    const wasPlaying = playing === t.turn_id;
-    stopAudio();
-    if (wasPlaying) return;
-    const url = await audioUrl(t);
-    if (!url) return;
-    const el = new Audio(url);
-    el.onended = el.onerror = () => setPlaying(p => (p === t.turn_id ? null : p));
-    audioRef.current = el;
-    setPlaying(t.turn_id);
-    el.play().catch(() => setPlaying(p => (p === t.turn_id ? null : p)));
-  };
-
-  const downloadAudio = async t => {
-    const url = await audioUrl(t);
-    if (!url) return;
-    const when = new Date(t.ts * 1000).toISOString().slice(0, 19).replace(/[:T]/g, '');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(deviceLabel || deviceId).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}-${when}.wav`;
-    a.click();
-  };
-
-  useEffect(() => () => {
-    stopAudio();
-    // Object URLs pin their blob in memory until revoked — a few minutes on
-    // the Activity tab would otherwise leak every recording played.
-    Object.values(urlsRef.current).forEach(URL.revokeObjectURL);
-    urlsRef.current = {};
-  }, []);
-
-  // Recordings and transcripts are admin-only — the server enforces it
-  // (require_admin on the audio route, stt_text stripped from /turns);
-  // this just avoids offering controls that would 404.
-  const anyAudio = isAdmin && turns.some(t => t.audio_file);
-
-  const ok = turns.filter(t => t.outcome === 'ok');
-  const successPct = turns.length ? Math.round(ok.length / turns.length * 100) : null;
-  const replies = ok.map(t => t.tts_url_ms).filter(v => v >= 0).sort((a, b) => a - b);
-  const medianReply = replies.length ? replies[Math.floor(replies.length / 2)] : null;
-  const fmtS = ms => (ms / 1000).toFixed(1) + 's';
-
-  // All buffered turns (up to 50), newest first — rendered inside their own
-  // scrollable box so a long history never scrolls the stat tiles (or the
-  // rest of the tab) out of view.
-  const recent = turns.slice().reverse();
-  const scale = Math.max(3000, ...recent.map(t => turnSegments(t).shown));
-
-  return (
-    <div>
-      {/* Stat tiles */}
-      <div style={{ display: 'flex', gap: 'var(--space-6)', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 'var(--space-8)' }}>
-        <Lcd label="State" value={stateLabel} color={stateColor} size={16}/>
-        <Lcd label="Turns (last 50)" value={turns.length} color="var(--lcd-green)" size={16}/>
-        <Lcd label="Success" value={successPct != null ? successPct + '%' : '—'}
-             color={successPct == null ? 'var(--lcd-dim)' : successPct >= 80 ? 'var(--lcd-green)' : 'var(--lcd-amber)'} size={16}/>
-        <Lcd label="Median reply" value={medianReply != null ? fmtS(medianReply) : '—'} color="var(--lcd-dim)" size={16}/>
-        <Lcd label="Near-misses" value={nearMisses != null ? nearMisses : '—'}
-             color={nearMisses > 0 ? 'var(--lcd-amber)' : 'var(--lcd-dim)'} size={16}/>
-        <Lcd label="Underruns" value={turns.reduce((s, t) => s + (t.underruns || 0), 0)}
-             color={turns.some(t => t.underruns > 0) ? 'var(--lcd-amber)' : 'var(--lcd-dim)'} size={16}/>
-      </div>
-
-      {recent.length === 0 ? (
-        <div style={{ fontFamily: mono, fontSize: 'var(--fs-md)', color: 'var(--muted)' }}>
-          No voice turns recorded yet — history starts when the device is next used.
-        </div>
-      ) : (
-        <div style={{ position: 'relative' }}>
-          {/* Legend */}
-          <div style={{ display: 'flex', gap: 'var(--space-7)', marginBottom: 'var(--space-5)' }}>
-            {TURN_STAGES.map(s => (
-              <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-label)' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 'var(--radius-xs)', background: s.color, display: 'inline-block' }}/>
-                {s.label}
-              </span>
-            ))}
-            {(recordingsOn || anyAudio) && (
-              <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-label)', marginLeft: 'auto' }}>
-                ▶ hear the mic{anyAudio ? '' : ' — next turn'}
-              </span>
-            )}
-          </div>
-
-          {/* One stacked bar per turn, newest first — own scroll container */}
-          <div style={{ maxHeight: 230, overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
-          {recent.map((t, i) => {
-            const seg = turnSegments(t);
-            const time = new Date(t.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const failed = t.outcome !== 'ok';
-            return (
-              <div key={i}
-                onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-                style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-5)', padding: 'var(--space-2) 0', cursor: 'default', background: hover === i ? 'var(--hairline)' : 'transparent', borderRadius: 'var(--radius-sm)' }}>
-                <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--muted)', minWidth: '8ch', flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>{time}</span>
-                <div style={{ flex: 1, display: 'flex', height: 14, alignItems: 'stretch' }}>
-                  {TURN_STAGES.map(s => seg[s.key] > 0 && (
-                    <div key={s.key} style={{
-                      width: `${seg[s.key] / scale * 100}%`, background: s.color,
-                      borderRadius: 'var(--radius-xs)', marginRight: 'var(--space-1)', minWidth: 3,
-                    }}/>
-                  ))}
-                </div>
-                <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--text2)', width: 34, flexShrink: 0 }}>{fmtS(seg.shown)}</span>
-                <span style={{ fontFamily: mono, fontSize: 'var(--fs-2xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-label)', width: '18ch', whiteSpace: 'nowrap', flexShrink: 0, color: failed ? 'var(--warn)' : 'var(--ok)' }}>
-                  {t.outcome === 'ok' ? 'ok' : (t.outcome || '?').replace(/_/g, ' ')}
-                </span>
-                {/* Saved utterance: listen in place, or download the WAV.
-                    The slot is reserved even when a turn has no recording so
-                    the columns stay aligned as the retention window rolls. */}
-                <span style={{ width: 34, flexShrink: 0, display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
-                  {isAdmin && t.audio_file && !gone.has(t.turn_id) && (<>
-                    <button onClick={() => toggleAudio(t)}
-                      title={playing === t.turn_id ? 'Stop' : 'Play the mic audio for this turn'}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'var(--fs-sm)', lineHeight: 1, color: playing === t.turn_id ? 'var(--warn)' : 'var(--text2)' }}>
-                      {playing === t.turn_id ? '▮' : '▶'}
-                    </button>
-                    <button onClick={() => downloadAudio(t)} title="Download the WAV"
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'var(--fs-sm)', lineHeight: 1, color: 'var(--muted)' }}>⤓</button>
-                  </>)}
-                </span>
-              </div>
-            );
-          })}
-          </div>
-
-          {/* Hover detail */}
-          {hover != null && recent[hover] && (() => {
-            const t = recent[hover]; const seg = turnSegments(t);
-            return (
-              <div style={{ marginTop: 'var(--space-5)', background: 'var(--hairline)', border: '1px solid var(--track)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4) var(--space-6)', fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--text2)', lineHeight: 1.7 }}>
-                <span style={{ color: 'var(--muted)' }}>{t.trigger}</span>
-                {' · '}listening {fmtS(seg.listen)} · transcribe {fmtS(seg.transcribe)} · respond {fmtS(seg.respond)} · total {fmtS(Math.max(t.total_ms, 0))}
-                {t.wake_model ? <><br/>wake {t.wake_model.replace(/\.[a-z]+$/, '').split('/').pop()} score {t.wake_score?.toFixed(3)} (thr {t.wake_threshold?.toFixed(2)}) · noise floor {t.noise_floor?.toFixed(4)}</> : null}
-                {t.underruns != null ? <>{t.wake_model ? ' · ' : <br/>}underruns <span style={{ color: t.underruns > 0 ? 'var(--warn)' : 'inherit' }}>{t.underruns}</span></> : null}
-                {t.stt_text ? <><br/>“{t.stt_text.length > 90 ? t.stt_text.slice(0, 90) + '…' : t.stt_text}”</> : null}
-              </div>
-            );
-          })()}
-        </div>
-      )}
-      <WakeSampleReview deviceId={deviceId} isAdmin={isAdmin}/>
-    </div>
-  );
-}
-
 // ─── Connectivity tab ─────────────────────────────────────────────────────────
 // Per-device WiFi: shows the current connection and drives the safe network
 // switch (device-side executor with auto-rollback — see internal/wifi in the
@@ -1651,12 +1338,11 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
   const [identifyNote, setIdentifyNote] = useState('');
   const [debloating, setDebloating] = useState(false);
   const fileInputRef = useRef(null);
-  const [turns, setTurns] = useState([]);
   const state = deviceState(device);
   const needsUpdate = !!device.firmware_update;
 
   const TABS = device.approved
-    ? (isAdmin ? ['status', 'activity', 'config', 'console', 'updates', 'logs'] : ['status', 'activity', 'config', 'logs'])
+    ? (isAdmin ? ['status', 'config', 'console', 'updates', 'logs'] : ['status', 'config', 'logs'])
     : ['approve'];
 
   useEffect(() => {
@@ -1692,19 +1378,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
         .then(r => { if (live) setRelease(r); })
         .catch(() => {});
     }, 30000);
-    return () => { live = false; clearInterval(iv); };
-  }, [tab, device.device_id]);
-
-  // Turn observability — fetch on Activity tab entry, refresh every 10s while
-  // the tab is open (turn history is in-memory on the controller).
-  useEffect(() => {
-    if (tab !== 'activity') return;
-    let live = true;
-    const load = () => API.get(`/api/devices/${device.device_id}/turns`)
-      .then(t => { if (live) setTurns(Array.isArray(t) ? t : []); })
-      .catch(() => {});
-    load();
-    const iv = setInterval(load, 10000);
     return () => { live = false; clearInterval(iv); };
   }, [tab, device.device_id]);
 
@@ -2393,29 +2066,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                     </Panel>
                   );
                 })()}
-              </div>
-            );
-          })()}
-
-          {/* ACTIVITY — voice-turn observability; its own tab (genuinely
-              useful, was cramped at the bottom of Status). */}
-          {tab === 'activity' && (() => {
-            const cfgEff = effectiveConfig(globalConfig, device);
-            const wwLabel = wwModelLabel(cfgEff.owwModel);
-            return (
-              <div style={{ minHeight:'100%', display:'flex', flexDirection:'column' }}>
-                <Panel label={`Voice activity — ${wwLabel} @ ${cfgEff.owwThreshold != null ? cfgEff.owwThreshold.toFixed(2) : '—'}`} style={{ flex:1 }}>
-                  <TurnObservability
-                    turns={turns}
-                    deviceId={device.device_id}
-                    deviceLabel={device.label}
-                    recordingsOn={cfgEff.saveUtterances}
-                    nearMisses={device.owwNearMisses}
-                    stateLabel={state.label.toUpperCase()}
-                    stateColor={state.lcd}
-                    isAdmin={isAdmin}
-                  />
-                </Panel>
               </div>
             );
           })()}

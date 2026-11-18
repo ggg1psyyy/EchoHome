@@ -51,7 +51,6 @@ def test_an_echo_with_no_mic_is_degraded_in_every_mode():
         v = L.resolve(mode, caps, "degraded", "no microphone this firmware can read on this board")
         assert v.state == L.STATE_DEGRADED and v.streams is False, mode
         assert "microphone" in v.reason
-        assert L.detector(v, True) is None
     assert "microphone" in L.resolve("off", caps, None).reason
     # Not knowing the capabilities yet is not the same as having none.
     assert L.resolve("off", set(), None).state == L.STATE_CONTROLLER
@@ -114,14 +113,6 @@ def test_close_with_no_active_session_is_harmless():
 
 # ── capture time ─────────────────────────────────────────────────────────────
 
-def test_heard_at_subtracts_age_and_one_way_delay():
-    assert L.heard_at(10.0, 500, 200) == 10.0 - 0.5 - 0.1
-
-
-def test_heard_at_without_information_is_arrival():
-    assert L.heard_at(10.0, None, None) == 10.0
-    assert L.heard_at(10.0, -40, None) == 10.0   # a negative age is noise
-
 
 def test_rtt_estimator_follows_rfc6298():
     e = L.RttEstimator()
@@ -130,20 +121,6 @@ def test_rtt_estimator_follows_rfc6298():
     assert e.srtt == 100 and e.rto == 100 + 4 * 50
     e.add(200)
     assert e.srtt == 0.875 * 100 + 0.125 * 200
-
-
-def test_frame_is_bytes_to_every_other_reader():
-    f = L.Frame(b"\x01\x02\x03\x04", 12.5)
-    assert f == b"\x01\x02\x03\x04" and isinstance(f, bytes)
-    assert not isinstance(f, str)          # queue sentinels are str
-    buf = bytearray(); buf.extend(f)
-    assert bytes(buf[:2]) == b"\x01\x02"
-    assert L.arrival(f, 99.0) == 12.5
-
-
-def test_unstamped_audio_arrives_now():
-    assert L.arrival(b"\x00\x00", 99.0) == 99.0
-    assert L.arrival("listen_mode", 99.0) == 99.0
 
 
 def test_a_session_the_echo_closed_is_known_closed():
@@ -159,65 +136,6 @@ def test_a_session_the_echo_closed_is_known_closed():
 def _feed(clock, frames):
     """frames: [(seq, arrived)] -> [captured]"""
     return [clock.observe(s, a) for s, a in frames]
-
-
-def test_capture_clock_on_a_clean_link_is_arrival():
-    c = L.CaptureClock()
-    got = _feed(c, [(n, 100.0 + n * 0.08 + 0.004) for n in range(50)])
-    assert all(abs(g - (100.004 + n * 0.08)) < 1e-9 for n, g in enumerate(got))
-
-
-def test_a_frame_held_in_a_retransmit_is_dated_to_its_capture():
-    """The 2026-09-22 bench case: a second of 15LE's stream arrived late and
-    read as a separate utterance. Frames 20..32 held 1s, then a burst."""
-    c = L.CaptureClock()
-    frames = [(n, 10.0 + n * 0.08 + 0.003) for n in range(20)]
-    burst_at = 10.0 + 32 * 0.08 + 0.003
-    frames += [(n, max(burst_at, 10.0 + n * 0.08 + 1.0)) for n in range(20, 33)]
-    got = _feed(c, frames)
-    for n in range(20, 33):
-        assert abs(got[n] - (10.003 + n * 0.08)) < 1e-9, n
-        assert frames[n][1] - got[n] > 0.5          # arrival would be wrong
-
-
-def test_capture_clock_never_postdates_arrival_or_reaches_past_the_slack():
-    c = L.CaptureClock()
-    c.observe(0, 0.0)
-    assert c.observe(1, 0.05) <= 0.05              # early arrival: capped at arrival
-    c2 = L.CaptureClock()
-    c2.observe(0, 0.0)
-    # 60s of frames that all "arrive" at once — a count we cannot trust
-    assert c2.observe(750, 0.1) >= 0.1 - L.MAX_ARB_SLACK_S
-
-
-def test_a_new_stream_restarts_the_count():
-    c = L.CaptureClock()
-    _feed(c, [(n, 5.0 + n * 0.08) for n in range(100)])   # old stream, seq 0..99
-    got = c.observe(0, 50.0)                              # new stream from 0
-    assert got == 50.0
-    assert abs(c.observe(1, 50.08) - 50.08) < 1e-9
-
-
-def test_sequence_wraps_without_a_reset():
-    c = L.CaptureClock()
-    t0 = 1000.0
-    got = _feed(c, [((65530 + i) & 0xFFFF, t0 + i * 0.08) for i in range(12)])
-    assert abs(got[-1] - (t0 + 11 * 0.08)) < 1e-9
-
-
-def test_capture_clock_follows_the_echo_clock_drifting():
-    """ALSA runs ~345ppm fast on these Echoes. Over ten minutes, with one
-    frame in 97 held 300ms, the estimate must stay within the window's worth
-    of drift (30s x 345ppm ~ 10ms), not accumulate all of it — either way."""
-    for ppm in (-345e-6, 345e-6):
-        c = L.CaptureClock()
-        period = 0.08 * (1 + ppm)
-        worst = 0.0
-        for n in range(int(600 / period)):
-            arrived = n * period + 0.002 + (0.3 if n % 97 == 5 else 0.0)
-            err = abs(c.observe(n & 0xFFFF, arrived) - (n * period + 0.002))
-            worst = max(worst, err)
-        assert worst < 0.015, (ppm, worst)
 
 
 # ── DeviceClock: an Echo's monotonic clock in ours ──────────────────────────
@@ -271,16 +189,6 @@ def test_old_samples_leave_the_window():
 
 
 # ── detection path and the mixed-fleet hold (em_arbiter.contest) ─────────────
-
-def test_detector_by_state():
-    V = L.ListenView
-    assert L.detector(V(L.STATE_LOCAL, False), True) == "device"
-    assert L.detector(V(L.STATE_CONTROLLER, True), True) == "controller"
-    assert L.detector(V(L.STATE_DIAGNOSTIC, True), True) == "controller"
-    assert L.detector(V(L.STATE_LEGACY, True), True) == "device"
-    assert L.detector(V(L.STATE_LEGACY, True), False) == "controller"
-    assert L.detector(V(L.STATE_DEGRADED, False), True) is None
-    assert L.detector(V(L.STATE_UNKNOWN, None), True) == "unknown"
 
 
 # ── skip_backlog (#946) ──────────────────────────────────────────────────────

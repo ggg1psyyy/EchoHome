@@ -1,14 +1,14 @@
 """
-The Activity tab's routes: a device's recent voice turns and their saved
-audio (admin only, transcripts redacted for everyone else), the wake word
-samples captured for review, and the per-day activity aggregates.
+The per-day activity aggregates (/api/devices/{id}/activity): the hourly
+hardware metrics, and the voice turns a controller recorded before EchoHome
+removed its voice path. The Activity tab, the turn and recording routes and
+the wake samples went with it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 
 from aiohttp import web
@@ -16,209 +16,12 @@ from aiohttp import web
 import em_auth as auth
 import em_db as db
 import em_http
-import em_recordings
-import em_wake_samples
 
 log = logging.getLogger("echomuse.api")
 
 
 def register(app: web.Application) -> None:
-    app.router.add_get("/api/devices/{id}/turns",         _get_device_turns)
     app.router.add_get("/api/devices/{id}/activity",      _get_device_activity)
-    app.router.add_get("/api/devices/{id}/turns/{turn}/audio", _get_turn_audio)
-    app.router.add_get("/api/devices/{id}/wake-samples", _get_wake_samples)
-    app.router.add_get("/api/devices/{id}/wake-samples/zip", _get_wake_sample_zip)
-    app.router.add_patch("/api/devices/{id}/wake-samples/{sample}", _patch_wake_sample)
-    app.router.add_delete("/api/devices/{id}/wake-samples/{sample}", _delete_wake_sample)
-    app.router.add_get("/api/devices/{id}/wake-samples/{sample}/audio", _get_wake_sample_audio)
-
-
-@auth.require_auth
-async def _get_device_turns(request: web.Request) -> web.Response:
-    """GET /api/devices/{id}/turns — recent voice-turn traces, newest last.
-    Served from the persistent turns table (survives controller and device
-    restarts). Powers the Activity tab's observability panel.
-
-    Query params: limit (default 50, max 1000), since (epoch seconds)."""
-    device_id = request.match_info["id"]
-    try:
-        limit = min(int(request.query.get("limit", 50)), 1000)
-        since = request.query.get("since")
-        since = float(since) if since is not None else None
-    except ValueError:
-        return em_http.error("bad_request", "limit/since must be numeric", 400)
-    loop  = asyncio.get_event_loop()
-    turns = await loop.run_in_executor(
-        None, lambda: db.get_turns(device_id, limit, since)
-    )
-    return em_http.ok(_redact_turns_for(turns, request["user"]))
-
-
-def _redact_turns_for(turns: list, user: dict) -> list:
-    """
-    Remove transcripts for a non-admin session.
-
-    A transcript is the content of what someone said in their home — the
-    same class of data as the recording it came from, differing only in
-    format. Stripped HERE rather than hidden in the dashboard, because the
-    dashboard is not what protects it: /api/devices/{id}/turns is a plain
-    GET with a session token, so a UI-only rule protects nothing from
-    anyone who opens the network tab.
-
-    The rest of the row — timings, scores, outcome — is what the Activity
-    tab is for and stays visible, so read-only access keeps its diagnostic
-    value.
-    """
-    if user.get("role") == "admin":
-        return turns
-    return [{k: v for k, v in t.items() if k != "stt_text"} for t in turns]
-
-
-@auth.require_admin
-async def _get_turn_audio(request: web.Request) -> web.Response:
-    """GET /api/devices/{id}/turns/{turn}/audio — the saved mic audio for
-    one voice turn, as a downloadable WAV. ADMIN ONLY.
-
-    This is recognisable speech recorded in someone's home — the most
-    sensitive thing the controller stores, and the reason saveUtterances is
-    off by default. Under the add-on every Home Assistant user in the
-    household can reach the dashboard (Supervisor's ingress view sets
-    requires_auth=False and panel_admin only hides the sidebar entry), so
-    read-only is no longer a synonym for "someone the operator trusts with
-    the recordings".
-
-    Only turns captured while saveUtterances was on have one, and only the
-    newest em_recordings.KEEP_PER_DEVICE per device survive — a turn row
-    older than that window still carries the filename but the file is gone,
-    so a 404 here is an ordinary outcome, not an error state.
-
-    The filename is derived from (device, turn) rather than taken from the
-    row: em_recordings.resolve then re-checks that the file belongs to the
-    device in the URL, so a turn id from another device can't be used to
-    reach its audio."""
-    device_id = request.match_info["id"]
-    try:
-        turn_id = int(request.match_info["turn"])
-    except ValueError:
-        return em_http.error("bad_request", "turn must be an integer", 400)
-
-    loop = asyncio.get_event_loop()
-    row  = await loop.run_in_executor(None, db.get_device, device_id)
-    if row is None:
-        return em_http.error("device_not_found", f"No device: {device_id}", 404)
-
-    name = em_recordings.filename(device_id, turn_id)
-    path = em_recordings.resolve(device_id, name) if name else None
-    if path is None:
-        return em_http.error("no_recording",
-                      "No saved audio for this turn", 404)
-
-    label = _slug(row["label"] or device_id)
-    return web.FileResponse(
-        path,
-        headers={
-            "Content-Type":        "audio/wav",
-            "Content-Disposition": f'attachment; filename="{label}-turn{turn_id}.wav"',
-            # Recordings are immutable once written and their names are
-            # unique per turn, but the retention window means a name can
-            # stop resolving — so cache privately and briefly, never shared.
-            "Cache-Control":       "private, max-age=60",
-        },
-    )
-
-
-def _slug(text: str) -> str:
-    """Lowercase ASCII slug, safe for a Content-Disposition filename."""
-    out = re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-").lower()
-    return out or "device"
-
-
-@auth.require_admin
-async def _get_wake_samples(request: web.Request) -> web.Response:
-    device_id = request.match_info["id"]
-    try:
-        limit = min(max(int(request.query.get("limit", 50)), 1), 100)
-    except ValueError:
-        return em_http.error("bad_request", "limit must be an integer", 400)
-    loop = asyncio.get_event_loop()
-    rows = await loop.run_in_executor(None, db.get_wake_samples, device_id, limit)
-    return em_http.ok([dict(row) for row in rows])
-
-
-@auth.require_admin
-async def _patch_wake_sample(request: web.Request) -> web.Response:
-    device_id = request.match_info["id"]
-    try:
-        sample_id = int(request.match_info["sample"])
-    except ValueError:
-        return em_http.error("bad_request", "sample must be an integer", 400)
-    body = await em_http.json_body(request)
-    label = body.get("label")
-    if label not in ("wake", "not_wake", "uncertain"):
-        return em_http.error("bad_request", "label must be wake, not_wake, or uncertain", 400)
-    loop = asyncio.get_event_loop()
-    ok = await loop.run_in_executor(None, db.set_wake_sample_label,
-                                    device_id, sample_id, label)
-    return em_http.ok({"id": sample_id, "label": label}) if ok else em_http.error(
-        "sample_not_found", "No wake sample with that id", 404)
-
-
-@auth.require_admin
-async def _delete_wake_sample(request: web.Request) -> web.Response:
-    device_id = request.match_info["id"]
-    try:
-        sample_id = int(request.match_info["sample"])
-    except ValueError:
-        return em_http.error("bad_request", "sample must be an integer", 400)
-    loop = asyncio.get_event_loop()
-    name = await loop.run_in_executor(None, db.delete_wake_sample,
-                                      device_id, sample_id)
-    if name is None:
-        return em_http.error("sample_not_found", "No wake sample with that id", 404)
-    return em_http.ok({"id": sample_id, "deleted": True})
-
-
-@auth.require_admin
-async def _get_wake_sample_audio(request: web.Request) -> web.Response:
-    device_id = request.match_info["id"]
-    try:
-        sample_id = int(request.match_info["sample"])
-    except ValueError:
-        return em_http.error("bad_request", "sample must be an integer", 400)
-    loop = asyncio.get_event_loop()
-    rows = await loop.run_in_executor(None, db.get_wake_samples, device_id, 100)
-    row = next((item for item in rows if item["id"] == sample_id), None)
-    path = em_wake_samples.resolve(device_id, row["audio_file"]) if row else None
-    if path is None:
-        return em_http.error("no_recording", "No saved audio for this sample", 404)
-    return web.FileResponse(path, headers={
-        "Content-Type": "audio/wav",
-        "Content-Disposition": f'attachment; filename="{_slug(device_id)}-wake{sample_id}.wav"',
-        "Cache-Control": "private, max-age=60",
-    })
-
-
-@auth.require_admin
-async def _get_wake_sample_zip(request: web.Request) -> web.Response:
-    """GET /api/devices/{id}/wake-samples/zip — every retained sample WAV for
-    one device as a single archive, one directory per review label. Pruned
-    files are skipped inside em_wake_samples.build_zip; an archive with
-    nothing left is a 404, since retention makes "no files yet" ordinary."""
-    device_id = request.match_info["id"]
-    loop = asyncio.get_event_loop()
-    rows = await loop.run_in_executor(
-        None, db.get_wake_samples, device_id, em_wake_samples.KEEP_PER_DEVICE)
-    data = await loop.run_in_executor(
-        None, em_wake_samples.build_zip, device_id, rows)
-    if data is None:
-        return em_http.error("no_recording", "No saved audio for this device", 404)
-    return web.Response(
-        body=data,
-        headers={
-            "Content-Type":        "application/zip",
-            "Content-Disposition": f'attachment; filename="wake-samples-{_slug(device_id)}.zip"',
-        },
-    )
 
 
 @auth.require_auth

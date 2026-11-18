@@ -332,11 +332,3 @@ def ring_push(scene: dict, capabilities) -> dict:
     return msg
 
 
-def meter_ttl(audio_seconds: float) -> int:
-    """
-    Dead-man TTL for a playback meter ring, sized to the response actually
-    being played. Bounded below so a very short clip still gets a sane
-    window, and padded so a slow link (delivery has been observed at ~2x
-    the audio duration) cannot trip it mid-response.
-    """
-    return int(max(30.0, audio_seconds * 2.0 + METER_TTL_PAD))

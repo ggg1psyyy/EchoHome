@@ -214,22 +214,6 @@ def resolve(configured: str, capabilities, reported: str | None,
     return ListenView(STATE_LEGACY, True, "update the firmware for private listening")
 
 
-def detector(view: ListenView, trigger_capable: bool) -> str | None:
-    """Where an Echo's wake word is detected, for arbitration; None if it
-    cannot wake at all. Not knowing yet is its own answer, so a fleet with
-    one undecided Echo holds its claims rather than guessing it is uniform."""
-    if view.state == STATE_DEGRADED:
-        return None
-    if view.state == STATE_LOCAL:
-        return DETECT_DEVICE
-    if view.state == STATE_LEGACY:
-        # "on" against firmware that cannot act is scored here (em_shadow).
-        return DETECT_DEVICE if trigger_capable else DETECT_CONTROLLER
-    if view.state in (STATE_CONTROLLER, STATE_DIAGNOSTIC):
-        return DETECT_CONTROLLER
-    return DETECT_UNKNOWN
-
-
 # ── Frames ───────────────────────────────────────────────────────────────────
 
 
@@ -326,20 +310,6 @@ class SessionRouter:
 
 # ── Capture time ─────────────────────────────────────────────────────────────
 
-def heard_at(arrived: float, age_ms, srtt_ms) -> float:
-    """
-    When the wake's audio was captured, in the controller's clock.
-
-    `age_ms` is how long before sending the device captured it (0 for a wake
-    the controller scored itself); half the smoothed RTT estimates the one-way
-    delay. Both absent reads as "heard on arrival", which is exactly what the
-    arbiter assumed before this existed — degrade to old behaviour, never to a
-    guess.
-    """
-    age = max(0.0, float(age_ms or 0)) / 1000.0
-    one_way = max(0.0, float(srtt_ms or 0)) / 2000.0
-    return arrived - age - one_way
-
 
 class Frame(bytes):
     """
@@ -359,62 +329,6 @@ class Frame(bytes):
         f.arrived = arrived
         f.captured = arrived if captured is None else captured
         return f
-
-
-class CaptureClock:
-    """
-    When each frame of an Echo's continuous mic stream was captured, in the
-    controller's clock, whatever the link did to it on the way.
-
-    Frame n of the ungated wake stream was captured n × 80ms after the
-    stream began: the Echo sends every frame, silence included. So
-    `arrived − n × 80ms` is the stream's start plus that frame's transit
-    delay, and the smallest value seen is the start plus the least delay
-    any frame had. Retransmits only ever make frames later, so they cannot
-    drag that minimum; a frame held a second in TCP is still dated to when
-    it was captured.
-
-    The minimum is over a sliding window, so it follows the Echo's sample
-    clock drifting against ours (~345ppm measured, ~10ms over the window).
-    Sequence numbers restart with each stream; a restart resets the clock.
-    """
-
-    FRAME_S = 0.08
-    WINDOW_S = 30.0
-
-    def __init__(self) -> None:
-        self.reset()
-
-    def reset(self) -> None:
-        self._last: int | None = None   # last raw u16 sequence
-        self._n = 0                     # frames since the stream began
-        self._mins: deque[tuple[float, float]] = deque()   # (arrived, offset), offsets increasing
-
-    def observe(self, seq: int, arrived: float) -> float:
-        """Record a frame; return when it was captured (≤ `arrived`)."""
-        if self._last is not None:
-            step = (seq - self._last) & 0xFFFF
-            # 0 or a jump backwards (a huge step) is a new stream from 0.
-            if step == 0 or step > 0x8000:
-                self.reset()
-            else:
-                self._n += step
-        if self._last is None:
-            self._n = 0
-        self._last = seq
-        offset = arrived - self._n * self.FRAME_S
-        while self._mins and self._mins[-1][1] >= offset:
-            self._mins.pop()
-        self._mins.append((arrived, offset))
-        while arrived - self._mins[0][0] > self.WINDOW_S:
-            self._mins.popleft()
-        captured = self._mins[0][1] + self._n * self.FRAME_S
-        return max(arrived - MAX_ARB_SLACK_S, min(arrived, captured))
-
-
-def arrival(payload, default: float) -> float:
-    """When `payload` arrived; `default` for audio that was never stamped."""
-    return getattr(payload, "arrived", default)
 
 
 def captured(payload, default: float) -> float:

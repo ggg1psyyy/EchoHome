@@ -511,42 +511,6 @@ def test_a_failed_update_asks_for_the_supervisor_log():
         "nothing collects the supervisor log when the device comes back"
 
 
-def test_data_reconnect_grace_is_per_stream_not_per_frame():
-    """
-    A dropped data connection mid-stream should cost a pause, not the rest of
-    the audio (#28, @kopiro — long read-aloud responses truncated by a brief
-    Wi-Fi blip).
-
-    The budget must be spent DOWN across the stream, never a fresh wait on
-    each call. send_data runs once per audio period, so a per-frame wait means
-    a device that is genuinely gone stalls every remaining frame in turn — a
-    stream that should abort in seconds instead drains for hours holding the
-    voice lock. That failure is worse than the truncation it replaces, which
-    is why the shape is pinned rather than the constant.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "em_controller.py").read_text()
-
-    fn = src[src.index("    async def send_data(self, data: bytes):"):]
-    fn = fn[:fn.index("\n    async def ", 1)]
-
-    assert "_data_grace_left -=" in fn, (
-        "the reconnect grace must be spent down across the stream; a wait that "
-        "does not decrement is a per-frame stall"
-    )
-    assert "_data_grace_left > 0" in fn, \
-        "send_data must stop waiting once the stream's budget is exhausted"
-
-    # Every path that streams audio has to arm it, or the budget is stale from
-    # whatever ran last.
-    for stream_fn in ("async def stream_speaker(self",
-                      "async def stream_speaker_chunks(self"):
-        body = src[src.index(stream_fn):]
-        body = body[:body.index("\n    async def ", 1)]
-        assert "begin_data_stream()" in body, \
-            f"{stream_fn} does not arm the reconnect grace"
-
-
 def test_support_bundle_attributes_metrics_to_a_device():
     """
     `db.get_device_metrics` builds its own result dicts and does NOT include
@@ -923,34 +887,6 @@ def test_addon_panel_stays_admin_only():
         "config.yaml must set panel_admin: true explicitly")
 
 
-def test_recordings_and_transcripts_are_admin_only():
-    """
-    Utterance audio and STT text are the most sensitive things the controller
-    stores — recognisable speech from inside someone's home, and the reason
-    saveUtterances defaults off.
-
-    Under the add-on every Home Assistant user in the household can reach the
-    dashboard (HA's ingress view sets requires_auth=False and panel_admin only
-    hides the sidebar entry), so "read-only" stopped being a synonym for
-    "someone the operator trusts with the recordings".
-
-    Enforced server-side, not in the dashboard: /api/devices/{id}/turns is a
-    plain GET with a session token, so a UI-only rule protects nothing from
-    anyone who opens the network tab.
-    """
-    _, audio = _sources.find_def("_get_turn_audio")
-    assert [ast.unparse(d) for d in audio.decorator_list] == ["auth.require_admin"], (
-        "the utterance audio route must be admin-only")
-
-    turns = _sources.def_source("_get_device_turns")
-    assert "_redact_turns_for" in turns, (
-        "_get_device_turns must strip transcripts for non-admin sessions")
-
-    redact = _sources.def_source("_redact_turns_for")
-    assert '"stt_text"' in redact, (
-        "_redact_turns_for must remove stt_text")
-
-
 def test_role_changes_refuse_to_strand_the_install():
     """
     PATCH /api/users/{id} must refuse to demote the last admin. On the
@@ -1135,71 +1071,6 @@ def test_debug_env_var_is_not_truthy_for_zero():
         "REQUIRE_DEVICE_TLS already uses")
 
 
-def test_the_speaking_flag_and_its_dashboard_push_cannot_drift():
-    """
-    The dashboard renders `speaking` above `thinking` and _push_device_state
-    has always carried it — but nothing pushed the transition. The only pushes
-    were at listening, thinking and turn end, so a turn read
-    listening -> thinking -> idle and never showed Speaking at all. It appeared
-    only when the dashboard's 5s poll of /api/devices happened to land
-    mid-playback, which for a ~2s response it usually did not.
-
-    Setting the flag and telling anyone about it are now one operation, so a
-    third streaming path cannot reintroduce the gap by doing only the first.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-
-    setter = re.search(r"async def _set_speaking\(.*?\n(?=    async def |    def )",
-                       src, re.S)
-    assert setter, "_set_speaking not found"
-    assert "_push_device_state(self)" in setter.group(0), (
-        "the setter must push — that is the whole reason it exists"
-    )
-
-    # Every other write is a bug. __init__'s default and the setter's own
-    # assignment are the two legitimate ones.
-    writes = re.findall(r"self\.speaking\s*=\s*(?!=)", src)
-    assert len(writes) == 2, (
-        f"expected 2 assignments to self.speaking (the __init__ default and "
-        f"the setter), found {len(writes)} — a streaming path is setting the "
-        f"flag without pushing it"
-    )
-
-
-def test_speaking_and_thinking_are_mutually_exclusive():
-    """
-    Both flags reach the dashboard and `speaking` outranks `thinking`, so a
-    stale `thinking` is invisible until speaking clears — and then the tile
-    reads as if the device started thinking again mid-response.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    setter = re.search(r"async def _set_speaking\(.*?\n(?=    async def |    def )",
-                       src, re.S).group(0)
-    assert "self.thinking = False" in setter, (
-        "starting to speak must clear thinking, or the tile falls back to "
-        "Thinking when speaking ends"
-    )
-
-
-def test_the_speaking_push_cannot_fail_a_speaker_stream():
-    """
-    One caller is stream_speaker's finally, which is also reached when
-    barge-in cancels the task mid-send. A push that cannot complete there must
-    not take the stream down with it — turn end pushes the same state moments
-    later. The flag assignment is synchronous and happens either way.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    setter = re.search(r"async def _set_speaking\(.*?\n(?=    async def |    def )",
-                       src, re.S).group(0)
-    assign = setter.find("self.speaking = value")
-    push = setter.find("_push_device_state(self)")
-    assert assign < push, "the flag must be set before the push is attempted"
-    assert "except BaseException" in setter, (
-        "a bare `except Exception` does not catch the CancelledError this sees "
-        "during barge-in"
-    )
-
-
 # ── The wake listener must not be able to die quietly ─────────────────────────
 #
 # Source-shape tests, because the suite cannot import em_controller — which is
@@ -1248,23 +1119,6 @@ def test_deleting_a_device_bounces_its_link():
 # moment it is working — the same failure ack_anim was added for, and the one
 # the ESPHome port-collision incident presented as ("the wake word stopped
 # working", while every part of it worked).
-
-
-def test_every_outcome_cue_names_a_scene_key_that_exists():
-    """
-    `device.led_scene.get(key)` falls through to a dark ring when the key is
-    wrong, so a typo here costs the cue silently — and only on the outcome
-    that is already the unusual one.
-    """
-    import em_scenes
-    src = (CONTROLLER / "em_controller.py").read_text()
-    block = src[src.index("_OUTCOME_ANIM = {"):]
-    block = block[:block.index("\n}")]
-    keys = re.findall(r':\s*"(\w+_anim)"', block)
-    assert keys, "no cue mappings found — did _OUTCOME_ANIM move?"
-    scene = em_scenes.resolve({})
-    for key in keys:
-        assert key in scene, f"_OUTCOME_ANIM names {key}, which no scene defines"
 
 
 def _strip_prose(src: str) -> str:

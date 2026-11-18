@@ -211,13 +211,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "linkRefused":      _link_refusals.get(device_id),
         # The device's owner held its button and it is waiting for Approve.
         "pairRequest":      em_pairing.pending_request(device_id),
-        # Q4 fix (2026-07-05 review): near-miss counter — same lifecycle as
-        # the rest of this "Live" section (resets on reconnect, since it
-        # lives on the per-connection Device object, not the DB row).
-        # None for a privately listening Echo: this controller scores nothing
-        # from it, and 0 would read as "measured, and none".
-        "owwNearMisses":    (None if live and getattr(live, "private_listening", False)
-                             else getattr(live, "oww_near_misses", 0) if live else 0),
         # What this firmware can be asked to do, by capability rather than by
         # version comparison. Drives whether the dashboard OFFERS on-device
         # scoring: a toggle that silently does nothing on old firmware is worse
