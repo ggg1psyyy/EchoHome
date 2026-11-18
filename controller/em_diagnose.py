@@ -40,11 +40,9 @@ NEEDS_CAPABILITY: dict[str, str] = {
     "wakeSoundLevel": "wake_cue",
     "volumeButtonSound": "volume_cue",
     "wakeMic": "wake_mic",
-    "remoteVolumeArc": "remote_volume_arc",
     "responseLevel": "response_level",
     "sendspinEnabled": "sendspin",
     "sendspinUnpaired": "sendspin",
-    "bleProxyConnections": "ble_connect",
     "aecRefSource": "aec_hw_ref",
     "buttonSingleTapEvent": "button_hold",
 }

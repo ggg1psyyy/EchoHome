@@ -724,7 +724,7 @@ func main() {
 	// applyConfig is a config push's effects: from the controller, or at boot
 	// from the one kept (config.LastPath) when no controller is there yet.
 	applyConfig := func(msg config.ConfigMessage) {
-		reconcileOwnedConfig() // first: a change made in HA stands against an older push
+		reconcileOwnedConfig() // first: the Echo's own settings stand over the push
 		applyHardwareConfig(msg)
 		s.SetRemoteVolumeArc(config.Get().RemoteVolumeArcEnabled())
 		applyESPHome(config.Get().ESPHomeServerOn())

@@ -50,7 +50,6 @@ SECTIONS: dict[str, dict] = {
         "label": "Ring",
         "keys": [
             "ledScene", "ledListenColor", "ledThinkColor",
-            "remoteVolumeArc", "muteRing",
             "meterAttack", "meterDecay", "meterFloor",
             "meterGamma", "meterRef", "meterCurve",
         ],
@@ -69,12 +68,8 @@ SECTIONS: dict[str, dict] = {
             "controllerEndpoints",
             # Experimental, so beside the other things most fleets never
             # touch: the Voice Incubator app instead of Home Assistant.
-            "voiceBackend", "incubatorMonitor", "incubatorStandalone", "esphomeServer",
+            "voiceBackend", "incubatorStandalone", "esphomeServer",
         ],
-    },
-    "bluetooth": {
-        "label": "Bluetooth",
-        "keys": ["bleProxyEnabled", "bleProxyConnections"],
     },
     "sendspin": {
         "label": "Sendspin",

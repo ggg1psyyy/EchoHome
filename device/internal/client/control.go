@@ -258,13 +258,6 @@ func (c *ControlClient) SendIncubatorState(state any) error {
 	return c.writeJSON(map[string]any{"type": "incubator_state", "state": state})
 }
 
-// SendSettingsChanged reports settings Home Assistant changed on the Echo
-// (cmd/owned.go) that the controller has not yet pushed back. Ignored by a
-// controller that does not know it; the Echo's values stand meanwhile.
-func (c *ControlClient) SendSettingsChanged(settings map[string]bool) error {
-	return c.writeJSON(map[string]any{"type": "settings_changed", "settings": settings})
-}
-
 // SendSendspinStatus reports the Sendspin player's state as it changes. The
 // stats tick carries it too; this is what makes the dashboard follow a
 // pairing or a stream starting without a 30s wait. Unknown message types are

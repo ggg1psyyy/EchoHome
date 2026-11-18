@@ -212,7 +212,7 @@ func setupESPHome(cc *client.ControlClient, s *server.Server, spk *speaker.PcmSp
 		e.muted.Set(muted)
 		e.entries = append(e.entries, e.muted, muteEntity(s))
 	}
-	e.entries = append(e.entries, setupOwned(cc, s, ledbind.HasMuteButtonLED())...)
+	e.entries = append(e.entries, setupOwned(s, ledbind.HasMuteButtonLED())...)
 	e.entries = append(e.entries, ledRingEntities()...)
 	e.entries = append(e.entries, multiTapEntity())
 	esphomeOnEcho = e

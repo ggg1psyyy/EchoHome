@@ -49,12 +49,6 @@ def world(monkeypatch):
     inc._locks.clear()
 
 
-
-
-
-
-
-
 # ------------------------------------------------------- the backend
 
 def test_every_echo_is_its_own_satellite_whatever_the_setting():
@@ -66,31 +60,12 @@ def test_every_echo_is_its_own_satellite_whatever_the_setting():
         assert inc.wants_on_echo(config), config
 
 
-
-
-
-
 def test_the_port_sits_beside_voice_and_bluetooth():
     import em_db
     assert inc.PORT_OFFSET == 2 * em_db.BLE_PORT_OFFSET
 
 
 # ------------------------------------------------------- lifecycle
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_a_reconcile_failure_is_swallowed(world, monkeypatch):
@@ -103,31 +78,7 @@ def test_a_reconcile_failure_is_swallowed(world, monkeypatch):
 # ------------------------------------------------------- the connection
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ------------------------------------------------- what Home Assistant sees
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_backends_are_known_at_start_before_any_echo_connects(monkeypatch):
@@ -141,8 +92,6 @@ def test_backends_are_known_at_start_before_any_echo_connects(monkeypatch):
     assert inc._backends == {"A": "incubator", "B": "incubator"}
 
 
-
-
 # ------------------------------------------------- the dashboard's row
 
 def test_the_dashboard_sees_nothing_for_a_home_assistant_echo(monkeypatch):
@@ -154,8 +103,6 @@ def test_the_dashboard_sees_an_incubator_echo_offline_as_not_listening(monkeypat
     monkeypatch.setattr(inc, "_backends", {DEV: inc.BACKEND_INCUBATOR})
     assert inc.status_view(DEV) == {"port": None, "listening": False,
                                     "appConnected": False, "inCall": False}
-
-
 
 
 def test_the_device_record_and_the_panel_carry_it():
@@ -233,10 +180,6 @@ def test_the_echo_is_advertised_at_its_own_address_while_it_listens(on_echo):
         assert len(on_echo["unregistered"]) == 1
         assert on_echo["pushed"][-1]["state"]["voiceIncubator"]["listening"] is False
     asyncio.run(run())
-
-
-
-
 
 
 def test_a_stored_home_assistant_backend_still_gets_the_echos_satellite(on_echo):
@@ -320,8 +263,6 @@ def test_a_malformed_report_is_cleaned(on_echo):
     asyncio.run(run())
 
 
-
-
 def test_an_address_mdns_cannot_carry_is_logged_not_raised(on_echo):
     on_echo["echo"].ip = "2001:db8::10"
     async def run():
@@ -344,14 +285,6 @@ def _calls_echo(on_echo):
         echo.anims.append(anim)
     echo.send_led_anim = send_led_anim
     return echo
-
-
-
-
-
-
-
-
 
 
 def test_a_call_on_the_echo_shows_in_the_panel(on_echo):
@@ -377,10 +310,6 @@ def test_the_wake_models_the_app_pushed_the_echo_show_in_the_panel(on_echo):
             await _state(echo, listening=True, port=6055, appConnected=True, wakeModels=bad)
             assert inc.status_view(DEV)["wakeModels"] == 0, bad
     asyncio.run(run())
-
-
-
-
 
 
 def test_an_echo_that_shows_its_satellite_on_the_ring_gets_the_whole_scene():
@@ -411,27 +340,6 @@ def test_both_scene_pushes_use_the_one_builder():
     assert built == [], f"a listeningAnim push built outside em_scenes.ring_push: {built}"
 
 
-def test_the_app_may_listen_live_only_where_the_switch_and_the_firmware_allow():
-    """incubatorMonitor true AND incubator_monitor announced: anything else is
-    off, and off is what the Echo is told (it then offers no monitoring)."""
-    import em_state
-    class Dev:
-        capabilities = ["incubator_satellite", inc.MONITOR_CAPABILITY]
-    em_state.devices["X1"] = Dev()
-    try:
-        assert inc.monitor_allowed({inc.MONITOR_KEY: True}, "X1") is True
-        for cfg in ({}, {inc.MONITOR_KEY: False}, {inc.MONITOR_KEY: "true"}, {inc.MONITOR_KEY: 1}):
-            assert inc.monitor_allowed(cfg, "X1") is False, cfg
-        Dev.capabilities = ["incubator_satellite"]
-        assert inc.monitor_allowed({inc.MONITOR_KEY: True}, "X1") is False
-    finally:
-        em_state.devices.pop("X1", None)
-    rec = inc.EchoSatellite("X1", "02:ec:12:34:56:78")
-    rec.monitor = True
-    assert rec.message(True)["monitor"] is True
-    assert rec.message(False)["monitor"] is False  # never offered to a satellite told to stop
-
-
 def test_the_privacy_line_says_the_echo_streams_while_it_reports_monitoring(on_echo):
     import em_device_view
     echo = _calls_echo(on_echo)
@@ -446,26 +354,6 @@ def test_the_privacy_line_says_the_echo_streams_while_it_reports_monitoring(on_e
         assert inc.status_view(DEV)["monitored"] is True
         await _state(echo, listening=True, port=6055, appConnected=True, monitored="yes")
         assert em_device_view._listen_json(echo)["streams"] is False  # only true is true
-    asyncio.run(run())
-
-
-def test_the_monitor_switch_reaches_the_echo_through_reconcile(on_echo):
-    """Turned on, the next incubator_satellite says monitor (the Echo then
-    restarts its satellite and offers it); turned off, it says not; and never
-    to firmware that does not announce incubator_monitor."""
-    echo = on_echo["echo"]
-    async def run():
-        echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.MONITOR_CAPABILITY]
-        on_echo["config"][inc.MONITOR_KEY] = True
-        await inc.device_connected(DEV)
-        assert echo.sent[-1]["monitor"] is True
-        on_echo["config"][inc.MONITOR_KEY] = False
-        await inc.reconcile(DEV)
-        assert echo.sent[-1]["monitor"] is False
-        on_echo["config"][inc.MONITOR_KEY] = True
-        echo.capabilities = ["mic", "speaker", "incubator_satellite"]
-        await inc.reconcile(DEV)
-        assert echo.sent[-1]["monitor"] is False
     asyncio.run(run())
 
 
@@ -503,8 +391,6 @@ def test_standalone_follows_the_firmware_not_the_switch(on_echo):
     asyncio.run(run())
 
 
-
-
 def test_a_standalone_echo_that_goes_offline_stays_announced(on_echo):
     """Standalone, its satellite keeps answering without the controller link;
     where mDNS does not cross VLANs the app finds it only by the controller's
@@ -528,3 +414,13 @@ def test_a_standalone_echo_that_goes_offline_stays_announced(on_echo):
 
 
 
+def test_the_controller_never_turns_live_listening_on(on_echo):
+    """The Echo owns it (Home Assistant's switch on its own ESPHome device);
+    the message's false is only a first value for an Echo that has none."""
+    on_echo["echo"].capabilities = ["mic", "speaker", "incubator_satellite", inc.MONITOR_CAPABILITY]
+    on_echo["config"]["incubatorMonitor"] = True  # a value stored before EchoHome
+    async def run():
+        await inc.device_connected(DEV)
+        assert on_echo["echo"].sent[-1]["monitor"] is False
+        assert "monitorAllowed" not in inc.status_view(DEV)
+    asyncio.run(run())

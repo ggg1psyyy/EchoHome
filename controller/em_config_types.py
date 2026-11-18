@@ -61,15 +61,11 @@ KINDS: dict[str, str] = {
     "aecDelayMs": INT,
     "aecTailMs": INT,
     "aecRefSource": STR,
-    "bleProxyEnabled": BOOL,
-    "bleProxyConnections": BOOL,
     "sendspinEnabled": BOOL,
     "sendspinUnpaired": BOOL,
     "wakeSound": BOOL,
     "wakeSoundLevel": STR,
     "volumeButtonSound": BOOL,
-    "remoteVolumeArc": BOOL,
-    "muteRing": BOOL,
     "eqBands": FLOAT_LIST,
     "eqLoudness": BOOL,
     "bassGuardEnabled": BOOL,
@@ -88,7 +84,6 @@ KINDS: dict[str, str] = {
     "wakeClipCapture": BOOL,
     "wakeClipMinScore": FLOAT,
     "voiceBackend": STR,
-    "incubatorMonitor": BOOL,
     "incubatorStandalone": BOOL,
     "esphomeServer": BOOL,
 }
@@ -113,6 +108,15 @@ def fits(kind: str, value) -> bool:
     if kind == FLOAT_LIST:
         return isinstance(value, list) and all(_number(x) for x in value)
     raise ValueError(f"unknown kind: {kind}")
+
+
+# Keys the controller no longer has, which a database may still store (a
+# fleet or device config saved before they went). Dropped from every push,
+# so the Echo's own value is never contradicted by a stale one. Since
+# EchoHome the Echo owns these: Home Assistant sets them on its own ESPHome
+# device (device/cmd/owned.go), and the GATT bridge they gated is gone.
+RETIRED = frozenset({"muteRing", "remoteVolumeArc", "incubatorMonitor",
+                     "bleProxyEnabled", "bleProxyConnections"})
 
 
 def invalid_keys(config: dict) -> list[str]:
@@ -156,6 +160,7 @@ def well_typed(device_id: str, config: dict) -> dict:
     em_device_config.apply_live_config raise on it; a dropped key reads as absent at
     both ends. Every full-config push goes through here.
     """
+    config = {k: v for k, v in config.items() if k not in RETIRED}
     config, bad = drop_invalid(config)
     if bad:
         log.warning(f"[api] {device_id}: stored config has values of the wrong "

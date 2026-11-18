@@ -119,7 +119,13 @@ def test_unknown_section_ids_are_dropped():
 
 def test_normalise_is_canonically_ordered():
     """Stored order must not depend on click order, or diffs churn."""
-    assert cs.normalise(["bluetooth", "playback"]) == ["playback", "bluetooth"]
+    assert cs.normalise(["sendspin", "playback"]) == ["playback", "sendspin"]
+
+
+def test_a_section_that_is_gone_is_dropped():
+    """bluetooth went with its keys (the Echo owns them): a device that
+    overrode it keeps nothing of it."""
+    assert cs.normalise(["bluetooth", "playback"]) == ["playback"]
 
 
 def test_summarise_reads_naturally():

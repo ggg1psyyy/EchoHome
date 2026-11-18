@@ -83,7 +83,7 @@ def _listen_json(live) -> dict | None:
     if em_incubator.monitored(getattr(live, "device_id", "")):
         # The Echo says so (incubator_state monitored): its microphone goes
         # to the Voice Incubator app, outside any call, while its Test page
-        # listens. Opt-in (em_incubator.MONITOR_KEY).
+        # listens. Opt-in, on the Echo's own ESPHome device.
         return {"state": "monitored", "streams": True,
                 "reason": "the Voice Incubator app is listening live (its Test page)"}
     return {"state": view.state, "streams": view.streams, "reason": view.reason}
@@ -206,8 +206,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # still shows where it will come back.
         "volume":           (live.volume if live is not None
                              else _stored_volume(row)),
-        # Controller-side BT proxy state — non-None only while the device's
-        # bleProxyEnabled config has a proxy server instantiated.
         "voiceIncubator":   em_incubator.status_view(device_id),  # None unless on it
         # Device-link security: token issued (persistent), and the link over TLS (live).
         "linkTokenIssued":  bool(row["token"]) if "token" in row.keys() else False,
@@ -234,7 +232,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # Gates the dashboard's Identify button (#860); disabled with the reason, not silent.
         "identifyRingCapable": getattr(live, "identify_ring_capable", False) if live else False,
         "incubatorSatelliteCapable": "incubator_satellite" in (getattr(live, "capabilities", None) or []) if live else False,
-        "incubatorMonitorCapable": em_incubator.MONITOR_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
         "incubatorStandaloneCapable": em_incubator.STANDALONE_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
         "esphomeServerCapable": "esphome_server" in (getattr(live, "capabilities", None) or []) if live else False,
         "esphomeNoiseCapable": "esphome_noise" in (getattr(live, "capabilities", None) or []) if live else False,
@@ -250,8 +247,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "wakeCueCapable": getattr(live, "wake_cue_capable", False) if live else False,
         "volumeCueCapable": getattr(live, "volume_cue_capable", False) if live else False,
         "wakeMicCapable": getattr(live, "wake_mic_capable", False) if live else False,
-        "remoteVolumeArcCapable": getattr(live, "remote_volume_arc_capable", False) if live else False,
-        "muteRingOffCapable": "mute_ring_off" in (getattr(live, "capabilities", None) or []) if live else False,
         "responseLevelCapable": getattr(live, "response_level_capable", False) if live else False,
         "stockSoundCapable": getattr(live, "stock_sound_capable", False) if live else False,
         # Sendspin player (#89): whether the firmware has one, and its status

@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
@@ -13,16 +12,15 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/server"
 )
 
-// The settings Home Assistant can change on the Echo itself, as switches on
-// its own ESPHome device: the red ring while muted (muteRing), the volume
-// arc for remote changes (remoteVolumeArc) and the Voice Incubator app's
-// live listening (incubatorMonitor). Kept on the Echo (internal/owned), so a
-// change outlives a reboot with no controller, reported to the controller
-// (settings_changed), which stores it as this Echo's own setting and pushes
-// it back; until that push carries it, the Echo's value stands against the
-// controller's (owned.Store.Reconcile). The mute is a switch too: Home
-// Assistant's soft mute, the Echo's already (state.json), so it needs none
-// of this.
+// The settings Home Assistant changes on the Echo itself, as switches on its
+// own ESPHome device: the red ring while muted (muteRing), the volume arc for
+// remote changes (remoteVolumeArc), the Voice Incubator app's live listening
+// (incubatorMonitor) and the Bluetooth proxy (bleProxyEnabled). The Echo is
+// their only owner since EchoHome: kept here (internal/owned), never
+// reported, and a controller push is taken only for one the Echo has no
+// value for yet (an Echo upgraded with no kept value keeps what its old
+// controller last pushed). The mute is a switch too: Home Assistant's soft
+// mute, the Echo's already (state.json), so it needs none of this.
 
 const (
 	ownedMuteRing        = "muteRing"
@@ -43,7 +41,6 @@ const (
 
 var (
 	ownedSettings *owned.Store
-	ownedCC       *client.ControlClient
 	ownedSrv      *server.Server
 	ownedSwitch   = map[string]*esphome.Switch{}
 	muteSwitch    *esphome.Switch
@@ -51,9 +48,9 @@ var (
 
 // setupOwned loads the store and builds the switches; their values are put
 // in force by applyOwnedAtBoot.
-func setupOwned(cc *client.ControlClient, s *server.Server, muteRingCapable bool) []esphome.Entity {
+func setupOwned(s *server.Server, muteRingCapable bool) []esphome.Entity {
 	ownedSettings = owned.Load(owned.DefaultPath)
-	ownedCC, ownedSrv = cc, s
+	ownedSrv = s
 	var out []esphome.Entity
 	cfgSwitch := func(key string, k uint32, objectID, name, icon string, now bool) {
 		w := &esphome.Switch{Desc: &api.ListEntitiesSwitchResponse{ObjectId: objectID, Key: k, Name: name, Icon: icon,
@@ -111,16 +108,15 @@ func applyOwnedAtBoot() {
 	}
 }
 
-// setOwned is Home Assistant's change: kept, in force, reported.
+// setOwned is Home Assistant's change: kept and in force.
 func setOwned(key string, v bool) {
-	if err := ownedSettings.Set(key, v); err != nil {
+	if err := ownedSettings.SetLocal(key, v); err != nil {
 		// Not kept is not done: HA's switch stays where it was.
 		log.Printf("[settings] %s could not be kept: %v", key, err)
 		return
 	}
 	log.Printf("[settings] %s set to %v from Home Assistant", key, v)
 	applyOwned(key, v)
-	reportOwned()
 }
 
 // applyOwned puts a value in force and shows it on the switch.
@@ -153,19 +149,20 @@ func applyOwned(key string, v bool) {
 	}
 }
 
-// reconcileOwnedConfig runs first on every config push: a pending change
-// stands against an older pushed value; otherwise the push is the value.
+// reconcileOwnedConfig runs first on every config push: the Echo's own value
+// stands over whatever the push carried; the push counts only for a key the
+// Echo has none of yet (owned.Store.Seed).
 func reconcileOwnedConfig() {
 	if ownedSettings == nil {
 		return
 	}
-	if v := ownedSettings.Reconcile(ownedMuteRing, config.Get().MuteRingOn()); v != config.Get().MuteRingOn() {
+	if v := ownedSettings.Seed(ownedMuteRing, config.Get().MuteRingOn()); v != config.Get().MuteRingOn() {
 		config.Get().Apply(config.ConfigMessage{MuteRing: &v})
 	}
-	if v := ownedSettings.Reconcile(ownedRemoteVolumeArc, config.Get().RemoteVolumeArcEnabled()); v != config.Get().RemoteVolumeArcEnabled() {
+	if v := ownedSettings.Seed(ownedRemoteVolumeArc, config.Get().RemoteVolumeArcEnabled()); v != config.Get().RemoteVolumeArcEnabled() {
 		config.Get().Apply(config.ConfigMessage{RemoteVolumeArc: &v})
 	}
-	if v := ownedSettings.Reconcile(ownedBLEProxy, bleProxyOn()); v != bleProxyOn() {
+	if v := ownedSettings.Seed(ownedBLEProxy, bleProxyOn()); v != bleProxyOn() {
 		config.Get().Apply(config.ConfigMessage{BleProxyEnabled: &v})
 	}
 	for key, now := range map[string]bool{ownedMuteRing: config.Get().MuteRingOn(),
@@ -174,7 +171,6 @@ func reconcileOwnedConfig() {
 			w.Set(now)
 		}
 	}
-	reportOwned()
 }
 
 // reconcileOwnedMonitor does the same for the incubator_satellite message.
@@ -182,21 +178,11 @@ func reconcileOwnedMonitor(pushed bool) bool {
 	if ownedSettings == nil {
 		return pushed
 	}
-	v := ownedSettings.Reconcile(ownedMonitor, pushed)
+	v := ownedSettings.Seed(ownedMonitor, pushed)
 	if w := ownedSwitch[ownedMonitor]; w != nil {
 		w.Set(v)
 	}
 	return v
-}
-
-// reportOwned sends what the controller has yet to acknowledge.
-func reportOwned() {
-	if ownedCC == nil || ownedSettings == nil {
-		return
-	}
-	if p := ownedSettings.Pending(); len(p) > 0 {
-		ownedCC.SendSettingsChanged(p)
-	}
 }
 
 // esphomeMuteSwitch follows the software mute on any change of the mute

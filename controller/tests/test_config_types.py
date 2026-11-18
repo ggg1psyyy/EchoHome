@@ -60,7 +60,10 @@ def test_config_go_was_parsed():
 
 def test_every_device_field_is_listed_with_its_go_type():
     for key, go_type in _go_fields().items():
-        if key in NOT_CONFIG:
+        if key in NOT_CONFIG or key in T.RETIRED:
+            # Retired: the Echo owns it now and the controller never pushes
+            # it (em_config_types.RETIRED); the firmware still decodes it
+            # for its own switches.
             continue
         assert key in T.KINDS, f"{key} ({go_type}) is decoded by the device but not listed"
         assert T.KINDS[key] == GO_KIND[go_type], (
@@ -187,3 +190,11 @@ def test_registration_filters_before_it_pushes():
              and getattr(n.func, "attr", None) == "drop_invalid"]
     assert drops, "handle_control no longer calls em_config_types.drop_invalid"
     assert drops[0].lineno < pushes[0].lineno, "drop_invalid must run before the push"
+
+
+def test_a_retired_key_is_never_pushed():
+    """A database may still store one; the Echo's own value must not be
+    contradicted by it (device/cmd/owned.go)."""
+    pushed = T.well_typed("dev1", {"muteRing": True, "bleProxyEnabled": False, "ledScene": "pride"})
+    assert pushed == {"ledScene": "pride"}
+    assert not (T.RETIRED & set(T.KINDS)), "a key cannot be both retired and listed"

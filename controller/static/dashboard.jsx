@@ -2534,7 +2534,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 shadowCapable={!device.connected || !!device.owwShadowCapable}
                 triggerCapable={!device.connected || !!device.owwTriggerCapable}
                 localCapable={!device.connected || !!device.owwLocalCapable}
-                incubatorMonitorCapable={!device.connected || !!device.incubatorMonitorCapable}
                 esphomeServerCapable={!device.connected || !!device.esphomeServerCapable}
                 esphomePanel={device.connected && device.esphomeNoiseCapable
                   ? <ESPHomeServerKey deviceId={device.device_id} isAdmin={isAdmin}/>
@@ -2542,8 +2541,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 listen={device.connected ? deviceListen(device) : null}
                 wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
-                remoteVolumeArcCapable={!device.connected || !!device.remoteVolumeArcCapable}
-                muteRingOffCapable={!device.connected || !!device.muteRingOffCapable}
                 responseLevelCapable={!device.connected || !!device.responseLevelCapable}
                 stockSoundCapable={device.connected && !!device.stockSoundCapable}
                 wakeMicCapable={!device.connected || !!device.wakeMicCapable}
@@ -9689,9 +9686,8 @@ const CONFIG_SECTIONS = {
   "playback": ["eqBands", "eqLoudness", "duckDb", "responseLevel", "limiterEnabled", "limiterThreshold", "limiterRelease", "bassGuardEnabled", "bassGuardDb", "streamReply", "volumeButtonSound"],
   "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
   "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
-  "ring": ["ledScene", "ledListenColor", "ledThinkColor", "remoteVolumeArc", "muteRing", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
-  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorMonitor", "incubatorStandalone", "esphomeServer"],
-  "bluetooth": ["bleProxyEnabled", "bleProxyConnections"],
+  "ring": ["ledScene", "ledListenColor", "ledThinkColor", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
+  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorStandalone", "esphomeServer"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
 };
 
@@ -9866,9 +9862,6 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             hwEchoRef = false, hwRefCapable = true,
                             emosFleet = true, wakeCueCapable = true,
                             volumeCueCapable = true,
-                            remoteVolumeArcCapable = true,
-                            muteRingOffCapable = true,
-                            incubatorMonitorCapable = true,
                             esphomeServerCapable = true, esphomePanel = null,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
@@ -10465,20 +10458,6 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
             </div>
           )}
         </div>
-        <div style={{ marginTop: 'var(--space-7)', ...inputStyle }}>
-          <Toggle label="Remote volume arc"
-            sub={remoteVolumeArcCapable ? 'shows the cyan level arc for non-zero Home Assistant and other remote volume changes' : 'needs newer firmware on this Echo'}
-            disabled={!remoteVolumeArcCapable}
-            value={config.remoteVolumeArc ?? false}
-            onChange={v => set('remoteVolumeArc', v)}/>
-          <Toggle label="Hide the red ring while muted"
-            sub={muteRingOffCapable
-              ? 'the ring stays dark while muted, and the lit mute button alone shows it'
-              : "unavailable: this Echo's mute button has no light of its own, so the ring is what shows it is muted"}
-            disabled={!muteRingOffCapable}
-            value={muteRingOffCapable && config.muteRing === false}
-            onChange={v => set('muteRing', !v)}/>
-        </div>
         <StageAdvanced open={advRing} onToggle={() => setAdvRing(o => !o)} disabledStyle={inputStyle}>
           <div style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--text2)', lineHeight: 1.6, marginBottom: 'var(--space-6)' }}>
             While a response plays, the ring throbs with the live speaker level. These shape how
@@ -10560,16 +10539,9 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         {subHeader('Voice assistant')}
         <div style={{ ...inputStyle }}>
           {/* EchoHome: every Echo is its own Voice Incubator satellite
-              (em_incubator.backend), so there is no backend to choose and
-              no standalone switch -- the firmware keeps its satellite with
-              or without the controller. */}
-          <Toggle label="Let the app listen live"
-            sub={incubatorMonitorCapable
-              ? "off unless you turn it on: while the Voice Incubator app's Test page listens, this Echo streams its microphone to the app continuously, its ring pulsing red. Set fleet-wide, it applies to every Echo that does not override this section"
-              : "this Echo's firmware cannot stream to the app outside a call (it lacks incubator_monitor)"}
-            disabled={disabled || !incubatorMonitorCapable}
-            value={config.incubatorMonitor === true}
-            onChange={v => set('incubatorMonitor', v)}/>
+              (em_incubator.backend), so there is no backend to choose; the
+              app's live listening is a switch on the Echo's own ESPHome
+              device in Home Assistant, which owns it. */}
           <Toggle label="Serve Home Assistant from the Echo (experimental)"
             sub={esphomeServerCapable
               ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome). Encrypted: Home Assistant sets the key itself when it adds the Echo, as for any ESPHome device. Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
@@ -10591,18 +10563,8 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         </div>
       </Stage>
 
-      {/* 06 BLUETOOTH */}
-      <Stage n="06" title="Bluetooth"
-        chips={<><ScopeChip tone="device">Device</ScopeChip><ScopeChip tone="controller">Controller</ScopeChip></>}
-        desc="Makes the Echo a Home Assistant Bluetooth proxy: it passively listens for BLE advertisements (presence beacons, temperature sensors) and hands them to HA through its own ESPHome device. Passive only: no connections. The same switch is on the Echo's device in HA."
-        scope={scopeEl('bluetooth')} dim={secStyle('bluetooth')}>
-        <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
-          <Toggle label="Bluetooth proxy" sub="passive BLE scan → HA (Bermuda, BLE sensors)" value={config.bleProxyEnabled ?? false} onChange={v => set('bleProxyEnabled', v)}/>
-        </div>
-      </Stage>
-
-      {/* 07 SENDSPIN */}
-      <Stage n="07" title="Sendspin"
+      {/* 06 SENDSPIN */}
+      <Stage n="06" title="Sendspin"
         chips={<ScopeChip tone="device">Device</ScopeChip>}
         desc="Makes the Echo a Sendspin player, so Music Assistant can group it with other speakers and play to all of them in sync. Music Assistant connects to the Echo directly. Music from Home Assistant still takes priority and leaves the group. Early Access."
         scope={scopeEl('sendspin')} dim={secStyle('sendspin')}

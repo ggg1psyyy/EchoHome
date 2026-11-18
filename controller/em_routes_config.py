@@ -107,11 +107,9 @@ async def _post_global_config(request: web.Request) -> web.Response:
         for device_id, live in list(em_state.devices.items()):
             em_tasks.spawn(em_payloads.push_endpoints(live, device_id))
 
-    # Reconcile BT proxies for every approved device — offline ones included
-    # (proxy mDNS/port lifecycle is independent of the device connection,
-    # unlike the config push above). No longer filtered on inheritance: a
-    # device overriding some other section still tracks the fleet's
-    # bleProxyEnabled, and reconcile is idempotent either way.
+    # Reconcile every approved Echo's Voice Incubator record, offline ones
+    # included (its mDNS record outlives the device connection, unlike the
+    # config push above); reconcile is idempotent.
     all_rows = await loop.run_in_executor(None, db.get_all_devices)
     for row in all_rows:
         if row["approved"]:

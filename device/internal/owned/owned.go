@@ -1,15 +1,14 @@
 // Package owned keeps the settings the Echo owns: the ones Home Assistant
-// can change on the Echo itself (its own ESPHome server's switches), which
-// must outlive a reboot with no controller and must not be undone by a
-// controller that has not heard of the change yet.
+// changes on the Echo itself (its own ESPHome device's switches), and the
+// ones only the Echo has. They must outlive a reboot with no controller.
 //
-// Each has a value (what is in force) and may be pending (changed here and
-// not yet acknowledged by the controller). A config push from the controller
-// reconciles a key: pending, the push either carries the same value (the
-// controller has it: no longer pending) or an older one (ignored: the
-// Echo's stands, and is reported again); not pending, the push is the value.
-// So the controller stays the record while it exists, and nothing set on the
-// Echo is lost to one that was away.
+// Since EchoHome the Echo is their only owner. The controller once kept them
+// too and reconciled a change made here against its pushes (a pending value,
+// reported until carried back); it no longer has them, so a value here is
+// simply kept. Seed takes a value from elsewhere (the firmware default, or
+// what an older controller pushed) only for a key the Echo has none of yet,
+// so an Echo upgraded from that scheme keeps what it had. A file written
+// then still reads: its "pending" map is ignored, and its values stand.
 package owned
 
 import (
@@ -24,8 +23,7 @@ import (
 const DefaultPath = "/data/local/etc/echomuse/settings.json"
 
 type record struct {
-	Values  map[string]bool `json:"values"`
-	Pending map[string]bool `json:"pending,omitempty"`
+	Values map[string]bool `json:"values"`
 }
 
 // Store is the Echo's owned settings. Safe for concurrent use.
@@ -35,19 +33,14 @@ type Store struct {
 	rec  record
 }
 
-// Load reads the store at path; unreadable is empty (the controller's push
-// or the firmware's defaults then decide).
+// Load reads the store at path; unreadable is empty (the firmware's
+// defaults then decide, and are seeded).
 func Load(path string) *Store {
-	s := &Store{path: path, rec: record{Values: map[string]bool{}, Pending: map[string]bool{}}}
+	s := &Store{path: path, rec: record{Values: map[string]bool{}}}
 	if b, err := os.ReadFile(path); err == nil {
 		var r record
-		if json.Unmarshal(b, &r) == nil {
-			if r.Values != nil {
-				s.rec.Values = r.Values
-			}
-			if r.Pending != nil {
-				s.rec.Pending = r.Pending
-			}
+		if json.Unmarshal(b, &r) == nil && r.Values != nil {
+			s.rec.Values = r.Values
 		}
 	}
 	return s
@@ -69,18 +62,7 @@ func (s *Store) Value(key string) (bool, bool) {
 	return v, ok
 }
 
-// Set records a change made on the Echo: in force, and pending until the
-// controller carries it back.
-func (s *Store) Set(key string, v bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.rec.Values[key] = v
-	s.rec.Pending[key] = v
-	return s.saveLocked()
-}
-
-// SetLocal records a setting only the Echo has (no controller key): kept,
-// never pending, never reported.
+// SetLocal keeps a value set on the Echo.
 func (s *Store) SetLocal(key string, v bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -88,32 +70,14 @@ func (s *Store) SetLocal(key string, v bool) error {
 	return s.saveLocked()
 }
 
-// Reconcile takes the value a controller pushed for key and returns the one
-// to put in force.
-func (s *Store) Reconcile(key string, pushed bool) bool {
+// Seed returns the key's kept value, keeping `v` first if it has none.
+func (s *Store) Seed(key string, v bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if p, ok := s.rec.Pending[key]; ok {
-		if p == pushed {
-			delete(s.rec.Pending, key)
-			s.saveLocked()
-		}
-		return p
+	if kept, ok := s.rec.Values[key]; ok {
+		return kept
 	}
-	if v, ok := s.rec.Values[key]; !ok || v != pushed {
-		s.rec.Values[key] = pushed
-		s.saveLocked()
-	}
-	return pushed
-}
-
-// Pending is what the controller has yet to acknowledge.
-func (s *Store) Pending() map[string]bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make(map[string]bool, len(s.rec.Pending))
-	for k, v := range s.rec.Pending {
-		out[k] = v
-	}
-	return out
+	s.rec.Values[key] = v
+	s.saveLocked()
+	return v
 }

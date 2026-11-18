@@ -74,7 +74,6 @@ from websockets.asyncio.server import ServerConnection as WebSocketServerProtoco
 
 import em_db as db
 import em_events
-import em_echo_settings
 import em_credentials
 import em_device_view
 import em_process_stats
@@ -816,10 +815,6 @@ class Device:
         """Whether physical volume changes can play an idle preview tone."""
         return "volume_cue" in (self.capabilities or [])
 
-    @property
-    def remote_volume_arc_capable(self) -> bool:
-        """Whether remote volume changes can show the cyan level arc (#634)."""
-        return "remote_volume_arc" in (self.capabilities or [])
 
     @property
     def response_level_capable(self) -> bool:
@@ -1662,11 +1657,6 @@ async def _on_sendspin_token(device: Device, msg: dict) -> None:
         waiter.set_result(msg)
 
 
-async def _on_settings_changed(device: Device, msg: dict) -> None:
-    # Settings Home Assistant changed on the Echo itself (em_echo_settings).
-    await em_echo_settings.from_echo(device.device_id, msg.get("settings"))
-
-
 async def _on_esphome_key(device: Device, msg: dict) -> None:
     # The answer to esphome_key_request: the key of the Echo's own ESPHome
     # server. A secret, handled as the Sendspin token is.
@@ -1771,7 +1761,6 @@ CONTROL_HANDLERS = {
     "incubator_state":  em_incubator.on_incubator_state,
     "sendspin_token":   _on_sendspin_token,
     "esphome_key":      _on_esphome_key,
-    "settings_changed": _on_settings_changed,
     "wifi_result":      _on_wifi_result,
     "wifi_scan_result": _on_wifi_scan_result,
     "log":              _on_log,

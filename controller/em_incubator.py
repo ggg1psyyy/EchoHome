@@ -83,7 +83,6 @@ Incubator: Home Assistant offers no voice assistant for it, and nothing
 falls back to Home Assistant."""
 
 FIRMWARE_CAPABILITY = "incubator_satellite"
-MONITOR_KEY = "incubatorMonitor"
 """Per Echo, off by default: may the app listen live (Test page, MONITOR: a stream
 while it listens). Enforced on the Echo, which offers it only when told."""
 MONITOR_CAPABILITY = "incubator_monitor"
@@ -154,7 +153,10 @@ class EchoSatellite:
         self.name = node_name(device_id)
         self.mac = proto.normalise_mac(mac)
         self.port = port
-        self.monitor = self.standalone = False  # MONITOR_KEY, STANDALONE_KEY
+        # monitor is always False from here: the Echo owns live listening
+        # (Home Assistant's switch on its own ESPHome device) and takes this
+        # only as a first value when it has none (device/cmd/owned.go).
+        self.monitor = self.standalone = False
         self.address: Optional[str] = None
         self.state: dict = {}
         self._mdns_info: Optional[ServiceInfo] = None
@@ -233,17 +235,10 @@ async def reconcile(device_id: str) -> None:
             # satellite whatever the switch says (EchoHome firmware), so it is
             # announced for while offline whenever it can answer.
             dev = em_state.devices.get(device_id)
-            await _start_on_echo(device_id, loop, monitor_allowed(cfg, device_id),
+            await _start_on_echo(device_id, loop, False,
                                  STANDALONE_CAPABILITY in (getattr(dev, "capabilities", None) or []))
     except Exception as e:
         log.exception(f"[{device_id}] Incubator reconcile failed: {e}")
-
-
-def monitor_allowed(config: dict, device_id: str, key: str = MONITOR_KEY,
-                    capability: str = MONITOR_CAPABILITY) -> bool:
-    """An Echo's switch (live listening, standalone) on, and firmware that can: only True."""
-    dev = em_state.devices.get(device_id)
-    return config.get(key) is True and capability in (getattr(dev, "capabilities", None) or [])
 
 
 def monitored(device_id: str) -> bool:
@@ -415,7 +410,7 @@ def status_view(device_id: str) -> Optional[dict]:
         return {"port": rec.port, "listening": bool(st.get("listening")),
                 "appConnected": bool(st.get("appConnected")),
                 "inCall": bool(st.get("inCall")), "wakeModels": st.get("wakeModels", 0),
-                "monitored": bool(st.get("monitored")), "monitorAllowed": rec.monitor,
+                "monitored": bool(st.get("monitored")),
                 "onEcho": True}
     # Set to the Voice Incubator, not (yet) on the Echo: nothing runs it.
     return {"port": None, "listening": False, "appConnected": False, "inCall": False}

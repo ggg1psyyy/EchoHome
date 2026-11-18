@@ -239,19 +239,6 @@ DEFAULT_DEVICE_CONFIG = {
     # only (the device never sees the audio again); the key rides the
     # config channel and the device ignores it, same as wakeArbitrationMs.
     "saveUtterances":   False,
-    # bleProxyEnabled: BLE proxy (device-side passive scan over the raw HCI
-    # transport, forwarded to HA as a separate ESPHome bluetooth_proxy
-    # device — em_ble_proxy.py). Default off: enabling durably disables the
-    # Android Bluetooth stack on the device (required — /dev/stpbt is
-    # single-owner) and brings up a second ESPHome listener + mDNS entry.
-    "bleProxyEnabled":  False,
-    # bleProxyConnections: Home Assistant may open Bluetooth connections
-    # through the proxy (#656) — locks, SwitchBot, anything that needs more
-    # than adverts. Default off, and it needs bleProxyEnabled. Switching it on
-    # makes that proxy's ESPHome port require an encryption key
-    # (em_ble_proxy): a connection can operate the device at the other end,
-    # and the port had no authentication.
-    "bleProxyConnections": False,
     # sendspinEnabled: the device runs a Sendspin player (#89) that Music
     # Assistant connects to directly for synchronised multi-room audio.
     # Default off: it opens a listening port and an mDNS record on the Echo.
@@ -301,8 +288,6 @@ DEFAULT_DEVICE_CONFIG = {
     # Opt-in accessibility feedback for volume changes made from HA, the
     # dashboard, automations, or another remote source. Physical buttons show
     # the cyan arc regardless; mute and boot restore stay silent.
-    "remoteVolumeArc":  False,
-    "muteRing":         True,  # red ring while muted; off needs a lit mute button
     # Playback "meter" ring response curve — how hard the ring throbs with
     # the speaker level. Device-side defaults live in animator.go
     # (meterDefaults) and these mirror them; both are clamped independently.
@@ -369,8 +354,6 @@ DEFAULT_DEVICE_CONFIG = {
     # incubator_satellite, else em_incubator's). Anything else reads as "ha"
     # (em_incubator.backend): never moved off its pipeline by an unknown value.
     "voiceBackend": "ha",
-    # incubatorMonitor: the app may listen live (opt-in; em_incubator.MONITOR_KEY)
-    "incubatorMonitor": False,
     "incubatorStandalone": False,  # its satellite outlives the controller
     "esphomeServer": False,  # the Echo serves the ESPHome API itself (EchoHome)
 }
