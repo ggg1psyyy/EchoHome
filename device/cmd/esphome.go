@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/wilbowes/EchoMuse/internal/atomicfile"
 	"github.com/wilbowes/EchoMuse/internal/bindings/als"
 	"github.com/wilbowes/EchoMuse/internal/client"
+	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
@@ -22,8 +25,13 @@ import (
 // Echo itself, as it does to a Voice PE. While the controller still presents
 // the Echo to HA, the Echo's server is a separate device in HA, under its
 // own name ("echohome-<serial>") and MAC, so it never takes over the
-// controller's entry; the entities' keys and object ids are the
-// controller's (em_esphome.py, test-pinned) for the day it does.
+// controller's entry. The entities' keys and object ids are the
+// controller's (em_esphome.py, test-pinned), but HA keys its entities on
+// the device's MAC too: for them to carry over, the day the Echo takes over
+// it must also adopt the controller's MAC (em_db.get_esphome_mac).
+//
+// The switch is kept on the Echo (esphomeOnPath), so the server starts at
+// boot with no controller.
 //
 // The entities are the ones the Echo has: the action button's hold (every
 // board), ambient light where a sensor reads, the CPU and hottest thermal
@@ -60,6 +68,10 @@ type esphomeEcho struct {
 }
 
 var esphomeOnEcho *esphomeEcho
+
+// esphomeOnPath, present, means the server is on: read at boot, so it
+// serves with no controller; written only when the switch changes.
+const esphomeOnPath = "/data/local/etc/echomuse/esphome.on"
 
 // setupESPHome builds the Echo's entities and identity; nothing listens
 // until applyESPHome turns it on.
@@ -107,6 +119,29 @@ func setupESPHome(muted bool) {
 		e.entries = append(e.entries, e.muted)
 	}
 	esphomeOnEcho = e
+	if _, err := os.Stat(esphomeOnPath); err == nil {
+		// Seeded into the config too: a controller that does not know the
+		// key leaves it as it is, rather than turning the server off.
+		on := true
+		config.Get().Apply(config.ConfigMessage{ESPHomeServer: &on})
+		applyESPHome(true)
+	}
+}
+
+// keepESPHomeOn records the switch for the next boot.
+func keepESPHomeOn(on bool) {
+	_, err := os.Stat(esphomeOnPath)
+	switch had := err == nil; {
+	case on && !had:
+		err = atomicfile.Write(esphomeOnPath, []byte("1\n"), 0o600)
+	case !on && had:
+		err = os.Remove(esphomeOnPath)
+	default:
+		return
+	}
+	if err != nil {
+		log.Printf("[esphome] could not keep the switch: %v", err)
+	}
 }
 
 // applyESPHome starts or stops the server, as the config says.
@@ -115,6 +150,7 @@ func applyESPHome(on bool) {
 	if e == nil {
 		return
 	}
+	keepESPHomeOn(on)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	switch {

@@ -24,7 +24,7 @@ needs to travel with it.
 | libopus 1.5.2 (Sendspin's decoder) | `device/internal/opus/libopus/` | BSD-3-Clause | Xiph.Org Foundation, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo |
 | Voice Incubator firmware's mixednet executor, model parser and wake word detector, ported to Go | `device/internal/mixednet/` | Apache-2.0 (`LICENSE` there); changed: ported from C++ | OHF-Voice (firmware-voice-incubator) |
 | ESPMicroSpeechFeatures (the wake word front end; TensorFlow Lite Micro's microfrontend), with KISS FFT | `device/internal/microfeatures/libmsf/` | Apache-2.0 (`LICENSE` there); KISS FFT BSD-3-Clause, in its source headers | The TensorFlow Authors; Kevin Ahrendt (microWakeWord); Mark Borgerding (KISS FFT) |
-| ESPHome native API definitions (aioesphomeapi 45.3.1's compiled `api.proto` and `api_options.proto`), and the Go code generated from them | `device/tools/esphome_gen/descriptors/`, `device/internal/esphome/api/` | MIT (`controller/esphome/vendor/AIOESPHOMEAPI_LICENSE`) | Otto Winter |
+| ESPHome native API definitions (aioesphomeapi 45.3.1's compiled `api.proto` and `api_options.proto`), and the Go code generated from them | `device/tools/esphome_gen/descriptors/`, `device/internal/esphome/api/` | MIT (`device/tools/esphome_gen/descriptors/LICENSE`) | Otto Winter |
 | Wake word models and a test recording, as test data | `device/internal/mixednet/testdata/`, `device/internal/incubator/testdata/` | Apache-2.0 (the `README.md` there names each source) | OHF-Voice, Kevin Ahrendt (microWakeWord), ESPHome |
 
 Full licence texts sit beside the code, in `COPYING` or `*_LICENSE` files. Do
