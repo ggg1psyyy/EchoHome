@@ -113,15 +113,17 @@ which drop transcript lines by pattern, not by guessing."""
 
 
 def backend(config: dict) -> str:
-    """The Echo's voice backend. An unknown value is Home Assistant's: an
-    Echo is never moved off the pipeline it has by a value nothing here can
-    serve."""
-    return BACKEND_INCUBATOR if config.get(CONFIG_KEY) in (BACKEND_INCUBATOR, ON_ECHO) else BACKEND_HA
+    """The Echo's voice backend: since EchoHome, always the Voice Incubator.
+    The controller hosts no voice, so `voiceBackend` has nothing left to
+    choose between, and a stored "ha" (the old default, on every existing
+    install) would otherwise tell a freshly upgraded Echo to stop the only
+    satellite it has. The key stays in the database, unread."""
+    return BACKEND_INCUBATOR
 
 
 def wants_on_echo(config: dict) -> bool:
-    """Whether the setting asks for the Echo's own satellite (ON_ECHO)."""
-    return config.get(CONFIG_KEY) == ON_ECHO
+    """Always the Echo's own satellite (EchoHome): see backend()."""
+    return True
 
 
 def echo_capable(device_id: str) -> bool:

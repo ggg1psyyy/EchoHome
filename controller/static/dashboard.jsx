@@ -2313,9 +2313,9 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                         if (vi.listening)    return `Waiting for the Voice Incubator app${vat}`;
                         return 'Voice Incubator · not listening';
                       }
-                      // Since EchoHome the controller hosts no voice: an
-                      // Echo not set to the Incubator has none from here.
-                      return 'Not set to the Voice Incubator';
+                      // Every approved Echo is its own satellite (EchoHome);
+                      // none is shown before the controller has reconciled it.
+                      return 'No satellite yet';
                     })(), (() => {
                       const vi = device.voiceIncubator;
                       if (vi) return vi.appConnected ? 'var(--ok)' : 'var(--warn)';
@@ -2534,9 +2534,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 shadowCapable={!device.connected || !!device.owwShadowCapable}
                 triggerCapable={!device.connected || !!device.owwTriggerCapable}
                 localCapable={!device.connected || !!device.owwLocalCapable}
-                incubatorOnEchoCapable={!device.connected || !!device.incubatorSatelliteCapable}
                 incubatorMonitorCapable={!device.connected || !!device.incubatorMonitorCapable}
-                incubatorStandaloneCapable={!device.connected || !!device.incubatorStandaloneCapable}
                 esphomeServerCapable={!device.connected || !!device.esphomeServerCapable}
                 esphomePanel={device.connected && device.esphomeNoiseCapable
                   ? <ESPHomeServerKey deviceId={device.device_id} isAdmin={isAdmin}/>
@@ -9870,9 +9868,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             volumeCueCapable = true,
                             remoteVolumeArcCapable = true,
                             muteRingOffCapable = true,
-                            incubatorOnEchoCapable = true,
                             incubatorMonitorCapable = true,
-                            incubatorStandaloneCapable = true,
                             esphomeServerCapable = true, esphomePanel = null,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
@@ -10563,41 +10559,17 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         </div>
         {subHeader('Voice assistant')}
         <div style={{ ...inputStyle }}>
-          <Select label="Voice backend"
-            sub={(config.voiceBackend ?? 'ha') === 'incubator_echo'
-              ? (incubatorOnEchoCapable
-                  ? "experimental: the Echo's own firmware is the Voice Incubator satellite, with the app's wake words and its ring; the controller only announces it on its network, and it never falls back to Home Assistant's"
-                  : "this Echo's firmware cannot be the satellite itself (it lacks incubator_satellite): the controller's satellite serves it, as with Voice Incubator")
-              : ((config.voiceBackend ?? 'ha') === 'incubator'
-                  ? "experimental: OHF-Voice's Voice Incubator app answers this Echo, found by mDNS on the controller's network. Without the app connected the Echo has no voice assistant: it never falls back to Home Assistant's"
-                  : "Home Assistant's own voice pipeline, through the Echo's ESPHome satellite")
-                + (incubatorOnEchoCapable ? '' : ". On the Echo is unavailable: this Echo's firmware cannot be the satellite itself (incubator_satellite)")}
-            disabled={disabled}
-            value={['incubator', 'incubator_echo'].includes(config.voiceBackend ?? 'ha') ? config.voiceBackend : 'ha'}
-            options={[
-              { value: 'ha', label: 'Home Assistant' },
-              { value: 'incubator', label: 'Voice Incubator (experimental)' },
-              { value: 'incubator_echo', label: 'Voice Incubator, on the Echo (experimental)', disabled: !incubatorOnEchoCapable },
-            ]}
-            onChange={v => set('voiceBackend', v)}/>
-          {(config.voiceBackend ?? 'ha') === 'incubator_echo' && (
-            <Toggle label="Let the app listen live"
-              sub={incubatorMonitorCapable
-                ? "off unless you turn it on: while the Voice Incubator app's Test page listens, this Echo streams its microphone to the app continuously, its ring pulsing red. Set fleet-wide, it applies to every Echo that does not override this section"
-                : "this Echo's firmware cannot stream to the app outside a call (it lacks incubator_monitor)"}
-              disabled={disabled || !incubatorMonitorCapable}
-              value={config.incubatorMonitor === true}
-              onChange={v => set('incubatorMonitor', v)}/>
-          )}
-          {(config.voiceBackend ?? 'ha') === 'incubator_echo' && (
-            <Toggle label="Keep working without the controller"
-              sub={incubatorStandaloneCapable
-                ? "off unless you turn it on: this Echo saves its satellite, ring and volume, starts them at boot and keeps answering the Voice Incubator app with the controller down, its buttons its own. The app must still find it: over mDNS, where the controller does not announce it"
-                : "this Echo's firmware cannot run its satellite without the controller (it lacks incubator_standalone)"}
-              disabled={disabled || !incubatorStandaloneCapable}
-              value={config.incubatorStandalone === true}
-              onChange={v => set('incubatorStandalone', v)}/>
-          )}
+          {/* EchoHome: every Echo is its own Voice Incubator satellite
+              (em_incubator.backend), so there is no backend to choose and
+              no standalone switch -- the firmware keeps its satellite with
+              or without the controller. */}
+          <Toggle label="Let the app listen live"
+            sub={incubatorMonitorCapable
+              ? "off unless you turn it on: while the Voice Incubator app's Test page listens, this Echo streams its microphone to the app continuously, its ring pulsing red. Set fleet-wide, it applies to every Echo that does not override this section"
+              : "this Echo's firmware cannot stream to the app outside a call (it lacks incubator_monitor)"}
+            disabled={disabled || !incubatorMonitorCapable}
+            value={config.incubatorMonitor === true}
+            onChange={v => set('incubatorMonitor', v)}/>
           <Toggle label="Serve Home Assistant from the Echo (experimental)"
             sub={esphomeServerCapable
               ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome). Encrypted: Home Assistant sets the key itself when it adds the Echo, as for any ESPHome device. Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"

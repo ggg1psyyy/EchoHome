@@ -57,16 +57,13 @@ def world(monkeypatch):
 
 # ------------------------------------------------------- the backend
 
-def test_only_incubator_selects_the_incubator():
-    assert inc.backend({"voiceBackend": "incubator"}) == "incubator"
-    for config in ({}, {"voiceBackend": "ha"}, {"voiceBackend": "Incubator"},
-                   {"voiceBackend": None}, {"voiceBackend": 1}):
-        assert inc.backend(config) == "ha", config
-
-
-def test_the_default_is_home_assistant():
-    import em_db
-    assert em_db.DEFAULT_DEVICE_CONFIG[inc.CONFIG_KEY] == inc.BACKEND_HA
+def test_every_echo_is_its_own_satellite_whatever_the_setting():
+    """EchoHome has one voice path. The stored value is "ha" on every
+    install that had the old default, and must not stop a satellite."""
+    for config in ({}, {"voiceBackend": "ha"}, {"voiceBackend": "incubator"},
+                   {"voiceBackend": "incubator_echo"}, {"voiceBackend": None}):
+        assert inc.backend(config) == inc.BACKEND_INCUBATOR, config
+        assert inc.wants_on_echo(config), config
 
 
 
@@ -141,7 +138,7 @@ def test_backends_are_known_at_start_before_any_echo_connects(monkeypatch):
     monkeypatch.setattr(inc.db, "get_all_devices", lambda: rows)
     monkeypatch.setattr(inc.db, "get_effective_device_config", lambda i: cfgs[i])
     asyncio.run(inc.start("127.0.0.1"))
-    assert inc._backends == {"A": "incubator", "B": "ha"}
+    assert inc._backends == {"A": "incubator", "B": "incubator"}
 
 
 
@@ -205,12 +202,6 @@ def _state(echo, **st):
     return inc.on_incubator_state(echo, {"type": "incubator_state", "state": st})
 
 
-def test_the_setting_on_the_echo_is_the_incubator_backend():
-    assert inc.backend({"voiceBackend": "incubator_echo"}) == "incubator"
-    assert inc.wants_on_echo({"voiceBackend": "incubator_echo"})
-    assert not inc.wants_on_echo({"voiceBackend": "incubator"})
-
-
 def test_a_capable_echo_is_asked_to_listen_and_the_controller_stands_down(on_echo):
     async def run():
         await inc.device_connected(DEV)
@@ -248,14 +239,29 @@ def test_the_echo_is_advertised_at_its_own_address_while_it_listens(on_echo):
 
 
 
-def test_switching_to_home_assistant_stops_the_echos(on_echo):
+def test_a_stored_home_assistant_backend_still_gets_the_echos_satellite(on_echo):
+    on_echo["config"] = {"voiceBackend": "ha"}
     async def run():
         await inc.device_connected(DEV)
-        await _state(on_echo["echo"], listening=True, port=6055)
-        on_echo["config"] = {"voiceBackend": "ha"}
-        await inc.reconcile(DEV)
-        assert on_echo["echo"].sent[-1]["enabled"] is False
-        assert inc.status_view(DEV) is None and DEV not in inc._on_echo
+        assert on_echo["echo"].sent[-1]["enabled"] is True
+        assert inc.status_view(DEV)["onEcho"]
+    asyncio.run(run())
+
+
+def test_firmware_that_cannot_be_the_satellite_is_told_to_stop(on_echo):
+    """Older firmware (Sidrat's v2.19.0): nothing here can serve it now."""
+    on_echo["echo"].capabilities = ["mic", "speaker"]
+    async def run():
+        await inc.device_connected(DEV)
+        assert DEV not in inc._on_echo and on_echo["registered"] == []
+    asyncio.run(run())
+
+
+def test_an_unapproved_echo_gets_nothing(on_echo):
+    on_echo["approved"] = 0
+    async def run():
+        await inc.device_connected(DEV)
+        assert on_echo["echo"].sent == [] and DEV not in inc._on_echo
     asyncio.run(run())
 
 
@@ -293,7 +299,7 @@ def test_a_new_address_is_advertised_anew(on_echo):
 
 
 def test_a_report_nobody_asked_for_is_ignored(on_echo):
-    on_echo["config"] = {"voiceBackend": "ha"}
+    on_echo["approved"] = 0
     async def run():
         await inc.device_connected(DEV)
         await _state(on_echo["echo"], listening=True, port=6055)

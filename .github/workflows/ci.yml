@@ -567,8 +567,11 @@ jobs:
                   "INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)",
                   [("latest_version", "v0.0.0"),
                    ("latest_binary_url",
-                    "https://github.com/wilbowes/EchoMuse/releases/download/v0.0.0/server"),
+                    "https://github.com/ggg1psyyy/EchoHome/releases/download/v0.0.0/server"),
                    ("latest_notes", "Seeded by CI; never downloaded."),
+                   # A cache counts only for the repository it came from
+                   # (em_releases.cached_firmware).
+                   ("latest_repo", "ggg1psyyy/EchoHome"),
                    ("last_update_check", str(time.time()))])
           print("release cache seeded")
           EOF
