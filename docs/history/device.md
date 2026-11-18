@@ -1684,6 +1684,18 @@ capacity, which bites well before any temperature reading looks alarming.
   loop. Rule out power before suspecting a firmware change: the server is
   userspace, and emOS restarts or rolls it back without rebooting.
 
+- 2026-11-18 (00LQ): **a timer stored as Unix time is moved by a clock
+  step.** The ESPHome server's keepalive and time refresh kept `UnixNano()`
+  marks; after the clock was stepped an hour back (testing the clock from
+  Home Assistant) "since" read negative and neither fired for an hour. Fixed
+  with monotonic offsets from the connection's start
+  (`TestTheTimersNeverReadTheWallClock`). The same pattern is still in
+  `internal/bindings/speaker` (`lastTakeNs`, `VoiceSoundingUntil`,
+  `playedWithin`/`arriving` compare against `time.Now()`): a step back
+  would hold "voice audible" true, a step forward end it early. Unfixed;
+  look there first if barge or the BLE yield misbehave right after a clock
+  step.
+
 ## Volume / mute persistence
 
 **Volume is applied in software, and the DAC stays at unity (2026-09-24).**

@@ -226,7 +226,7 @@ func (s *Server) Serve(ln net.Listener) error {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		cn := &conn{s: s, c: c, out: make(chan packet, outQueue), done: make(chan struct{})}
+		cn := &conn{s: s, c: c, out: make(chan packet, outQueue), done: make(chan struct{}), born: time.Now()}
 		s.mu.Lock()
 		if s.closed {
 			s.mu.Unlock()
@@ -326,9 +326,14 @@ type conn struct {
 	done       chan struct{}
 	once       sync.Once
 	subscribed atomic.Bool
-	lastIn     atomic.Int64 // unix nanoseconds of the last frame read
-	lastTime   atomic.Int64 // unix nanoseconds the time was last asked
-	pinged     atomic.Bool  // a ping is out since the last frame read
+	// born is when the connection was made: lastIn and lastTime are
+	// monotonic offsets from it, never wall-clock instants, because the
+	// wall clock is what this server may step (SetTimeSink): an hour back
+	// would read as an hour to wait (bench, 00LQ, 2026-11-18).
+	born     time.Time
+	lastIn   atomic.Int64 // since born, of the last frame read
+	lastTime atomic.Int64 // since born, of the last time asked
+	pinged   atomic.Bool  // a ping is out since the last frame read
 }
 
 func (c *conn) close() {
@@ -361,9 +366,14 @@ func (c *conn) reply(m proto.Message) {
 	c.send(p)
 }
 
+// since is how long ago a monotonic mark was.
+func (c *conn) since(mark *atomic.Int64) time.Duration {
+	return time.Since(c.born) - time.Duration(mark.Load())
+}
+
 // askTime sends GetTimeRequest.
 func (c *conn) askTime() {
-	c.lastTime.Store(time.Now().UnixNano())
+	c.lastTime.Store(int64(time.Since(c.born)))
 	c.reply(&api.GetTimeRequest{})
 }
 
@@ -386,10 +396,10 @@ func (c *conn) write() {
 			return
 		case <-tick.C:
 			if c.s.timeSink != nil && c.subscribed.Load() &&
-				time.Since(time.Unix(0, c.lastTime.Load())) >= timeRefresh {
+				c.since(&c.lastTime) >= timeRefresh {
 				c.askTime()
 			}
-			if time.Since(time.Unix(0, c.lastIn.Load())) >= keepaliveIdle && !c.pinged.Swap(true) {
+			if c.since(&c.lastIn) >= keepaliveIdle && !c.pinged.Swap(true) {
 				p, _ := packetOf(&api.PingRequest{})
 				var err error
 				if buf, err = c.frame(buf[:0], p); err == nil {
@@ -466,14 +476,14 @@ func (c *conn) run() {
 		}
 		c.noise = t
 	}
-	c.lastIn.Store(time.Now().UnixNano())
+	c.lastIn.Store(int64(time.Since(c.born)))
 	c.s.wg.Add(1)
 	go c.write()
 	for {
 		c.c.SetReadDeadline(time.Now().Add(readIdle))
 		typ, payload, err := c.readMessage(r)
 		if err == nil {
-			c.lastIn.Store(time.Now().UnixNano())
+			c.lastIn.Store(int64(time.Since(c.born)))
 			c.pinged.Store(false)
 		}
 		if err != nil {

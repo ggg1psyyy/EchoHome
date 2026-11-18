@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -197,7 +198,7 @@ func TestASlowClientIsDroppedNotWaitedFor(t *testing.T) {
 	s := New(DeviceInfo{Name: "n"})
 	a, b := net.Pipe()
 	defer b.Close()
-	cn := &conn{s: s, c: a, out: make(chan packet, 2), done: make(chan struct{})}
+	cn := &conn{s: s, c: a, out: make(chan packet, 2), done: make(chan struct{}), born: time.Now()}
 	s.conns[cn] = struct{}{}
 	// No writer runs: the queue fills and stays full.
 	start := time.Now()
@@ -306,5 +307,20 @@ func TestASwitchCommandIsAppliedAndReported(t *testing.T) {
 	}
 	if stuck.Value() {
 		t.Fatal("stuck changed")
+	}
+}
+
+// The server's timers (keepalive, the time refresh) must read Go's monotonic
+// clock, never the wall clock it may itself step: stored as Unix time, an
+// hour's step back read as an hour to wait (bench, 00LQ, 2026-11-18).
+func TestTheTimersNeverReadTheWallClock(t *testing.T) {
+	b, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{".UnixNano()", "time.Unix(0,"} {
+		if bytes.Contains(b, []byte(bad)) {
+			t.Fatalf("server.go uses %s: a wall-clock instant, which a clock step moves", bad)
+		}
 	}
 }
