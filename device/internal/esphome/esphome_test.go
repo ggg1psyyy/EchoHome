@@ -216,3 +216,37 @@ func TestASlowClientIsDroppedNotWaitedFor(t *testing.T) {
 		t.Fatal("dropped, and still counted")
 	}
 }
+
+// A quiet client is pinged, and one that answers is kept past readIdle; one
+// that does not answer is dropped.
+func TestAQuietClientIsPingedAndKeptIfItAnswers(t *testing.T) {
+	ki, kt, ri := keepaliveIdle, keepaliveTick, readIdle
+	keepaliveIdle, keepaliveTick, readIdle = 150*time.Millisecond, 20*time.Millisecond, 400*time.Millisecond
+	// Restored after the server is closed (cleanups run last-first).
+	t.Cleanup(func() { keepaliveIdle, keepaliveTick, readIdle = ki, kt, ri })
+	s := New(DeviceInfo{Name: "n"})
+	c := dialServer(t, s)
+	c.send(&api.HelloRequest{})
+	c.recv()
+	start := time.Now()
+	for pings := 0; time.Since(start) < time.Second; pings++ {
+		if _, ok := c.recv().(*api.PingRequest); !ok {
+			t.Fatal("not a ping")
+		}
+		c.send(&api.PingResponse{})
+	}
+	if s.Clients() != 1 {
+		t.Fatal("a client that answers its pings was dropped")
+	}
+	// Silent now: pinged once more, then dropped.
+	if _, ok := c.recv().(*api.PingRequest); !ok {
+		t.Fatal("not a ping")
+	}
+	c.c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := ReadFrame(c.r); err == nil {
+		t.Fatal("a second frame to a silent client")
+	}
+	if s.Clients() != 0 {
+		t.Fatal("a silent client was kept")
+	}
+}

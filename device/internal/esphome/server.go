@@ -26,8 +26,15 @@ const (
 const DefaultPort = 6053
 
 var (
-	// readIdle: Home Assistant pings every 20 s or so; a client silent this
-	// long is gone (a host that lost power sends no FIN).
+	// keepaliveIdle: a client silent this long is pinged, as ESPHome's own
+	// firmware does. Home Assistant pings only when it has heard nothing,
+	// so a device that keeps sending states would otherwise never hear from
+	// it (bench, 00LQ, 2026-11-18: dropped after HA went quiet).
+	keepaliveIdle = 60 * time.Second
+	// keepaliveTick is how often the writer looks.
+	keepaliveTick = 5 * time.Second
+	// readIdle: a client silent this long, pinged and not answering, is gone
+	// (a host that lost power sends no FIN).
 	readIdle = 90 * time.Second
 	// writeDeadline bounds one write to a client.
 	writeDeadline = 10 * time.Second
@@ -207,6 +214,8 @@ type conn struct {
 	done       chan struct{}
 	once       sync.Once
 	subscribed atomic.Bool
+	lastIn     atomic.Int64 // unix nanoseconds of the last frame read
+	pinged     atomic.Bool  // a ping is out since the last frame read
 }
 
 func (c *conn) close() {
@@ -249,11 +258,24 @@ func (c *conn) writeRaw(b []byte) error {
 
 func (c *conn) write() {
 	defer c.s.wg.Done()
+	tick := time.NewTicker(keepaliveTick)
+	defer tick.Stop()
 	var buf []byte
 	for {
 		select {
 		case <-c.done:
 			return
+		case <-tick.C:
+			if time.Since(time.Unix(0, c.lastIn.Load())) >= keepaliveIdle && !c.pinged.Swap(true) {
+				p, _ := packetOf(&api.PingRequest{})
+				var err error
+				if buf, err = c.frame(buf[:0], p); err == nil {
+					if err := c.writeRaw(buf); err != nil {
+						c.close()
+						return
+					}
+				}
+			}
 		case p := <-c.out:
 			// What else is queued goes in the same write.
 			buf = buf[:0]
@@ -308,11 +330,16 @@ func (c *conn) run() {
 		}
 		c.noise = t
 	}
+	c.lastIn.Store(time.Now().UnixNano())
 	c.s.wg.Add(1)
 	go c.write()
 	for {
 		c.c.SetReadDeadline(time.Now().Add(readIdle))
 		typ, payload, err := c.readMessage(r)
+		if err == nil {
+			c.lastIn.Store(time.Now().UnixNano())
+			c.pinged.Store(false)
+		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
 				log.Printf("[esphome] %s: %v", c.c.RemoteAddr(), err)
