@@ -71,23 +71,15 @@ import em_state
 
 log = logging.getLogger("echomuse.incubator")
 
-CONFIG_KEY = "voiceBackend"
 BACKEND_HA = "ha"
 BACKEND_INCUBATOR = "incubator"
-ON_ECHO = "incubator_echo"
-"""The setting's third value: the Voice Incubator answers this Echo, and the
-Echo's own firmware is the satellite when it announces FIRMWARE_CAPABILITY.
-Until it does (older firmware, or offline at the decision) the controller's
-satellite serves it, as for "incubator". Either way the Echo's backend is the
-Incubator: Home Assistant offers no voice assistant for it, and nothing
-falls back to Home Assistant."""
 
 FIRMWARE_CAPABILITY = "incubator_satellite"
 """Per Echo, off by default: may the app listen live (Test page, MONITOR: a stream
 while it listens). Enforced on the Echo, which offers it only when told."""
 MONITOR_CAPABILITY = "incubator_monitor"
 MDNS_CAPABILITY = "incubator_mdns"  # the Echo also announces itself (no stand-down)
-STANDALONE_KEY, STANDALONE_CAPABILITY = "incubatorStandalone", "incubator_standalone"  # outlives us
+STANDALONE_CAPABILITY = "incubator_standalone"  # its satellite outlives the controller
 """Firmware whose satellite takes button calls: the controller passes a voice
 press on (incubator_press) and the Echo decides what it means there -- stop
 a ringing timer, cancel its call, or start one -- as only it knows which."""

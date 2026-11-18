@@ -83,9 +83,6 @@ KINDS: dict[str, str] = {
     "saveUtterances": BOOL,
     "wakeClipCapture": BOOL,
     "wakeClipMinScore": FLOAT,
-    "voiceBackend": STR,
-    "incubatorStandalone": BOOL,
-    "esphomeServer": BOOL,
 }
 
 
@@ -115,8 +112,12 @@ def fits(kind: str, value) -> bool:
 # so the Echo's own value is never contradicted by a stale one. Since
 # EchoHome the Echo owns these: Home Assistant sets them on its own ESPHome
 # device (device/cmd/owned.go), and the GATT bridge they gated is gone.
+# voiceBackend, incubatorStandalone and esphomeServer went with the choices
+# they made: every Echo is its own satellite, standalone wherever its
+# firmware can be, and serves its ESPHome device always.
 RETIRED = frozenset({"muteRing", "remoteVolumeArc", "incubatorMonitor",
-                     "bleProxyEnabled", "bleProxyConnections"})
+                     "bleProxyEnabled", "bleProxyConnections",
+                     "voiceBackend", "incubatorStandalone", "esphomeServer"})
 
 
 def invalid_keys(config: dict) -> list[str]:

@@ -96,7 +96,6 @@ import em_boards
 import em_tcp
 import em_wsclose
 import em_rttlog
-import em_eq
 import em_mbc
 import em_scenes
 import em_shadow
@@ -323,15 +322,15 @@ BLE_ADVERTS_TYPE   = 0x06
 # audio and the listen_* replies. A device goes quiet only when it sees this —
 # an older controller acts on a device wake only when stream frames arrive.
 #
-# "output_chain": this controller sends UNPROCESSED audio to a device that
-# announced the same capability, and leaves EQ, bass guard and limiter to it.
-# The device runs its chain only when it sees this, so neither half alone
-# changes anything and the two can never both process the same audio.
-# ble_adverts_data is still announced, so an Echo with its Bluetooth proxy on
-# sends its batches on the data plane, where they are dropped: the proxy is
-# the Echo's own ESPHome device's now (EchoHome), and the control plane is
-# the liveness channel they must not ride.
-CONTROLLER_FEATURES = ["ble_adverts_data", "listen_session", "output_chain"]
+# Since EchoHome both stay only for firmware from before it (Sidrat's
+# v2.19.0 until it is updated): ble_adverts_data so an Echo with its
+# Bluetooth proxy on sends its batches on the data plane, where they are
+# dropped, and never on the control plane, the liveness channel; and
+# listen_session so it listens privately rather than streaming. EchoHome
+# firmware reads neither for its adverts (its own ESPHome proxy) and runs
+# its output chain always (no "output_chain", which once handed the chain
+# over from a controller that processed the audio itself).
+CONTROLLER_FEATURES = ["ble_adverts_data", "listen_session"]
 SPEAKER_FRAME_TYPE = 0x02
 SPEAKER_EOS_TYPE   = 0x03
 
@@ -725,18 +724,6 @@ class Device:
         """
         return "audio_mix" in (self.capabilities or [])
 
-    @property
-    def output_chain_on_device(self) -> bool:
-        """
-        Whether this device runs EQ, bass guard and limiter itself, at its
-        ALSA write — in which case every playback path here sends the audio
-        untouched (em_eq.Passthrough).
-
-        On the device, a change is heard within one period. Here it could not
-        reach the ~5.5s already queued on the device, and the dashboard's EQ
-        was only ever "immediate" for audio not yet sent.
-        """
-        return "output_chain" in (self.capabilities or [])
 
 
     @property
@@ -2001,11 +1988,6 @@ async def handle_control(ws: WebSocketServerProtocol, secure: bool = False):
         # arrival is the trigger. Background: shell round trips and possibly a
         # multi-megabyte push, none of which the handshake should wait on.
         em_tasks.spawn(em_reconcile.on_connect(device_id, device))
-        # An Echo without its own output chain is filtered here, which needs
-        # scipy (em_eq._signal): import it in a worker thread now, so the
-        # first stream does not stall the event loop on a ~2 s import.
-        if not device.output_chain_on_device:
-            em_tasks.spawn(asyncio.to_thread(em_eq.preload))
         # An approval (a new device, or an approved pairing) issues link
         # credentials unless this connection already has working ones.
         if em_pairing.approved(device_id):

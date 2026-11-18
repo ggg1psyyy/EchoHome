@@ -1,11 +1,11 @@
 {
  "files": {
-  "em_controller.py": 2626,
-  "em_db.py": 3529
+  "em_controller.py": 2608,
+  "em_db.py": 3521
  },
  "functions": {
   "em_controller.Device.__init__": 206,
-  "em_controller.handle_control": 389,
+  "em_controller.handle_control": 384,
   "em_db.record_device_stats": 206,
   "em_device_view.merge_device": 170,
   "em_ota._run_update_locked": 229,

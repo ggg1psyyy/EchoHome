@@ -9687,7 +9687,7 @@ const CONFIG_SECTIONS = {
   "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
   "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
   "ring": ["ledScene", "ledListenColor", "ledThinkColor", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
-  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorStandalone", "esphomeServer"],
+  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
 };
 
@@ -10536,20 +10536,15 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
             value={config.controllerEndpoints}
             onChange={v => onChange('controllerEndpoints', v)}/>
         </div>
-        {subHeader('Voice assistant')}
+        {subHeader('Home Assistant')}
         <div style={{ ...inputStyle }}>
           {/* EchoHome: every Echo is its own Voice Incubator satellite
               (em_incubator.backend), so there is no backend to choose; the
               app's live listening is a switch on the Echo's own ESPHome
               device in Home Assistant, which owns it. */}
-          <Toggle label="Serve Home Assistant from the Echo (experimental)"
-            sub={esphomeServerCapable
-              ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome). Encrypted: Home Assistant sets the key itself when it adds the Echo, as for any ESPHome device. Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
-              : "this Echo's firmware has no ESPHome server of its own (it lacks esphome_server)"}
-            disabled={disabled || !esphomeServerCapable}
-            value={config.esphomeServer === true}
-            onChange={v => set('esphomeServer', v)}/>
-          {config.esphomeServer === true && esphomePanel}
+          {/* The Echo's own ESPHome device always runs (EchoHome); the panel
+              shows its key, set by Home Assistant when it adds the Echo. */}
+          {esphomeServerCapable && esphomePanel}
         </div>
         {subHeader('Turn processing')}
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>

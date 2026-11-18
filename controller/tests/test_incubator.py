@@ -378,13 +378,13 @@ def test_standalone_follows_the_firmware_not_the_switch(on_echo):
     echo = on_echo["echo"]
     async def run():
         echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.STANDALONE_CAPABILITY]
-        on_echo["config"][inc.STANDALONE_KEY] = True
+        on_echo["config"]["incubatorStandalone"] = True
         await inc.device_connected(DEV)
         assert echo.sent[-1]["standalone"] is True and echo.sent[-1]["monitor"] is False
-        on_echo["config"][inc.STANDALONE_KEY] = False
+        on_echo["config"]["incubatorStandalone"] = False
         await inc.reconcile(DEV)
         assert echo.sent[-1]["standalone"] is True
-        on_echo["config"][inc.STANDALONE_KEY] = True
+        on_echo["config"]["incubatorStandalone"] = True
         echo.capabilities = ["mic", "speaker", "incubator_satellite"]
         await inc.reconcile(DEV)
         assert echo.sent[-1]["standalone"] is False  # firmware that cannot
@@ -400,13 +400,13 @@ def test_a_standalone_echo_that_goes_offline_stays_announced(on_echo):
     echo = on_echo["echo"]
     echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.STANDALONE_CAPABILITY]
     async def run():
-        on_echo["config"][inc.STANDALONE_KEY] = True
+        on_echo["config"]["incubatorStandalone"] = True
         await inc.device_connected(DEV)
         await _state(echo, listening=True, port=6055, appConnected=True)
         assert len(on_echo["registered"]) == 1
         await inc.device_disconnected(DEV)
         assert on_echo["unregistered"] == [] and DEV in inc._on_echo
-        on_echo["config"][inc.STANDALONE_KEY] = False
+        on_echo["config"]["incubatorStandalone"] = False
         await inc.reconcile(DEV)
         assert on_echo["unregistered"] == [] and DEV in inc._on_echo
     asyncio.run(run())

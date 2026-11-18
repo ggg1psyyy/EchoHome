@@ -348,14 +348,6 @@ DEFAULT_DEVICE_CONFIG = {
     # delivered as a file, not by the config push (em_endpoints). Empty =
     # mDNS alone, which is how every fleet worked before it.
     "controllerEndpoints": [],
-    # voiceBackend: who answers this Echo — "ha" (HA's own pipeline), or
-    # OHF-Voice's Voice Incubator app: "incubator" (em_incubator's satellite)
-    # or "incubator_echo" (the Echo's own firmware as satellite when it says
-    # incubator_satellite, else em_incubator's). Anything else reads as "ha"
-    # (em_incubator.backend): never moved off its pipeline by an unknown value.
-    "voiceBackend": "ha",
-    "incubatorStandalone": False,  # its satellite outlives the controller
-    "esphomeServer": False,  # the Echo serves the ESPHome API itself (EchoHome)
 }
 
 # The highest wake threshold that can ever fire, enforced on every config

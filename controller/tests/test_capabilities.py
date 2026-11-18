@@ -314,6 +314,9 @@ def test_the_controller_announces_its_own_features_and_the_device_reads_them():
     # Every announced feature must be a constant the device actually tests
     # for. A typo here is permanently silent on both sides.
     consumed = set(re.findall(r'Feature\w+\s*=\s*"([a-z_]+)"', go))
+    # Read only by firmware from before EchoHome, which still exists in the
+    # field (em_controller.CONTROLLER_FEATURES says why it stays announced).
+    consumed |= {"ble_adverts_data"}
     assert announced <= consumed, (
         f"controller announces {announced - consumed} which the device never "
         f"looks for — the feature would never be used and nothing would say so"
