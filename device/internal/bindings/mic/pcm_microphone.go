@@ -266,10 +266,28 @@ func (p *PcmMicrophone) readLoop() {
 	stream := make(chan []byte, 16)
 
 	go func() {
+		waitForFreeCapture(p.device.Card, p.device.Device, captureFreeTimeout)
 		if err := p.device.GetAudioStream(p.device.DeviceConfig, stream); err != nil {
 			log.Printf("mic: ALSA stream error: %v", err)
 		}
 	}()
+	// A capture that never delivers is otherwise silent: say so, and keep
+	// saying so, until it does.
+	first := make(chan struct{})
+	go func() {
+		t := time.NewTimer(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-first:
+				return
+			case <-t.C:
+				log.Printf("[mic] NO audio from the capture device yet: the microphones are dead until the firmware restarts")
+				t.Reset(time.Minute)
+			}
+		}
+	}()
+	var firstOnce sync.Once
 
 	rate := int64(p.device.DeviceConfig.SampleRate)
 	bytesPerFrame := p.bytesPerFrame
@@ -283,6 +301,10 @@ func (p *PcmMicrophone) readLoop() {
 	)
 
 	for audio := range stream {
+		firstOnce.Do(func() {
+			close(first)
+			log.Printf("[mic] capture running")
+		})
 		now := time.Now()
 		frames := int64(len(audio) / bytesPerFrame)
 		batchDur := time.Duration(frames) * time.Second / time.Duration(rate)

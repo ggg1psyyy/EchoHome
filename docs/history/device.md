@@ -1696,6 +1696,22 @@ capacity, which bites well before any temperature reading looks alarming.
   look there first if barge or the BLE yield misbehave right after a clock
   step.
 
+- 2026-11-18 (00LQ): **a server killed and restarted at once leaves the
+  audio devices to a process that has not let go.** The old process held
+  the speaker past the new one's 10 s wait (`STILL held by pid ... opening
+  anyway`), and the new capture open never delivered: no `[mic] clock` for
+  ten minutes, the satellite heard nothing, nothing was logged. The user
+  heard constant crackling from that boot on. A clean restart (nothing
+  holding the devices) cleared both. The capture now waits for its
+  substream as the speaker does, logs `[mic] capture running` on its first
+  audio and warns every minute while it has none. A test restart should be
+  a single kill with nothing else killing it, or an OTA.
+- 2026-11-18 (00LQ): **the LED ring is audible through the speaker.** A spin
+  (a frame every 90 ms) is heard as ticking: each frame is an I2C write to
+  the is31fl3236 and a step in LED current. Continuous idle animations (the
+  LED Ring light's effects) make it constant. The Bluetooth radio adds a
+  little (less with the proxy off). Unmeasured; nothing is mitigated yet.
+
 ## Volume / mute persistence
 
 **Volume is applied in software, and the DAC stays at unity (2026-09-24).**
