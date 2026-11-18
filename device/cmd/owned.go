@@ -72,15 +72,25 @@ func setupOwned(cc *client.ControlClient, s *server.Server, muteRingCapable bool
 	return out
 }
 
+// muteSource: a mute made by hand only the hand undoes (owned.MuteSource).
+var muteSource owned.MuteSource
+
 // muteEntity is the mute as a switch, as a Voice PE has it.
 func muteEntity(s *server.Server) *esphome.Switch {
 	muteSwitch = &esphome.Switch{Desc: &api.ListEntitiesSwitchResponse{ObjectId: "mute", Key: esphomeMuteKey,
 		Name: "Mute", Icon: "mdi:microphone-off"}}
 	muteSwitch.OnCommand = func(on bool) {
-		if on != s.IsMuted() {
+		toggle, ok := muteSource.Command(on, s.IsMuted())
+		if !ok {
+			log.Printf("[esphome] unmute from Home Assistant refused: muted by hand, only the button unmutes")
+			muteSwitch.Set(true)
+			return
+		}
+		if toggle {
 			s.MuteToggle() // the mute callback reports the result
 		}
 	}
+	muteSource.Boot(s.IsMuted())
 	muteSwitch.Set(s.IsMuted())
 	return muteSwitch
 }
@@ -177,8 +187,9 @@ func reportOwned() {
 	}
 }
 
-// esphomeMuteSwitch follows the mute.
+// esphomeMuteSwitch follows the mute, and records who made it.
 func esphomeMuteSwitch(muted bool) {
+	muteSource.Changed(muted)
 	if muteSwitch != nil {
 		muteSwitch.Set(muted)
 	}
