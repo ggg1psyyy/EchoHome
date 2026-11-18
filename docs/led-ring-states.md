@@ -249,7 +249,7 @@ suppress it as they do any `led_anim`.
 | I7 | `timer_ringing`, no call | amber pulse (`em_timers.TIMER_ANIM`), no TTL | `timer_stopped`, a press, the app gone |
 | I8 | `announcement` `active`, no call | meter (C3) | `active` false |
 | I9 | Monitored: the app listens live (`incubator_monitor`, opt-in), no call | red pulse, 1s period, no TTL, the Echo's own (never a scene's) | the app stops, a call, mute, the app gone |
-| I10 | Running timers (`timer_progress`), nothing above | the VPE's timer ring (`timers` pattern, server/timers.go): the ring is the longest timer's length, each timer (up to six, soonest first) on top of the later ones in its own colour (the scene's thinking colour for the app's -1), at a fifth of full for one, half for several; a dimmer LED steps round once a second; counted down on the Echo from the event, repainted each 100 ms | `shown` 0, the app gone |
+| I10 | Running timers (`timer_progress`), nothing above | the VPE's timer ring (`timers` pattern, server/timers.go): the ring is the longest timer's length, each timer (up to six, soonest first) on top of the later ones in its own colour (the scene's thinking colour for the app's -1), at a fifth of full for one, half for several; an LED at a third steps round once a second (the VPE dims it far less, which its ring's gamma shows and the Echo's does not); counted down on the Echo from the event, repainted each 100 ms | `shown` 0, the app gone |
 
 The app's sounds and its answer share one stream (voice_incubator
 `server.py` `Cues`): the "heard" sound plays the moment the command ends,

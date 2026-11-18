@@ -22,8 +22,11 @@ type TimerArc struct {
 	Color  [3]uint8
 }
 
-// timerStepDim is the stepping LED's share of its color (VPE: 230/255).
-const timerStepDim = 230
+// timerStepDim is the stepping LED's share of its color: a third. The VPE's
+// 230/255 shows through its ring's 2.8 gamma; the Echo's ring has none, and
+// at a fifth of full brightness 90% could not be told apart (00LQ,
+// 2026-11-18).
+const timerStepDim = 85
 
 // timersFrame is the ring for arcs (soonest first) elapsed into the pattern,
 // with the stepping LED at step.
