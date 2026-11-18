@@ -2534,6 +2534,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 incubatorOnEchoCapable={!device.connected || !!device.incubatorSatelliteCapable}
                 incubatorMonitorCapable={!device.connected || !!device.incubatorMonitorCapable}
                 incubatorStandaloneCapable={!device.connected || !!device.incubatorStandaloneCapable}
+                esphomeServerCapable={!device.connected || !!device.esphomeServerCapable}
                 listen={device.connected ? deviceListen(device) : null}
                 wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
@@ -9689,7 +9690,7 @@ const CONFIG_SECTIONS = {
   "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
   "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
   "ring": ["ledScene", "ledListenColor", "ledThinkColor", "remoteVolumeArc", "muteRing", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
-  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorMonitor", "incubatorStandalone"],
+  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorMonitor", "incubatorStandalone", "esphomeServer"],
   "bluetooth": ["bleProxyEnabled", "bleProxyConnections"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
 };
@@ -9870,6 +9871,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             incubatorOnEchoCapable = true,
                             incubatorMonitorCapable = true,
                             incubatorStandaloneCapable = true,
+                            esphomeServerCapable = true,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
                             wakeMicCapable = true,
@@ -10594,6 +10596,13 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
               value={config.incubatorStandalone === true}
               onChange={v => set('incubatorStandalone', v)}/>
           )}
+          <Toggle label="Serve Home Assistant from the Echo (experimental)"
+            sub={esphomeServerCapable
+              ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome). Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
+              : "this Echo's firmware has no ESPHome server of its own (it lacks esphome_server)"}
+            disabled={disabled || !esphomeServerCapable}
+            value={config.esphomeServer === true}
+            onChange={v => set('esphomeServer', v)}/>
         </div>
         {subHeader('Turn processing')}
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>

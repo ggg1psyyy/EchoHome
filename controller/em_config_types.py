@@ -90,6 +90,7 @@ KINDS: dict[str, str] = {
     "voiceBackend": STR,
     "incubatorMonitor": BOOL,
     "incubatorStandalone": BOOL,
+    "esphomeServer": BOOL,
 }
 
 

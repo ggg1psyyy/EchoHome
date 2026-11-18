@@ -403,6 +403,11 @@ func main() {
 			log.Println("[cmd] action button release ended a pairing hold — not forwarded")
 			return
 		}
+		// The Echo's own ESPHome server (when on) has the hold, with or
+		// without a controller.
+		if event.ClickType == pkgbuttons.DotClick && !event.Down {
+			esphomeButton(int(event.HeldMs))
+		}
 		// Inert without a controller session: the dot cannot start a turn
 		// with nothing to send it to, and the ring flash CancelVolumeDisplay
 		// produces would acknowledge a press that achieves nothing. Dropped
@@ -688,6 +693,7 @@ func main() {
 	controlClient.OnConfigApplied(func(msg config.ConfigMessage) {
 		applyHardwareConfig(msg)
 		s.SetRemoteVolumeArc(config.Get().RemoteVolumeArcEnabled())
+		applyESPHome(config.Get().ESPHomeServerOn())
 		incubatorSaveSoon() // the ring's scene, for a standalone satellite
 		s.SetMuteRing(config.Get().MuteRingOn())
 		pcmSpeaker.SetResponseGainDB(config.Get().ResponseGainDB())
@@ -730,6 +736,7 @@ func main() {
 
 	// The Voice Incubator satellite, when the controller asks for it.
 	setupIncubator(controlClient, dataClient, pcmSpeaker, s)
+	setupESPHome(s.IsMuted())
 
 	// Speaker flush — barge-in: cut buffered TTS the moment the controller
 	// hears the wake word during playback.
@@ -836,6 +843,7 @@ func main() {
 	// review C5 fix sequence) — deliberately not guessed at here.
 	s.SetMuteChangeCallback(func(muted bool) {
 		controlClient.SendMuteState(muted)
+		esphomeMuted(muted)
 		if muted {
 			// Reported as muted rather than as the stream stopping, which
 			// StopMic would otherwise record.

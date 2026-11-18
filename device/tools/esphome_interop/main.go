@@ -1,0 +1,49 @@
+// Command esphome_interop serves internal/esphome with sample entities on
+// 127.0.0.1, for check.py to drive with aioesphomeapi (Home Assistant's own
+// ESPHome client): the proof that the Echo's server speaks what HA speaks.
+//
+//	go run ./tools/esphome_interop 16053     (from device/; then run check.py)
+package main
+
+import (
+	"log"
+	"net"
+	"os"
+	"time"
+
+	"github.com/wilbowes/EchoMuse/internal/esphome"
+	"github.com/wilbowes/EchoMuse/internal/esphome/api"
+)
+
+func main() {
+	port := "16053"
+	if len(os.Args) > 1 {
+		port = os.Args[1]
+	}
+	lux := &esphome.Sensor{Desc: &api.ListEntitiesSensorResponse{ObjectId: "ambient_light", Key: 3, Name: "Ambient Light",
+		UnitOfMeasurement: "lx", AccuracyDecimals: 0, DeviceClass: "illuminance",
+		StateClass: api.SensorStateClass_STATE_CLASS_MEASUREMENT}}
+	muted := &esphome.BinarySensor{Desc: &api.ListEntitiesBinarySensorResponse{ObjectId: "mic_muted", Key: 4,
+		Name: "Microphone Muted", Icon: "mdi:microphone-off"}}
+	btn := &esphome.Event{Desc: &api.ListEntitiesEventResponse{ObjectId: "action_button", Key: 2, Name: "Action Button",
+		DeviceClass: "button", EventTypes: []string{"long", "single", "double", "triple"}}}
+	s := esphome.New(esphome.DeviceInfo{Name: "echohome-interop", FriendlyName: "EchoHome interop",
+		MAC: "02:EC:00:00:00:99", Manufacturer: "EchoHome", Model: "biscuit",
+		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted)
+	ln, err := net.Listen("tcp", "127.0.0.1:"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	go func() {
+		// Once a client has subscribed: a reading, a mute, a press.
+		for s.Clients() == 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		time.Sleep(700 * time.Millisecond)
+		lux.Set(123)
+		muted.Set(true)
+		s.Fire(2, "long")
+	}()
+	log.Printf("serving on %s", ln.Addr())
+	log.Fatal(s.Serve(ln))
+}

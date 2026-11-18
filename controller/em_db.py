@@ -372,6 +372,7 @@ DEFAULT_DEVICE_CONFIG = {
     # incubatorMonitor: the app may listen live (opt-in; em_incubator.MONITOR_KEY)
     "incubatorMonitor": False,
     "incubatorStandalone": False,  # its satellite outlives the controller
+    "esphomeServer": False,  # the Echo serves the ESPHome API itself (EchoHome)
 }
 
 # The highest wake threshold that can ever fire, enforced on every config

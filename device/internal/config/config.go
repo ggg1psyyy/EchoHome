@@ -76,6 +76,11 @@ type Device struct {
 	// found distracting, but useful as an opt-in accessibility setting (#634).
 	RemoteVolumeArc bool
 
+	// ESPHomeServer runs the Echo's own ESPHome API server (internal/esphome),
+	// so Home Assistant can connect to the Echo itself. Off by default while
+	// the controller still presents the Echo to HA.
+	ESPHomeServer bool
+
 	// MuteRing shows the red ring while muted. Off, the ring stays dark and
 	// the lit mute button alone says it: honoured only on an Echo whose
 	// button lights itself (capability mute_ring_off).
@@ -332,6 +337,9 @@ func (d *Device) Apply(msg ConfigMessage) {
 	if msg.MuteRing != nil {
 		d.MuteRing = *msg.MuteRing
 	}
+	if msg.ESPHomeServer != nil {
+		d.ESPHomeServer = *msg.ESPHomeServer
+	}
 	if msg.StartupVolume > 0 {
 		d.StartupVolume = msg.StartupVolume
 	}
@@ -413,6 +421,13 @@ func (d *Device) VolumeButtonSoundEnabled() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.VolumeButtonSound
+}
+
+// ESPHomeServerOn reports whether the Echo serves the ESPHome API itself.
+func (d *Device) ESPHomeServerOn() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.ESPHomeServer
 }
 
 // MuteRingOn reports whether the red ring shows while muted.
@@ -537,6 +552,7 @@ func (d *Device) Snapshot() ConfigMessage {
 	sendspinUnpaired := d.SendspinUnpaired != nil && *d.SendspinUnpaired
 	remoteVolumeArc := d.RemoteVolumeArc
 	muteRing := d.MuteRing
+	esphomeServer := d.ESPHomeServer
 	return ConfigMessage{
 		VadThreshold:        d.VadThreshold,
 		VadSpeechMs:         d.VadSpeechMs,
@@ -569,6 +585,7 @@ func (d *Device) Snapshot() ConfigMessage {
 		SendspinName:        d.SendspinName,
 		RemoteVolumeArc:     &remoteVolumeArc,
 		MuteRing:            &muteRing,
+		ESPHomeServer:       &esphomeServer,
 		ListeningAnim:       d.ListeningAnim,
 		IncubatorRing:       d.IncubatorRing,
 	}
@@ -648,6 +665,8 @@ type ConfigMessage struct {
 	RemoteVolumeArc *bool `json:"remoteVolumeArc,omitempty"`
 	// MuteRing: a pointer, as false is meaningful (the ring off while muted).
 	MuteRing *bool `json:"muteRing,omitempty"`
+	// ESPHomeServer: a pointer, as false (off) is meaningful.
+	ESPHomeServer *bool `json:"esphomeServer,omitempty"`
 
 	// Output chain (internal/outchain). Pointers because zero is a real
 	// setting for every one of them; see applyOutput.

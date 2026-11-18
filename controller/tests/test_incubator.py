@@ -883,3 +883,31 @@ def test_a_standalone_echo_that_goes_offline_stays_announced(on_echo):
         await inc.reconcile(DEV)
         assert len(on_echo["unregistered"]) == 1 and DEV not in inc._on_echo
     asyncio.run(run())
+
+
+def test_the_echos_own_esphome_server_keeps_the_controllers_entities():
+    """The Echo's server (device/cmd/esphome.go) uses the controller's entity
+    keys, object ids and button event types, so HA's entities survive the day
+    it takes over; and its message ids (internal/esphome/api/msgids.go,
+    generated) are the ones this controller decodes."""
+    import re
+    from pathlib import Path
+    import em_esphome
+    from esphome import message_registry as reg
+    dev = Path(__file__).resolve().parents[2] / "device"
+    go = (dev / "cmd" / "esphome.go").read_text()
+    consts = dict(re.findall(r"esphome(\w+Key)\s*=\s*(\d+)", go))
+    assert int(consts["EventKey"]) == em_esphome.EVENT_KEY
+    assert int(consts["AmbientKey"]) == em_esphome.AMBIENT_LUX_KEY
+    assert int(consts["MicMutedKey"]) == em_esphome.MIC_MUTED_KEY
+    assert int(consts["CPUTempKey"]) == em_esphome.CPU_TEMP_KEY
+    assert int(consts["MaxTempKey"]) == em_esphome.MAX_TEMP_KEY
+    for object_id in ("action_button", "ambient_light", "cpu_temperature",
+                      "hottest_zone_temperature", "mic_muted"):
+        assert f'ObjectId: "{object_id}"' in go or f'temp("{object_id}"' in go, object_id
+    types = re.search(r"esphomeButtonEventTypes = \[\]string\{([^}]*)\}", go).group(1)
+    assert [t.strip().strip('"') for t in types.split(",")] == em_esphome.BUTTON_EVENT_TYPES
+    ids = dict((n, int(i)) for n, i in re.findall(r'"(\w+)":\s*(\d+),',
+                                                  (dev / "internal/esphome/api/msgids.go").read_text()))
+    ours = {cls.__name__: t for t, cls in reg.MESSAGE_TYPE_TO_CLASS.items()}
+    assert ids == ours
