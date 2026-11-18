@@ -70,6 +70,8 @@ type Server struct {
 	timeSink func(t time.Time, timezone string)
 	// bleFlags are the Bluetooth proxy's features (SetBluetoothProxy).
 	bleFlags atomic.Uint32
+	// friendly overrides info.FriendlyName once SetFriendlyName has run.
+	friendly atomic.Pointer[string]
 
 	keyMu    sync.Mutex
 	psk      []byte // nil: no key
@@ -174,6 +176,27 @@ func (s *Server) Adverts(advs []*api.BluetoothLERawAdvertisement) {
 			c.send(p)
 		}
 	}
+}
+
+// FriendlyName is the name Home Assistant shows: info's, or the last
+// SetFriendlyName.
+func (s *Server) FriendlyName() string {
+	if p := s.friendly.Load(); p != nil {
+		return *p
+	}
+	return s.info.FriendlyName
+}
+
+// SetFriendlyName renames the device for Home Assistant, which reads the name
+// from DeviceInfo when it connects: a change drops the connected clients, so
+// each reconnects and reads it (HA renames the device unless its user has).
+// The node name never changes: HA expects it from the mDNS host name.
+func (s *Server) SetFriendlyName(name string) {
+	if name == "" || name == s.FriendlyName() {
+		return
+	}
+	s.friendly.Store(&name)
+	s.dropClients()
 }
 
 // dropClients closes every connection (each reconnects).
@@ -588,7 +611,7 @@ func (c *conn) handle(m proto.Message) bool {
 		c.reply(&api.AuthenticationResponse{})
 	case *api.DeviceInfoRequest:
 		i := s.info
-		c.reply(&api.DeviceInfoResponse{Name: i.Name, FriendlyName: i.FriendlyName, MacAddress: i.MAC,
+		c.reply(&api.DeviceInfoResponse{Name: i.Name, FriendlyName: s.FriendlyName(), MacAddress: i.MAC,
 			Manufacturer: i.Manufacturer, Model: i.Model,
 			// A dot is required: HA splits project_name on it unconditionally
 			// (em_esphome.py, "session handoff finding #1").

@@ -17,6 +17,7 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/bindings/speaker"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/clock"
+	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
@@ -76,6 +77,8 @@ type esphomeEcho struct {
 	muted   *esphome.BinarySensor
 	entries []esphome.Entity
 	info    esphome.DeviceInfo
+	// withdraw ends the server's mDNS announcement, while it serves.
+	withdraw func()
 }
 
 var esphomeOnEcho *esphomeEcho
@@ -239,19 +242,60 @@ func applyESPHome(on bool) {
 		if k := loadESPHomeKey(); k != nil {
 			e.srv.SetKey(k)
 		}
+		e.srv.SetFriendlyName(esphomeFriendlyName(e.info))
 		e.stop = make(chan struct{})
 		go e.srv.Serve(ln)
 		go e.poll(e.stop)
+		// Home Assistant discovers it as an ESPHome node: the node name as
+		// instance and host, the TXT records read on every tick (the key
+		// Home Assistant sets, a rename).
+		srv := e.srv
+		e.withdraw = announce("esphome", e.info.Name, esphome.ServiceType, e.info.Name,
+			esphome.DefaultPort, func() []string { return srv.MDNSText(e.info.Model) })
 		log.Printf("[esphome] serving Home Assistant on %d as %s (%s), key set: %v", esphome.DefaultPort, e.info.Name, e.info.MAC, e.srv.HasKey())
 		if bleProxyOn() {
 			e.srv.SetBluetoothProxy(esphome.BLEPassiveScan | esphome.BLERawAdvertisements)
 		}
 	case !on && e.srv != nil:
+		if e.withdraw != nil {
+			e.withdraw()
+			e.withdraw = nil
+		}
 		close(e.stop)
 		e.srv.Close()
 		e.srv = nil
 		firewall.Close(esphome.DefaultPort)
 		log.Printf("[esphome] stopped")
+	}
+}
+
+// esphomeFriendlyName is the name Home Assistant shows for the Echo: its
+// label on the controller's dashboard, which the controller pushes with every
+// config (sendspinName, Music Assistant's name for it too) and the Echo keeps
+// in its kept config, so it holds with no controller; "EchoHome <last four of
+// the serial>" before it has one.
+func esphomeFriendlyName(info esphome.DeviceInfo) string {
+	if n := strings.TrimSpace(config.Get().Snapshot().SendspinName); n != "" {
+		return n
+	}
+	return info.FriendlyName
+}
+
+// esphomeFollowName renames the running server after a config push carried
+// a new label.
+func esphomeFollowName() {
+	e := esphomeOnEcho
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	srv, info := e.srv, e.info
+	e.mu.Unlock()
+	if srv != nil {
+		if n := esphomeFriendlyName(info); n != srv.FriendlyName() {
+			log.Printf("[esphome] renamed %q", n)
+			srv.SetFriendlyName(n)
+		}
 	}
 }
 

@@ -3,14 +3,11 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"net"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/grandcat/zeroconf"
 	"github.com/wilbowes/EchoMuse/internal/bindings/speaker"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
@@ -392,67 +389,8 @@ func incubatorLocalPress(heldMs int) {
 // ones; emOS admits the app's queries (sport 5353, init.c firewall()).
 func announceSatellite(name, mac string, port int) (func(), error) {
 	txt := []string{"mac=" + mac, "protocol=" + strconv.Itoa(incubator.Protocol)}
-	register := func(ips []string) (*zeroconf.Server, error) {
-		return zeroconf.RegisterProxy(name, "_voice-incubator._tcp", "local.", port, name+"-vi", ips, txt, nil)
-	}
-	// At boot (a standalone satellite starts before WiFi may have an
-	// address) and whenever the address changes, the record follows: no
-	// address yet is retried, a new one is re-announced.
-	quit := make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		var srv *zeroconf.Server
-		var at string
-		t := time.NewTicker(10 * time.Second)
-		defer t.Stop()
-		for {
-			ips := localIPv4s()
-			if now := strings.Join(ips, ","); now != at {
-				if srv != nil {
-					srv.Shutdown()
-					srv = nil
-				}
-				at = now
-				if len(ips) > 0 {
-					var err error
-					if srv, err = register(ips); err != nil {
-						log.Printf("[incubator] mDNS announcement failed: %v", err)
-						at = "" // try again on the next tick
-					} else {
-						log.Printf("[incubator] announced at %s", now)
-					}
-				}
-			}
-			select {
-			case <-quit:
-				if srv != nil {
-					srv.Shutdown()
-				}
-				return
-			case <-t.C:
-			}
-		}
-	}()
-	return func() { close(quit); <-done }, nil
-}
-
-// localIPv4s are the Echo's own IPv4 addresses on interfaces that are up.
-func localIPv4s() []string {
-	var out []string
-	ifs, _ := net.Interfaces()
-	for _, ifc := range ifs {
-		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, _ := ifc.Addrs()
-		for _, a := range addrs {
-			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil {
-				out = append(out, n.IP.String())
-			}
-		}
-	}
-	return out
+	return announce("incubator", name, "_voice-incubator._tcp", name+"-vi", port,
+		func() []string { return txt }), nil
 }
 
 // incubatorStreamEnded takes the speaker's end-of-stream report when a

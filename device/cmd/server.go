@@ -587,6 +587,7 @@ func main() {
 		applyAecConfig(canceller, dataClient)
 		applyBleConfig(bleScanner)
 		esphomeBLEFollow()
+		esphomeFollowName()
 		applySendspinConfig(pcmSpeaker, controlClient, s, deviceID)
 	}
 	controlClient.OnConfigApplied(applyConfig)
