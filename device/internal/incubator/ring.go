@@ -234,11 +234,10 @@ func (s *session) outcomeLocked(c *call, reason string) {
 			return // something else was shown meanwhile
 		}
 		s.flashing = false
-		if s.ringLocked() == RingOff {
-			// The flash went dark by itself: that is what is under it.
-			s.shown, s.shownKey = RingOff, shownKey{r: RingOff, night: s.night}
-			return
-		}
+		// What is under the flash is painted again, idle too: the flash
+		// goes dark by itself, but idle is not always dark (the Echo's LED
+		// Ring light; bench, 00LQ, 2026-11-18: a call that timed out left
+		// the ring dark).
 		s.showLocked()
 	})
 }

@@ -322,6 +322,20 @@ func TestACallOverRunningTimersFlashesThenShowsThemAgain(t *testing.T) {
 	rings(t, echo, RingTimers, RingListening, RingThinking, RingDone, RingTimers)
 }
 
+// After an outcome flash, idle is painted again: it is not always dark (the
+// Echo's LED Ring light). Bench, 00LQ, 2026-11-18: a call that timed out with
+// nothing said left the ring dark.
+func TestAfterAFlashIdleIsPaintedAgain(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	event(a, "processing", "")
+	a.send(Hangup, []byte(`{"reason":"done"}`))
+	rings(t, echo, RingListening, RingThinking, RingDone)
+	time.Sleep(flashFor(RingDone, false) + 200*time.Millisecond)
+	rings(t, echo, RingListening, RingThinking, RingDone, RingOff)
+}
+
 func TestNightRepaintsWhatIsShown(t *testing.T) {
 	s, echo, _, a := connectApp(t)
 	event(a, "timer_progress", twoTimers)
