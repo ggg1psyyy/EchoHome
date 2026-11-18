@@ -10603,10 +10603,10 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
             sub={esphomeServerCapable
               ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome), encrypted with the key below where the firmware has one. Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
               : "this Echo's firmware has no ESPHome server of its own (it lacks esphome_server)"}
-            after={config.esphomeServer === true ? esphomePanel : null}
             disabled={disabled || !esphomeServerCapable}
             value={config.esphomeServer === true}
             onChange={v => set('esphomeServer', v)}/>
+          {config.esphomeServer === true && esphomePanel}
         </div>
         {subHeader('Turn processing')}
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
