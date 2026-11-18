@@ -64,6 +64,9 @@ def device(tmp_path, monkeypatch):
     async def reconcile(device_id):
         pass
 
+    import em_ble_proxy
+    monkeypatch.setattr(em_ble_proxy, "reconcile", reconcile)
+
     monkeypatch.setattr(em_device_config, "apply_live_config", apply_live)
     monkeypatch.setattr(em_events, "push", push)
     monkeypatch.setattr(em_incubator, "reconcile", reconcile)

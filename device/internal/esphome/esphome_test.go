@@ -397,3 +397,54 @@ func TestALightCommandAndAnActionAreHandedOn(t *testing.T) {
 		t.Fatalf("%v", r)
 	}
 }
+
+// A passive Bluetooth proxy, as HA's ESPHome bluetooth uses one: the flags
+// in device info, advertisements to subscribed clients only (16 a message),
+// no connection slots, and a change of the flags drops the clients so they
+// read them again.
+func TestABluetoothProxy(t *testing.T) {
+	s := New(DeviceInfo{Name: "n"})
+	s.SetBluetoothProxy(BLEPassiveScan | BLERawAdvertisements)
+	c := dialServer(t, s)
+	c.send(&api.DeviceInfoRequest{})
+	if d, ok := c.recv().(*api.DeviceInfoResponse); !ok || d.BluetoothProxyFeatureFlags != 33 {
+		t.Fatalf("%v", d)
+	}
+	adv := func(n int) []*api.BluetoothLERawAdvertisement {
+		out := make([]*api.BluetoothLERawAdvertisement, n)
+		for i := range out {
+			out[i] = &api.BluetoothLERawAdvertisement{Address: uint64(i), Rssi: -60, Data: []byte{2, 1, 6}}
+		}
+		return out
+	}
+	s.Adverts(adv(3)) // not subscribed: nothing
+	c.send(&api.SubscribeBluetoothConnectionsFreeRequest{})
+	if f, ok := c.recv().(*api.BluetoothConnectionsFreeResponse); !ok || f.Free != 0 || f.Limit != 0 {
+		t.Fatalf("%v", f)
+	}
+	c.send(&api.SubscribeBluetoothLEAdvertisementsRequest{Flags: 1})
+	c.send(&api.PingRequest{})
+	c.recv() // pong: the subscription is in
+	s.Adverts(adv(20))
+	got := 0
+	for got < 20 {
+		m, ok := c.recv().(*api.BluetoothLERawAdvertisementsResponse)
+		if !ok || len(m.Advertisements) > 16 {
+			t.Fatalf("%v", m)
+		}
+		got += len(m.Advertisements)
+	}
+	c.send(&api.UnsubscribeBluetoothLEAdvertisementsRequest{})
+	c.send(&api.PingRequest{})
+	c.recv()
+	s.Adverts(adv(2))
+	c.send(&api.PingRequest{})
+	if _, ok := c.recv().(*api.PingResponse); !ok {
+		t.Fatal("advertisements after unsubscribing")
+	}
+	// Off: the client is told to go, and comes back to read the new flags.
+	s.SetBluetoothProxy(0)
+	if _, ok := c.recv().(*api.DisconnectRequest); !ok {
+		t.Fatal("a change of the proxy's flags kept the client")
+	}
+}

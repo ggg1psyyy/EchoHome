@@ -68,6 +68,8 @@ type Server struct {
 	keyStore func(psk []byte) error
 	// timeSink, set, takes Home Assistant's time (SetTimeSink).
 	timeSink func(t time.Time, timezone string)
+	// bleFlags are the Bluetooth proxy's features (SetBluetoothProxy).
+	bleFlags atomic.Uint32
 
 	keyMu    sync.Mutex
 	psk      []byte // nil: no key
@@ -122,6 +124,71 @@ func (s *Server) SetKeyStore(store func(psk []byte) error) { s.keyStore = store 
 // _handle_get_time_request_internal) with the time to the second and its
 // timezone. Before Serve.
 func (s *Server) SetTimeSink(sink func(t time.Time, timezone string)) { s.timeSink = sink }
+
+// Bluetooth proxy features (aioesphomeapi BluetoothProxyFeature).
+const (
+	BLEPassiveScan       = 1 << 0
+	BLERawAdvertisements = 1 << 5
+)
+
+// maxAdvertsPerMessage is how many advertisements one message carries, as
+// ESPHome's proxy batches them.
+const maxAdvertsPerMessage = 16
+
+// SetBluetoothProxy makes the server a passive Bluetooth proxy (flags, 0
+// for none), as an ESPHome device with bluetooth_proxy is: its device info
+// says so, Home Assistant subscribes to advertisements, and Adverts sends
+// them. It offers no connection slots. HA reads the flags when it connects,
+// so a change drops the clients, which reconnect and read them again.
+func (s *Server) SetBluetoothProxy(flags uint32) {
+	if s.bleFlags.Swap(flags) != flags {
+		s.dropClients()
+	}
+}
+
+// Adverts sends advertisements to the clients subscribed to them.
+func (s *Server) Adverts(advs []*api.BluetoothLERawAdvertisement) {
+	if s.bleFlags.Load() == 0 || len(advs) == 0 {
+		return
+	}
+	s.mu.Lock()
+	var to []*conn
+	for c := range s.conns {
+		if c.bleSubscribed.Load() {
+			to = append(to, c)
+		}
+	}
+	s.mu.Unlock()
+	if len(to) == 0 {
+		return
+	}
+	for len(advs) > 0 {
+		n := min(len(advs), maxAdvertsPerMessage)
+		p, err := packetOf(&api.BluetoothLERawAdvertisementsResponse{Advertisements: advs[:n]})
+		advs = advs[n:]
+		if err != nil {
+			log.Printf("[esphome] %v", err)
+			return
+		}
+		for _, c := range to {
+			c.send(p)
+		}
+	}
+}
+
+// dropClients closes every connection (each reconnects).
+func (s *Server) dropClients() {
+	s.mu.Lock()
+	all := make([]*conn, 0, len(s.conns))
+	for c := range s.conns {
+		all = append(all, c)
+	}
+	s.mu.Unlock()
+	for _, c := range all {
+		c.reply(&api.DisconnectRequest{})
+		time.AfterFunc(100*time.Millisecond, c.close)
+	}
+}
 
 // HasKey reports whether a key is in use.
 func (s *Server) HasKey() bool {
@@ -326,6 +393,8 @@ type conn struct {
 	done       chan struct{}
 	once       sync.Once
 	subscribed atomic.Bool
+	// bleSubscribed: the client asked for Bluetooth advertisements.
+	bleSubscribed atomic.Bool
 	// born is when the connection was made: lastIn and lastTime are
 	// monotonic offsets from it, never wall-clock instants, because the
 	// wall clock is what this server may step (SetTimeSink): an hour back
@@ -525,7 +594,16 @@ func (c *conn) handle(m proto.Message) bool {
 			// (em_esphome.py, "session handoff finding #1").
 			ProjectName: i.ProjectName, ProjectVersion: i.ProjectVersion,
 			ApiEncryptionSupported:     s.keyStore != nil || s.HasKey(),
-			ApiEncryptionProvisionable: s.keyStore != nil && !s.HasKey()})
+			ApiEncryptionProvisionable: s.keyStore != nil && !s.HasKey(),
+			BluetoothProxyFeatureFlags: s.bleFlags.Load()})
+	case *api.SubscribeBluetoothLEAdvertisementsRequest:
+		if s.bleFlags.Load() != 0 {
+			c.bleSubscribed.Store(true)
+		}
+	case *api.UnsubscribeBluetoothLEAdvertisementsRequest:
+		c.bleSubscribed.Store(false)
+	case *api.SubscribeBluetoothConnectionsFreeRequest:
+		c.reply(&api.BluetoothConnectionsFreeResponse{}) // passive: no slots
 	case *api.NoiseEncryptionSetKeyRequest:
 		c.reply(&api.NoiseEncryptionSetKeyResponse{Success: s.setKey(c, m.Key)})
 	case *api.ListEntitiesRequest:

@@ -271,6 +271,9 @@ func applyESPHome(on bool) {
 		go e.srv.Serve(ln)
 		go e.poll(e.stop)
 		log.Printf("[esphome] serving Home Assistant on %d as %s (%s), key set: %v", esphome.DefaultPort, e.info.Name, e.info.MAC, e.srv.HasKey())
+		if bleProxyOn() {
+			e.srv.SetBluetoothProxy(esphome.BLEPassiveScan | esphome.BLERawAdvertisements)
+		}
 	case !on && e.srv != nil:
 		close(e.stop)
 		e.srv.Close()

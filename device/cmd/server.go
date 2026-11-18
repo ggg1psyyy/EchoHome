@@ -345,9 +345,11 @@ func main() {
 			}
 			// Dropped rather than falling back: see DataClient.SendBleAdverts.
 			dataClient.SendBleAdverts(payload)
+			esphomeAdverts(batch)
 			return
 		}
 		controlClient.SendBleAdverts(batch)
+		esphomeAdverts(batch)
 	})
 	// Connections for Home Assistant's active proxy (#656). Every Dot reports
 	// the same public Bluetooth address, so links use a random static one
@@ -365,6 +367,7 @@ func main() {
 		}
 	})
 	applyBleConfig(bleScanner, bleBridge)
+	bleRefs.scanner, bleRefs.bridge = bleScanner, bleBridge
 
 	// The BLE scan costs this device's WiFi dearly (see Scanner.Yield), so it
 	// stops whenever the link carries something that cannot wait: the user's
@@ -734,6 +737,7 @@ func main() {
 		}
 		applyAecConfig(canceller, dataClient)
 		applyBleConfig(bleScanner, bleBridge)
+		esphomeBLEFollow()
 		applySendspinConfig(pcmSpeaker, controlClient, s, deviceID)
 		applyShadowConfig(dataClient, controlClient, pcmSpeaker, s)
 		syncListenState(dataClient, controlClient, false)

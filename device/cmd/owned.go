@@ -26,6 +26,7 @@ const (
 	ownedMuteRing        = "muteRing"
 	ownedRemoteVolumeArc = "remoteVolumeArc"
 	ownedMonitor         = "incubatorMonitor"
+	ownedBLEProxy        = "bleProxyEnabled"
 )
 
 // The entity keys of the Echo's own settings: 20 and up, clear of the
@@ -35,6 +36,7 @@ const (
 	esphomeMuteRingKey        = 21
 	esphomeRemoteVolumeArcKey = 22
 	esphomeLiveListeningKey   = 23
+	esphomeBLEProxyKey        = 27
 )
 
 var (
@@ -70,6 +72,8 @@ func setupOwned(cc *client.ControlClient, s *server.Server, muteRingCapable bool
 		"mdi:volume-high", config.Get().RemoteVolumeArcEnabled())
 	cfgSwitch(ownedMonitor, esphomeLiveListeningKey, "live_listening", "Voice Incubator live listening",
 		"mdi:ear-hearing", false)
+	cfgSwitch(ownedBLEProxy, esphomeBLEProxyKey, "bluetooth_proxy", "Bluetooth proxy",
+		"mdi:bluetooth", bleProxyOn())
 	return out
 }
 
@@ -98,7 +102,7 @@ func applyOwnedAtBoot() {
 	if ownedSettings == nil {
 		return
 	}
-	for _, key := range []string{ownedMuteRing, ownedRemoteVolumeArc, ownedMonitor} {
+	for _, key := range []string{ownedMuteRing, ownedRemoteVolumeArc, ownedMonitor, ownedBLEProxy} {
 		if v, ok := ownedSettings.Value(key); ok {
 			applyOwned(key, v)
 		}
@@ -127,6 +131,12 @@ func applyOwned(key string, v bool) {
 	case ownedRemoteVolumeArc:
 		config.Get().Apply(config.ConfigMessage{RemoteVolumeArc: &v})
 		ownedSrv.SetRemoteVolumeArc(v)
+	case ownedBLEProxy:
+		config.Get().Apply(config.ConfigMessage{BleProxyEnabled: &v})
+		if bleRefs.scanner != nil {
+			applyBleConfig(bleRefs.scanner, bleRefs.bridge)
+		}
+		esphomeBLEFollow()
 	case ownedMonitor:
 		if incubatorMgr != nil {
 			if st := incubatorMgr.Want(); st.Enabled && st.Monitor != v {
@@ -153,8 +163,11 @@ func reconcileOwnedConfig() {
 	if v := ownedSettings.Reconcile(ownedRemoteVolumeArc, config.Get().RemoteVolumeArcEnabled()); v != config.Get().RemoteVolumeArcEnabled() {
 		config.Get().Apply(config.ConfigMessage{RemoteVolumeArc: &v})
 	}
+	if v := ownedSettings.Reconcile(ownedBLEProxy, bleProxyOn()); v != bleProxyOn() {
+		config.Get().Apply(config.ConfigMessage{BleProxyEnabled: &v})
+	}
 	for key, now := range map[string]bool{ownedMuteRing: config.Get().MuteRingOn(),
-		ownedRemoteVolumeArc: config.Get().RemoteVolumeArcEnabled()} {
+		ownedRemoteVolumeArc: config.Get().RemoteVolumeArcEnabled(), ownedBLEProxy: bleProxyOn()} {
 		if w := ownedSwitch[key]; w != nil {
 			w.Set(now)
 		}
@@ -190,4 +203,10 @@ func esphomeMuteSwitch(bool) {
 	if muteSwitch != nil && softMuted != nil {
 		muteSwitch.Set(softMuted())
 	}
+}
+
+// bleProxyOn is the Bluetooth proxy's setting in force.
+func bleProxyOn() bool {
+	snap := config.Get().Snapshot()
+	return snap.BleProxyEnabled != nil && *snap.BleProxyEnabled
 }

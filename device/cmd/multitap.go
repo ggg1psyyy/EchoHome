@@ -24,7 +24,7 @@ import (
 
 const (
 	esphomeMultiTapKey = 26
-	ownedMultiTap      = "multiTap" // local: the controller has no such key
+	localMultiTap      = "multiTap" // local: the controller has no such key
 	multiTapWindow     = 400 * time.Millisecond
 )
 
@@ -50,14 +50,14 @@ func multiTapEntity() *esphome.Switch {
 	defer multiTap.Unlock()
 	multiTap.counter = &taps.Counter{Window: multiTapWindow, Emit: multiTapEmit}
 	if ownedSettings != nil {
-		multiTap.on, _ = ownedSettings.Value(ownedMultiTap)
+		multiTap.on, _ = ownedSettings.Value(localMultiTap)
 	}
 	w := &esphome.Switch{Desc: &api.ListEntitiesSwitchResponse{ObjectId: "multi_tap", Key: esphomeMultiTapKey,
 		Name: "Multi-tap events", Icon: "mdi:gesture-double-tap",
 		EntityCategory: api.EntityCategory_ENTITY_CATEGORY_CONFIG}}
 	w.OnCommand = func(on bool) {
 		if ownedSettings != nil {
-			if err := ownedSettings.SetLocal(ownedMultiTap, on); err != nil {
+			if err := ownedSettings.SetLocal(localMultiTap, on); err != nil {
 				log.Printf("[esphome] multi-tap setting not kept: %v", err)
 				return
 			}
