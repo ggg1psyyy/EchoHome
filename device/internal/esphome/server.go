@@ -533,6 +533,10 @@ func (c *conn) handle(m proto.Message) bool {
 				c.reply(st)
 			}
 		}
+	case *api.SwitchCommandRequest:
+		if w, ok := s.byKey[m.Key].(*Switch); ok && w.OnCommand != nil {
+			w.OnCommand(m.State)
+		}
 	case *api.GetTimeResponse:
 		if s.timeSink != nil && m.EpochSeconds != 0 {
 			s.timeSink(time.Unix(int64(m.EpochSeconds), 0), m.Timezone)

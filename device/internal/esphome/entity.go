@@ -120,3 +120,42 @@ type Event struct {
 func (e *Event) Key() uint32          { return e.Desc.Key }
 func (e *Event) Info() proto.Message  { return e.Desc }
 func (e *Event) State() proto.Message { return nil }
+
+// Switch is on or off and takes commands (ListEntitiesSwitchResponse). A
+// command calls OnCommand, which applies it and calls Set with the state
+// that resulted; the state HA shows is only ever what Set reported.
+type Switch struct {
+	base
+	Desc      *api.ListEntitiesSwitchResponse
+	OnCommand func(on bool)
+	mu        sync.Mutex
+	value     bool
+	have      bool
+}
+
+func (w *Switch) Key() uint32         { return w.Desc.Key }
+func (w *Switch) Info() proto.Message { return w.Desc }
+
+func (w *Switch) State() proto.Message {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return &api.SwitchStateResponse{Key: w.Desc.Key, State: w.value}
+}
+
+// Set records the state and sends it to subscribed clients if it changed.
+func (w *Switch) Set(v bool) {
+	w.mu.Lock()
+	same := w.have && w.value == v
+	w.value, w.have = v, true
+	w.mu.Unlock()
+	if !same {
+		w.changed(w)
+	}
+}
+
+// Value is the state last Set.
+func (w *Switch) Value() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.value
+}

@@ -281,3 +281,30 @@ func TestTheTimeIsAskedOnSubscribeAndHandedOn(t *testing.T) {
 	default:
 	}
 }
+
+// A switch command reaches OnCommand; HA sees only the state Set reports.
+func TestASwitchCommandIsAppliedAndReported(t *testing.T) {
+	var w *Switch
+	w = &Switch{Desc: &api.ListEntitiesSwitchResponse{ObjectId: "mute", Key: 20, Name: "Mute"},
+		OnCommand: func(on bool) { w.Set(on) }}
+	stuck := &Switch{Desc: &api.ListEntitiesSwitchResponse{ObjectId: "stuck", Key: 21, Name: "Stuck"},
+		OnCommand: func(bool) {}} // a command that could not be applied
+	s := New(DeviceInfo{Name: "n"}, w, stuck)
+	c := dialServer(t, s)
+	c.send(&api.SubscribeStatesRequest{})
+	c.recv()
+	c.recv()
+	c.send(&api.SwitchCommandRequest{Key: 20, State: true})
+	if st, ok := c.recv().(*api.SwitchStateResponse); !ok || st.Key != 20 || !st.State {
+		t.Fatalf("%v", st)
+	}
+	c.send(&api.SwitchCommandRequest{Key: 21, State: true})
+	c.send(&api.SwitchCommandRequest{Key: 99, State: true}) // no such entity: ignored
+	c.send(&api.PingRequest{})
+	if _, ok := c.recv().(*api.PingResponse); !ok {
+		t.Fatal("a command that changed nothing was reported")
+	}
+	if stuck.Value() {
+		t.Fatal("stuck changed")
+	}
+}

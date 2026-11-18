@@ -691,6 +691,7 @@ func main() {
 	// the canceller. AEC/BLE read the merged post-Apply snapshot rather than
 	// the (partial) message so unmentioned fields keep their values.
 	controlClient.OnConfigApplied(func(msg config.ConfigMessage) {
+		reconcileOwnedConfig() // first: a change made in HA stands against an older push
 		applyHardwareConfig(msg)
 		s.SetRemoteVolumeArc(config.Get().RemoteVolumeArcEnabled())
 		applyESPHome(config.Get().ESPHomeServerOn())
@@ -737,7 +738,7 @@ func main() {
 
 	// The Voice Incubator satellite, when the controller asks for it.
 	setupIncubator(controlClient, dataClient, pcmSpeaker, s)
-	setupESPHome(s.IsMuted())
+	setupESPHome(controlClient, s)
 
 	// Speaker flush — barge-in: cut buffered TTS the moment the controller
 	// hears the wake word during playback.
@@ -886,6 +887,7 @@ func main() {
 	// controller is found: here, once the volume reaches the speaker
 	// (SetVolumeApply above), or its saved level would be silence.
 	startStandaloneIncubator(s)
+	applyOwnedAtBoot()
 
 	// Heap-profile dump on SIGUSR1 — the ~1MB/h leak hunt (2026-07-17).
 	// The device accepts no inbound connections, so instead of an HTTP pprof

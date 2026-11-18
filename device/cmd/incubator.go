@@ -270,7 +270,7 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 	}
 	cc.OnIncubatorSatellite(func(m client.IncubatorSatellite) {
 		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port,
-			Monitor: m.Monitor, Standalone: m.Enabled && m.Standalone})
+			Monitor: reconcileOwnedMonitor(m.Monitor), Standalone: m.Enabled && m.Standalone})
 		if m.Enabled && m.Standalone {
 			incubatorSave()
 		} else if err := incubatorKeeper.Remove(); err != nil {

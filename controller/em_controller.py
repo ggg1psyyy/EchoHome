@@ -76,6 +76,7 @@ from websockets.asyncio.server import ServerConnection as WebSocketServerProtoco
 
 import em_db as db
 import em_events
+import em_echo_settings
 import em_credentials
 import em_device_view
 import em_process_stats
@@ -4789,6 +4790,11 @@ async def _on_sendspin_token(device: Device, msg: dict) -> None:
         waiter.set_result(msg)
 
 
+async def _on_settings_changed(device: Device, msg: dict) -> None:
+    # Settings Home Assistant changed on the Echo itself (em_echo_settings).
+    await em_echo_settings.from_echo(device.device_id, msg.get("settings"))
+
+
 async def _on_esphome_key(device: Device, msg: dict) -> None:
     # The answer to esphome_key_request: the key of the Echo's own ESPHome
     # server. A secret, handled as the Sendspin token is.
@@ -5158,6 +5164,7 @@ CONTROL_HANDLERS = {
     "incubator_state":  em_incubator.on_incubator_state,
     "sendspin_token":   _on_sendspin_token,
     "esphome_key":      _on_esphome_key,
+    "settings_changed": _on_settings_changed,
     "wifi_result":      _on_wifi_result,
     "playback_stats":   _on_playback_stats,
     "oww_shadow_cross": _on_oww_shadow_cross,

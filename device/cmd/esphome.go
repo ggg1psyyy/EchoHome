@@ -13,12 +13,14 @@ import (
 
 	"github.com/wilbowes/EchoMuse/internal/atomicfile"
 	"github.com/wilbowes/EchoMuse/internal/bindings/als"
+	ledbind "github.com/wilbowes/EchoMuse/internal/bindings/led"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/clock"
 	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
+	"github.com/wilbowes/EchoMuse/internal/server"
 	"github.com/wilbowes/EchoMuse/pkg/board"
 )
 
@@ -164,7 +166,8 @@ func esphomeKeyReply() map[string]any {
 
 // setupESPHome builds the Echo's entities and identity; nothing listens
 // until applyESPHome turns it on.
-func setupESPHome(muted bool) {
+func setupESPHome(cc *client.ControlClient, s *server.Server) {
+	muted := s.IsMuted()
 	serial := client.GetSerialNo()
 	short := strings.ToLower(serial)
 	if len(short) > 12 {
@@ -205,8 +208,9 @@ func setupESPHome(muted bool) {
 		e.muted = &esphome.BinarySensor{Desc: &api.ListEntitiesBinarySensorResponse{ObjectId: "mic_muted",
 			Key: esphomeMicMutedKey, Name: "Microphone Muted", Icon: "mdi:microphone-off"}}
 		e.muted.Set(muted)
-		e.entries = append(e.entries, e.muted)
+		e.entries = append(e.entries, e.muted, muteEntity(s))
 	}
+	e.entries = append(e.entries, setupOwned(cc, s, ledbind.HasMuteButtonLED())...)
 	esphomeOnEcho = e
 	if _, err := os.Stat(esphomeOnPath); err == nil {
 		// Seeded into the config too: a controller that does not know the
@@ -310,6 +314,7 @@ func esphomeMuted(muted bool) {
 	if e := esphomeOnEcho; e != nil && e.muted != nil {
 		e.muted.Set(muted)
 	}
+	esphomeMuteSwitch(muted)
 }
 
 // esphomeButton reports an action button release: a hold is the "long"

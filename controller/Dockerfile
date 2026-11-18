@@ -184,6 +184,7 @@ COPY em_arbiter.py .
 COPY em_state.py .
 COPY em_http.py .
 COPY em_events.py .
+COPY em_echo_settings.py .
 COPY em_shell.py .
 COPY em_releases.py .
 COPY em_release_sig.py .
