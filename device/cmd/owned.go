@@ -89,7 +89,7 @@ func setupOwned(s *server.Server, muteRingCapable bool) []esphome.Entity {
 // for its wake word and its calls alike (the beamformer never locks since
 // EchoHome). 0 is the board's default, its centre mic, or its first edge mic
 // where it has none; 1..N pick an edge mic. An escape hatch for a dead centre
-// mic (#705; Sidrat's), kept on the Echo like the switches above.
+// mic (#705; 0SE7's), kept on the Echo like the switches above.
 func wakeMicOptions() []string {
 	mics := board.CurrentLayout().Mics
 	first := "Centre"
@@ -252,7 +252,7 @@ func reconcileOwnedConfig() {
 	}
 	// The controller still pushes wakeMic for firmware from before EchoHome:
 	// here it only seeds an Echo that has no choice of its own yet, so a mic
-	// picked on the dashboard before the upgrade carries over (Sidrat).
+	// picked on the dashboard before the upgrade carries over (0SE7).
 	if now := wakeMicNow(); ownedSettings.SeedInt(ownedWakeMic, now) != now {
 		v, _ := ownedSettings.IntValue(ownedWakeMic)
 		config.Get().Apply(config.ConfigMessage{WakeMic: &v})

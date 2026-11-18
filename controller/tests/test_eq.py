@@ -80,3 +80,24 @@ def test_streaming_eq_flat_is_passthrough():
     eq = em_eq.StreamingEQ(RATE, bands=[0.0] * 8)
     chunk = _sine(500, seconds=0.05)
     assert eq.process(chunk) == chunk
+
+
+def test_the_guard_runs_before_the_limiter_and_the_length_is_kept():
+    """The whole chain once, as the firmware's vectors are generated from
+    it: guard, then limiter, with the limiter's look-ahead flushed, so the
+    result is the input plus that look-ahead, never less (nothing lost)."""
+    import em_limiter
+    import em_mbc
+    pcm = _sine(60, amp=0.9) + _sine(1000, amp=0.9)
+    out = em_eq.apply(pcm, RATE, bands=[6.0, 0, 0, 0, 0, 0, 0, 0],
+                      limiter=em_limiter.Limiter(RATE), guard=em_mbc.BassGuard(RATE))
+    extra = (len(out) - len(pcm)) // 2  # samples
+    assert 0 < extra <= RATE * em_limiter.DEFAULT_LOOKAHEAD_MS / 1000
+
+
+def test_a_stream_takes_default_and_short_band_lists():
+    s = em_eq.StreamingEQ(RATE)
+    assert s.process(_sine(1000)) == _sine(1000)  # default bands are flat
+    short = em_eq.StreamingEQ(RATE, bands=[3.0])
+    assert len(short.process(_sine(1000))) == len(_sine(1000))
+    assert s.flush() == b""  # no limiter: no tail

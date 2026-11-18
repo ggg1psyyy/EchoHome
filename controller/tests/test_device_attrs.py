@@ -15,6 +15,9 @@ import _sources
 
 # How a Device is named where it is used.
 NAMES = {"device", "live", "dev"}
+# A support bundle's `live` is a dict (em_diagnose): its methods are not a
+# Device's.
+DICT_METHODS = {"get", "items", "keys", "values"}
 
 
 def _device_members() -> set[str]:
@@ -39,7 +42,22 @@ def test_every_device_attribute_read_exists():
     for path in _sources.MODULES:
         for n in ast.walk(_sources.tree(path)):
             if (isinstance(n, ast.Attribute) and not isinstance(n.ctx, ast.Store)
-                    and isinstance(n.value, ast.Name) and n.value.id == "device"
-                    and n.attr not in have):
-                missing.append(f"{path.name}:{n.lineno} device.{n.attr}")
+                    and isinstance(n.value, ast.Name) and n.value.id in NAMES
+                    and n.attr not in have and n.attr not in DICT_METHODS):
+                missing.append(f"{path.name}:{n.lineno} {n.value.id}.{n.attr}")
+    assert not missing, missing
+
+
+def test_every_getattr_on_a_device_names_something_it_has():
+    """getattr(live, "x", default) hides a missing attribute behind its
+    default: the view then shows a constant for ever, with no error."""
+    have = _device_members()
+    missing = []
+    for path in _sources.MODULES:
+        for n in ast.walk(_sources.tree(path)):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "getattr"
+                    and len(n.args) >= 2 and isinstance(n.args[0], ast.Name) and n.args[0].id in NAMES
+                    and isinstance(n.args[1], ast.Constant) and isinstance(n.args[1].value, str)
+                    and n.args[1].value not in have):
+                missing.append(f"{path.name}:{n.lineno} getattr({n.args[0].id}, {n.args[1].value!r})")
     assert not missing, missing

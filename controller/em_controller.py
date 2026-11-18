@@ -43,7 +43,6 @@ Device WebSocket protocol:
   /data — Device → Server:
     <binary> [0x01][seq_hi][seq_lo][PCM mono S16_LE 2560 bytes]
     <binary> [0x06][JSON {"adverts": [...]}]   (only if ble_adverts_data)
-    <binary> [0x07][session u32][seq u16][PCM]  (only if listen_session)
 
   /data — Server → Device:
     <binary> [0x02][PCM mono S16_LE 48kHz — 4096 bytes per period]
@@ -267,7 +266,6 @@ PING_TIMEOUT_SEC = 60.0
 NUM_LEDS = 12
 
 
-
 # mDNS re-registration interval — keeps IGMP membership alive on the LAN
 MDNS_REFRESH_INTERVAL = 120
 
@@ -298,7 +296,7 @@ BLE_ADVERTS_TYPE   = 0x06
 # audio and the listen_* replies. A device goes quiet only when it sees this —
 # an older controller acts on a device wake only when stream frames arrive.
 #
-# Since EchoHome both stay only for firmware from before it (Sidrat's
+# Since EchoHome both stay only for firmware from before it (0SE7's
 # v2.19.0 until it is updated): ble_adverts_data so an Echo with its
 # Bluetooth proxy on sends its batches on the data plane, where they are
 # dropped, and never on the control plane, the liveness channel; and
@@ -398,15 +396,6 @@ class Device:
         # it with the configured mode and the firmware's capability.
         self.listen_reported: str | None = None
         self.listen_reason: str = ""
-        # Which session audio reaches a turn (em_listen.SessionRouter), and
-        # the session the current turn is listening on.
-        self.listen_router = em_listen.SessionRouter()
-        self.listen_session: int | None = None
-        # Smoothed control-plane RTT, for capture-time arbitration.
-        self.rtt_est = em_listen.RttEstimator()
-        # The Echo's monotonic clock in ours, from ping replies carrying
-        # `mono` (em_listen.DeviceClock); dates a private wake's capture.
-        self.device_clock = em_listen.DeviceClock()
 
         # Per-room noise floor estimate (normalized RMS, 0..1), tracked from
         # the continuous wake stream in wake_word_listener. Measurement only —
@@ -467,14 +456,8 @@ class Device:
         kept because every ping still records it."""
         return False
 
-    # ── Playback completion ──────────────────────────────────────────
-    #
-    # One waiter per playback. See _playback_waiters for why this is a queue
-    # and not a single Event.
-
 
     def record_rtt(self, rtt_ms: int, was_busy: bool) -> None:
-        self.rtt_est.add(rtt_ms)
         self.rtt_last_ms = rtt_ms
         self.rtt_sum_ms += rtt_ms
         self.rtt_count  += 1
@@ -694,21 +677,6 @@ class Device:
     async def ping(self):
         await self.send_control({"type": "ping"})
 
-
-    async def listen_ack(self, session: int):
-        await self.send_control({"type": "listen_ack", "session": session})
-
-    async def listen_close(self, session: int | None = None, reason: str = ""):
-        """End a private-listening session (the active one by default).
-        Closes it in the router too, so its stragglers are dropped."""
-        target = self.listen_router.close(session)
-        if session is None and target is None:
-            return
-        if target == self.listen_session:
-            self.listen_session = None
-        await self.send_control({"type": "listen_close",
-                                 "session": target if target is not None else session,
-                                 "reason": reason})
 
     async def beam_lock(self):
         # Lock the beamformer onto the speaker's perimeter mic mid-stream —
@@ -1168,7 +1136,6 @@ async def _on_pong(device: Device, msg: dict) -> None:
             _now = loop.time()
             _rtt = int((_now - _sent) * 1000)
             device.record_rtt(_rtt, _busy)
-            device.device_clock.add(_sent, _now, msg.get("mono"))
             if _rtt >= RTT_EXCURSION_MS:
                 # Busy excursions log one for one; idle
                 # ones coalesce into a periodic summary.
@@ -1634,7 +1601,6 @@ async def handle_data(ws: WebSocketServerProtocol, secure: bool = False):
         # the silence as a zombie stream.
         # A session's audio rode the old connection, and the device closes
         # its session on a link drop; nothing from before is routable.
-        device.listen_router.reset()
         device.data_ready.set()
         log.info(f"[data] Data connection established: {device_id}")
 

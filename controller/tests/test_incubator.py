@@ -192,7 +192,7 @@ def test_a_stored_home_assistant_backend_still_gets_the_echos_satellite(on_echo)
 
 
 def test_firmware_that_cannot_be_the_satellite_is_told_to_stop(on_echo):
-    """Older firmware (Sidrat's v2.19.0): nothing here can serve it now."""
+    """Older firmware (0SE7's v2.19.0): nothing here can serve it now."""
     on_echo["echo"].capabilities = ["mic", "speaker"]
     async def run():
         await inc.device_connected(DEV)
@@ -423,4 +423,16 @@ def test_the_controller_never_turns_live_listening_on(on_echo):
         await inc.device_connected(DEV)
         assert on_echo["echo"].sent[-1]["monitor"] is False
         assert "monitorAllowed" not in inc.status_view(DEV)
+    asyncio.run(run())
+
+
+def test_a_deleted_echo_loses_its_record_and_its_announcement(on_echo):
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)
+        sent = len(on_echo["echo"].sent)
+        await inc.device_deleted(DEV)
+        assert DEV not in inc._on_echo and len(on_echo["unregistered"]) == 1
+        assert len(on_echo["echo"].sent) == sent, "nothing is sent to a deleted Echo"
+        assert inc.backend_of(DEV) == inc.BACKEND_HA
     asyncio.run(run())
