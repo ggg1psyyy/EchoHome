@@ -371,6 +371,7 @@ DEFAULT_DEVICE_CONFIG = {
     "voiceBackend": "ha",
     # incubatorMonitor: the app may listen live (opt-in; em_incubator.MONITOR_KEY)
     "incubatorMonitor": False,
+    "incubatorStandalone": False,  # its satellite outlives the controller
 }
 
 # The highest wake threshold that can ever fire, enforced on every config

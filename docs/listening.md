@@ -72,6 +72,13 @@ same way, starting with nothing from before it. The app can ask back
 again after each answer, with no wake word between; how long such a chain
 runs is the app's, not the Echo's.
 
+With **Keep working without the controller** switched on (per Echo, off by
+default; firmware announcing `incubator_standalone`), the satellite does not
+stop when the controller link goes: calls go on, still bounded by the Echo's
+own limits (30 s of listening, mute), and the Echo starts its satellite at
+boot from what it saved. Live listening keeps its own switch's setting then,
+with no dashboard to show it: the red pulse on the ring is the only sign.
+
 That satellite can also run the Voice Incubator app's own wake words, which
 the app pushes to it (firmware announcing `incubator_wake`). While it holds
 any, they replace the Echo's own wake word, whose crossings it then only

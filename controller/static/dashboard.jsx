@@ -2533,6 +2533,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 localCapable={!device.connected || !!device.owwLocalCapable}
                 incubatorOnEchoCapable={!device.connected || !!device.incubatorSatelliteCapable}
                 incubatorMonitorCapable={!device.connected || !!device.incubatorMonitorCapable}
+                incubatorStandaloneCapable={!device.connected || !!device.incubatorStandaloneCapable}
                 listen={device.connected ? deviceListen(device) : null}
                 wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
@@ -9688,7 +9689,7 @@ const CONFIG_SECTIONS = {
   "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
   "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
   "ring": ["ledScene", "ledListenColor", "ledThinkColor", "remoteVolumeArc", "muteRing", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
-  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorMonitor"],
+  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints", "voiceBackend", "incubatorMonitor", "incubatorStandalone"],
   "bluetooth": ["bleProxyEnabled", "bleProxyConnections"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
 };
@@ -9868,6 +9869,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             muteRingOffCapable = true,
                             incubatorOnEchoCapable = true,
                             incubatorMonitorCapable = true,
+                            incubatorStandaloneCapable = true,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
                             wakeMicCapable = true,
@@ -10582,6 +10584,15 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
               disabled={disabled || !incubatorMonitorCapable}
               value={config.incubatorMonitor === true}
               onChange={v => set('incubatorMonitor', v)}/>
+          )}
+          {(config.voiceBackend ?? 'ha') === 'incubator_echo' && (
+            <Toggle label="Keep working without the controller"
+              sub={incubatorStandaloneCapable
+                ? "off unless you turn it on: this Echo saves its satellite, ring and volume, starts them at boot and keeps answering the Voice Incubator app with the controller down, its buttons its own. The app must still find it: over mDNS, where the controller does not announce it"
+                : "this Echo's firmware cannot run its satellite without the controller (it lacks incubator_standalone)"}
+              disabled={disabled || !incubatorStandaloneCapable}
+              value={config.incubatorStandalone === true}
+              onChange={v => set('incubatorStandalone', v)}/>
           )}
         </div>
         {subHeader('Turn processing')}

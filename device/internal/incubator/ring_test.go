@@ -355,3 +355,11 @@ func TestTheAppLeavingClearsTimersAndNight(t *testing.T) {
 	a.c.Close()
 	waitFor(t, "dark", func() bool { v := echo.lastView(); return v.State == RingOff && !v.Night })
 }
+
+func TestARepaintPaintsTheSameStateAgain(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	event(a, "timer_progress", twoTimers)
+	rings(t, echo, RingTimers)
+	s.Repaint()
+	rings(t, echo, RingTimers, RingTimers)
+}

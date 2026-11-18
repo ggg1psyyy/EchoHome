@@ -113,6 +113,12 @@ one answers nothing.
   tap cancels.
 - **Questions back** ("Which room?") are answered without the wake word:
   the Echo listens again once the question has played.
+- **Without the controller (optional)**: with **Keep working without the
+  controller** switched on, the Echo saves its satellite, ring and volume,
+  starts them at boot and keeps answering the app when the controller is
+  down, its action and volume buttons its own. The app must still find it:
+  the controller keeps announcing it while it runs, and the Echo announces
+  itself on its own network. Firmware updates still need the controller.
 - **Live listening (optional)**: the app's Test page can listen to the Echo
   only if you switch on **Let the app listen live**, under the voice
   backend. It is off by default (see Privacy).

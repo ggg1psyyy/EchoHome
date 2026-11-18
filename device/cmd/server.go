@@ -412,6 +412,17 @@ func main() {
 			log.Println("[cmd] action button ignored — no controller session")
 			return
 		}
+		if !controllerUp.Load() {
+			// No controller, and the gate let it through: a standalone
+			// satellite serves, and takes the tap as the controller would
+			// have passed it on (a hold does nothing: its HA event has no one
+			// to go to).
+			if event.ClickType == pkgbuttons.DotClick && !event.Down {
+				s.CancelVolumeDisplay() // a press outranks the volume arc
+				incubatorLocalPress(int(event.HeldMs))
+			}
+			return
+		}
 		// Muted presses are FORWARDED, with the mute state attached, and the
 		// controller decides what the gesture is allowed to do. Dropping them
 		// here was right while the dot button meant only "start a voice turn";
@@ -453,6 +464,53 @@ func main() {
 		pulseCancel context.CancelFunc
 		pulseKind   string
 	)
+	// A standalone satellite with its app connected (cmd/incubator.go) is an
+	// Echo of use with no controller: while it serves, the link rings stand
+	// aside and the buttons are not gated (the action button then goes to
+	// the satellite, below); they come back the moment it stops serving.
+	// linkMu orders the link callbacks and the satellite's changes.
+	var (
+		linkMu   sync.Mutex
+		lostKind string // the link-lost ring to show, "" while connected
+		lostRun  func(context.Context, *server.Server)
+	)
+	showLinkLost := func() { // linkMu held
+		if controllerUp.Load() || lostKind == "" {
+			return
+		}
+		if incubatorServing() {
+			if pulseCancel != nil {
+				pulseCancel()
+				pulseCancel = nil
+				pulseKind = ""
+				s.SetLinkDown(false)
+				if s.IsMuted() {
+					s.RestoreMuteRing() // the pulse painted over it
+				}
+				incubatorMgr.Repaint() // over the pulse's last frame
+			}
+			s.SetLinkDown(false)
+			return
+		}
+		if pulseKind == lostKind {
+			return
+		}
+		if pulseCancel != nil {
+			pulseCancel()
+		}
+		pulseCtx, cancel := context.WithCancel(ctx)
+		pulseCancel = cancel
+		pulseKind = lostKind
+		// Set BEFORE the pulse starts, or its first frames are swallowed by
+		// the mute suppression on a muted device.
+		s.SetLinkDown(true)
+		go lostRun(pulseCtx, s)
+	}
+	incubatorServingChanged = func() {
+		linkMu.Lock()
+		showLinkLost()
+		linkMu.Unlock()
+	}
 	// Watch the ambient light sensor for step changes (a lamp switching on)
 	// and report them immediately; the steady-state value rides the ~30s
 	// stats tick. No-ops on a device without the sensor.
@@ -484,48 +542,42 @@ func main() {
 		// A Bluetooth link's results have nowhere to go now, and a
 		// controller that comes back starts from no links.
 		bleBridge.DropAll()
+		linkMu.Lock()
+		defer linkMu.Unlock()
+		controllerUp.Store(false)
+		if lostKind == "orange" {
+			return // already handled: restarting the pulse is what breaks its cycle
+		}
 		// Stop any device-local animation: the controller that owned it is
-		// gone, and the pulse below would otherwise fight its ticker. Safe to
-		// repeat — StopAnim only bumps the animator generation, and the pulse
-		// paints through SetLEDs rather than the animator, so it is not what
-		// this cancels.
-		s.StopAnim()
-		if pulseKind == "orange" {
-			return // already pulsing; restarting is what breaks the cycle
+		// gone, and the pulse would otherwise fight its ticker; but not a
+		// standalone satellite's, which carries on. StopAnim only bumps the
+		// animator generation; the pulse paints through SetLEDs.
+		if !incubatorServing() {
+			s.StopAnim()
 		}
-		if pulseCancel != nil {
-			pulseCancel()
-		}
-		pulseCtx, cancel := context.WithCancel(ctx)
-		pulseCancel = cancel
-		pulseKind = "orange"
-		// Ring belongs to the link state from here, and the action/volume
-		// buttons go inert. Set BEFORE the pulse starts, or its first frames
-		// are swallowed by the mute suppression on a muted device.
-		s.SetLinkDown(true)
+		// The ring belongs to the link state from here, and the action and
+		// volume buttons go inert, unless a standalone satellite serves.
 		sendspinLinkDown(pcmSpeaker)
 		incubatorLinkDown()
-		go pulseOrange(pulseCtx, s)
+		lostKind, lostRun = "orange", pulseOrange
+		showLinkLost()
 	})
 
 	// Pending approval — slow white pulse
 	controlClient.OnPending(func() {
-		if pulseKind == "white" {
+		linkMu.Lock()
+		defer linkMu.Unlock()
+		controllerUp.Store(false)
+		if lostKind == "white" {
 			return
 		}
-		if pulseCancel != nil {
-			pulseCancel()
-		}
-		pulseCtx, cancel := context.WithCancel(ctx)
-		pulseCancel = cancel
-		pulseKind = "white"
 		// Pending approval is the same condition one step earlier: there is
 		// nothing above this device, so the white pulse owns the ring and the
-		// buttons do nothing.
-		s.SetLinkDown(true)
+		// buttons do nothing (a standalone satellite serving aside).
 		sendspinLinkDown(pcmSpeaker)
 		incubatorLinkDown()
-		go pulseWhite(pulseCtx, s)
+		lostKind, lostRun = "white", pulseWhite
+		showLinkLost()
 	})
 
 	// Refused — a controller answered and would not accept this device's
@@ -533,20 +585,19 @@ func main() {
 	// alternating odd and even LEDs, so it reads differently: this one the
 	// owner can fix, by holding the action button 7 s to pair.
 	controlClient.OnRefused(func() {
-		s.StopAnim()
-		if pulseKind == "refused" {
+		linkMu.Lock()
+		defer linkMu.Unlock()
+		controllerUp.Store(false)
+		if !incubatorServing() {
+			s.StopAnim()
+		}
+		if lostKind == "refused" {
 			return
 		}
-		if pulseCancel != nil {
-			pulseCancel()
-		}
-		pulseCtx, cancel := context.WithCancel(ctx)
-		pulseCancel = cancel
-		pulseKind = "refused"
-		s.SetLinkDown(true)
 		sendspinLinkDown(pcmSpeaker)
 		incubatorLinkDown()
-		go pulseRefused(pulseCtx, s)
+		lostKind, lostRun = "refused", pulseRefused
+		showLinkLost()
 	})
 
 	// Connected — stop pulse, report current mute state, restore ring or hand
@@ -566,11 +617,15 @@ func main() {
 				controlClient.SendLog("warn", "[board] "+p)
 			}
 		})
+		linkMu.Lock()
+		controllerUp.Store(true)
+		lostKind = ""
 		if pulseCancel != nil {
 			pulseCancel()
 			pulseCancel = nil
 		}
 		pulseKind = ""
+		linkMu.Unlock()
 		// Who runs the output chain is decided by THIS controller's ack, and
 		// settled before any of its audio can arrive.
 		pcmSpeaker.SetOutputChainActive(controlClient.HasFeature(client.FeatureOutputChain))
@@ -595,6 +650,12 @@ func main() {
 			controlClient.SendVolumeState(s.VolumeLevel())
 		}
 		s.StopAnim() // fresh controller session owns the ring from here
+		// A standalone satellite that outlived the link keeps its state:
+		// its ring (a spinner, the timers, the red monitoring pulse) would
+		// otherwise stop on its last frame.
+		if incubatorMgr != nil {
+			incubatorMgr.Repaint()
+		}
 		if muted {
 			// Orange pulse overwrote the red ring — restore it.
 			s.RestoreMuteRing()
@@ -627,6 +688,7 @@ func main() {
 	controlClient.OnConfigApplied(func(msg config.ConfigMessage) {
 		applyHardwareConfig(msg)
 		s.SetRemoteVolumeArc(config.Get().RemoteVolumeArcEnabled())
+		incubatorSaveSoon() // the ring's scene, for a standalone satellite
 		s.SetMuteRing(config.Get().MuteRingOn())
 		pcmSpeaker.SetResponseGainDB(config.Get().ResponseGainDB())
 		// The merged config, not the partial message, for the reason given
@@ -801,6 +863,7 @@ func main() {
 	s.SetVolumeChangeCallback(func(level int) {
 		controlClient.SendVolumeState(level)
 		sendspinVolumeChanged(level)
+		incubatorSaveSoon() // a standalone Echo keeps its own volume
 	})
 
 	// Volume set from controller (HA MediaPlayerCommandRequest forwarded down).
@@ -809,6 +872,11 @@ func main() {
 	controlClient.OnVolumeSet(func(level int) {
 		s.SetVolume(level)
 	})
+
+	// A standalone satellite starts from what it saved, before any
+	// controller is found: here, once the volume reaches the speaker
+	// (SetVolumeApply above), or its saved level would be silence.
+	startStandaloneIncubator(s)
 
 	// Heap-profile dump on SIGUSR1 — the ~1MB/h leak hunt (2026-07-17).
 	// The device accepts no inbound connections, so instead of an HTTP pprof
@@ -1494,6 +1562,15 @@ const speakerRate = 48000
 // localDuck is set in main before any wake can cross.
 var localDuck *speaker.LocalDuck
 
+// controllerUp: a controller session is up (set by the link callbacks).
+// LinkDown is the gate for the buttons and the ring, and a standalone
+// satellite serving can lift it while this stays false.
+var controllerUp atomic.Bool
+
+// incubatorServingChanged re-decides the link-lost ring when a standalone
+// satellite starts or stops serving (set in main).
+var incubatorServingChanged = func() {}
+
 func onWakeCrossing(cc *client.ControlClient, dc *client.DataClient,
 	spk *speaker.PcmSpeaker, srv *server.Server,
 	score, crossed float32, at time.Time) {
@@ -1515,12 +1592,14 @@ func onWakeCrossing(cc *client.ControlClient, dc *client.DataClient,
 		log.Printf("[shadow] wake %.3f suppressed — wake word off", score)
 		return
 	}
-	if incubatorInCall() || incubatorHearsWake() {
+	if incubatorInCall() || incubatorHearsWake() || !controllerUp.Load() {
 		// The call has the microphone: a crossing now is the user talking
 		// to the app, not a new wake (no session, no cut, no duck). Or the
 		// app has pushed the satellite its own wake words, which it
 		// answers instead: this word has no one to answer it (the
-		// controller runs no turns on an Echo that is its own satellite).
+		// controller runs no turns on an Echo that is its own satellite). Or
+		// there is no controller (a standalone satellite serving): no one
+		// would answer it.
 		cc.SendOwwShadowCross(score, ageMs)
 		return
 	}

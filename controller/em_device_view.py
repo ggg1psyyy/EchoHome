@@ -218,8 +218,7 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # fires, the ring lights, and the turn dies in milliseconds.
         "voiceSatellite":   em_esphome.get_status(device_id),
         "voiceIncubator":   em_incubator.status_view(device_id),  # None unless on it
-        # Device-link security: token issued (persistent) + whether the
-        # current control connection came in over the TLS listener (live).
+        # Device-link security: token issued (persistent), and the link over TLS (live).
         "linkTokenIssued":  bool(row["token"]) if "token" in row.keys() else False,
         "linkTls":          getattr(live, "secure", False) if live else False,
         # Why the controller is turning this device away, while it is.
@@ -245,6 +244,7 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "identifyRingCapable": getattr(live, "identify_ring_capable", False) if live else False,
         "incubatorSatelliteCapable": "incubator_satellite" in (getattr(live, "capabilities", None) or []) if live else False,
         "incubatorMonitorCapable": em_incubator.MONITOR_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
+        "incubatorStandaloneCapable": em_incubator.STANDALONE_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
         # Firmware that pairs itself (the owner holds the button); else Pair.
         "pairingCapable":   getattr(live, "pairing_capable", False) if live else False,
         # What this Echo is actually doing with its microphone

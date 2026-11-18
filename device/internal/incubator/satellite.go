@@ -217,6 +217,13 @@ func (s *Server) Drained() {
 	}
 }
 
+// Repaint paints the satellite's ring again (something else held the ring).
+func (s *Server) Repaint() {
+	if sess := s.session(); sess != nil {
+		sess.repaint()
+	}
+}
+
 // WakeModels is how many wake word models the connected app has pushed.
 func (s *Server) WakeModels() int {
 	sess := s.session()

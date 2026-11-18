@@ -136,6 +136,16 @@ func (s *session) ringLocked() Ring {
 	return RingOff
 }
 
+// repaint paints the ring again whatever was shown: something else held it
+// (the link ring standing aside for a standalone satellite).
+func (s *session) repaint() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shownKey = shownKey{r: -1}
+	s.flashing = false
+	s.showLocked()
+}
+
 // shownKey is what was painted: a repaint only when it changes (new timer
 // data matters only while the timers are shown).
 type shownKey struct {

@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,10 +22,13 @@ import (
 
 // The Voice Incubator satellite (internal/incubator), run when the
 // controller's incubator_satellite message says so. Like the Sendspin player
-// it stops when the controller link goes (EchoMuse is one system: the
-// controller is also what advertises the Echo on the app's network) and
-// starts again on the next message, which the controller sends on connect.
-// The decisions are incubator.Manager's, tested there.
+// it stops when the controller link goes and starts again on the next
+// message, which the controller sends on connect, unless it is standalone
+// (the Echo's opt-in switch): then it is saved on the Echo, started from it
+// at boot, and keeps running without the controller, the buttons and the
+// ring its own while its app is connected (cmd/server.go showLinkLost). It
+// announces itself over mDNS; the controller announces it too, which is
+// what crosses VLANs. The decisions are incubator.Manager's, tested there.
 
 type echoFirewall struct{}
 
@@ -254,20 +257,122 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 	}
 	incubatorMgr = &incubator.Manager{
 		Firewall: echoFirewall{},
-		Send:     func(st incubator.State) { cc.SendIncubatorState(st) },
+		Send: func(st incubator.State) {
+			cc.SendIncubatorState(st)
+			// Off this goroutine: it runs under the satellite's lock, and
+			// deciding the link ring asks the satellite (Serving).
+			go incubatorServingChanged()
+		},
 		Model:    "echomuse-" + board.IDOf(board.Current()),
 		Firmware: client.Version,
 		Device:   dev,
 		Announce: announceSatellite,
 	}
 	cc.OnIncubatorSatellite(func(m client.IncubatorSatellite) {
-		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port, Monitor: m.Monitor})
+		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port,
+			Monitor: m.Monitor, Standalone: m.Enabled && m.Standalone})
+		if m.Enabled && m.Standalone {
+			incubatorSave()
+		} else if err := incubatorKeeper.Remove(); err != nil {
+			log.Printf("[incubator] removing the saved satellite: %v", err)
+		}
 	})
 	cc.OnIncubatorPress(func() {
 		if !incubatorMgr.Press() {
 			log.Println("[incubator] press with no satellite running — ignored")
 		}
 	})
+}
+
+// The standalone satellite (incubator.Saved): kept on disk while the
+// controller says standalone, started from it at boot, and of use with no
+// controller while its app is connected (incubatorServing).
+var incubatorKeeper = &incubator.Keeper{Path: incubator.StandalonePath}
+
+// incubatorServing: a standalone satellite has its app connected.
+func incubatorServing() bool { return incubatorMgr != nil && incubatorMgr.Serving() }
+
+// incubatorSave writes what a standalone satellite needs, if it changed.
+func incubatorSave() {
+	if incubatorMgr == nil || incubatorEcho == nil {
+		return
+	}
+	want := incubatorMgr.Want()
+	if !want.Standalone {
+		return
+	}
+	snap := config.Get().Snapshot()
+	muteRing := config.Get().MuteRingOn()
+	saved := incubator.Saved{Name: want.Name, MAC: want.MAC, Port: want.Port, Monitor: want.Monitor,
+		ListeningAnim: snap.ListeningAnim, IncubatorRing: snap.IncubatorRing, MuteRing: &muteRing}
+	if incubatorEcho.srv.VolumeSeeded() {
+		v := incubatorEcho.srv.VolumeLevel()
+		saved.Volume = &v
+	}
+	if err := incubatorKeeper.Save(saved); err != nil {
+		log.Printf("[incubator] saving the standalone satellite: %v", err)
+	}
+}
+
+var (
+	saveMu    sync.Mutex
+	saveTimer *time.Timer
+)
+
+// incubatorSaveSoon saves a moment after the last change (a volume held
+// down is many changes; the file is written once).
+func incubatorSaveSoon() {
+	saveMu.Lock()
+	defer saveMu.Unlock()
+	if saveTimer != nil {
+		saveTimer.Stop()
+	}
+	saveTimer = time.AfterFunc(2*time.Second, incubatorSave)
+}
+
+// startStandaloneIncubator starts the saved satellite at boot, before any
+// controller: its ring, mute ring and volume as they were, then the
+// satellite. Nothing saved, or anything unreadable, is no standalone.
+func startStandaloneIncubator(srv *server.Server) {
+	if incubatorMgr == nil || incubatorEcho == nil {
+		return
+	}
+	saved, err := incubator.LoadSaved(incubator.StandalonePath)
+	if err != nil {
+		return
+	}
+	config.Get().Apply(config.ConfigMessage{Type: "config", ListeningAnim: saved.ListeningAnim,
+		IncubatorRing: saved.IncubatorRing, MuteRing: saved.MuteRing})
+	if saved.MuteRing != nil {
+		srv.SetMuteRing(*saved.MuteRing)
+	}
+	if saved.Volume != nil {
+		srv.SeedVolume(*saved.Volume)
+	}
+	log.Printf("[incubator] starting the saved standalone satellite as %s", saved.Name)
+	incubatorMgr.Apply(saved.Settings())
+}
+
+// incubatorHoldMs is a hold, not a tap: the controller's BUTTON_HOLD_MS
+// (em_esphome.py), test-pinned. A hold does nothing standalone: its Home
+// Assistant event has no one to go to.
+const incubatorHoldMs = 750
+
+// incubatorLocalPress is the action button with no controller, while a
+// standalone satellite serves: a tap is the satellite's press, as the
+// controller passes it on (a ringing timer stops, muted or not; a call is
+// cancelled; else a call starts, unless muted).
+func incubatorLocalPress(heldMs int) {
+	if incubatorMgr == nil {
+		return // a tap during start-up
+	}
+	if heldMs >= incubatorHoldMs {
+		log.Printf("[incubator] action button held %d ms with no controller — nothing to do", heldMs)
+		return
+	}
+	if !incubatorMgr.Press() {
+		log.Println("[incubator] press with no satellite running — ignored")
+	}
 }
 
 // announceSatellite puts the Echo's own satellite on the network as the app
@@ -278,16 +383,50 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 // would send the app to the wrong Echo. Its addresses are the Echo's IPv4
 // ones; emOS admits the app's queries (sport 5353, init.c firewall()).
 func announceSatellite(name, mac string, port int) (func(), error) {
-	ips := localIPv4s()
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("no IPv4 address to announce")
+	txt := []string{"mac=" + mac, "protocol=" + strconv.Itoa(incubator.Protocol)}
+	register := func(ips []string) (*zeroconf.Server, error) {
+		return zeroconf.RegisterProxy(name, "_voice-incubator._tcp", "local.", port, name+"-vi", ips, txt, nil)
 	}
-	srv, err := zeroconf.RegisterProxy(name, "_voice-incubator._tcp", "local.", port,
-		name+"-vi", ips, []string{"mac=" + mac, "protocol=" + strconv.Itoa(incubator.Protocol)}, nil)
-	if err != nil {
-		return nil, err
-	}
-	return srv.Shutdown, nil
+	// At boot (a standalone satellite starts before WiFi may have an
+	// address) and whenever the address changes, the record follows: no
+	// address yet is retried, a new one is re-announced.
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var srv *zeroconf.Server
+		var at string
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			ips := localIPv4s()
+			if now := strings.Join(ips, ","); now != at {
+				if srv != nil {
+					srv.Shutdown()
+					srv = nil
+				}
+				at = now
+				if len(ips) > 0 {
+					var err error
+					if srv, err = register(ips); err != nil {
+						log.Printf("[incubator] mDNS announcement failed: %v", err)
+						at = "" // try again on the next tick
+					} else {
+						log.Printf("[incubator] announced at %s", now)
+					}
+				}
+			}
+			select {
+			case <-quit:
+				if srv != nil {
+					srv.Shutdown()
+				}
+				return
+			case <-t.C:
+			}
+		}
+	}()
+	return func() { close(quit); <-done }, nil
 }
 
 // localIPv4s are the Echo's own IPv4 addresses on interfaces that are up.

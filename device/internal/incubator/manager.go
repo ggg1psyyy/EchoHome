@@ -14,6 +14,10 @@ type Settings struct {
 	// Monitor: the app may listen live (the Echo's opt-in switch). A change
 	// restarts the satellite, so the app reconnects and reads the new HELLO.
 	Monitor bool
+	// Standalone: the satellite outlives the controller link (the Echo's
+	// "keep working without the controller" switch). The firmware keeps
+	// these settings on disk and starts from them at boot.
+	Standalone bool
 }
 
 // Firewall opens and closes an inbound TCP port (internal/firewall on the
@@ -106,7 +110,38 @@ func (m *Manager) Apply(st Settings) {
 func (m *Manager) LinkDown() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.s != nil && m.want.Standalone {
+		log.Printf("[incubator] controller link down: the satellite keeps running (standalone)")
+		return
+	}
 	m.stopLocked("controller link down")
+}
+
+// Repaint paints the satellite's ring again.
+func (m *Manager) Repaint() {
+	if s := m.server(); s != nil {
+		s.Repaint()
+	}
+}
+
+// Want is what the satellite was last asked to run as (zero when it does
+// not run).
+func (m *Manager) Want() Settings {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.s == nil {
+		return Settings{}
+	}
+	return m.want
+}
+
+// Serving says whether a standalone satellite has its app connected: the
+// Echo then needs no controller to be of use.
+func (m *Manager) Serving() bool {
+	m.mu.Lock()
+	s, standalone := m.s, m.want.Standalone
+	m.mu.Unlock()
+	return s != nil && standalone && s.State().AppConnected
 }
 
 func (m *Manager) stopLocked(why string) {

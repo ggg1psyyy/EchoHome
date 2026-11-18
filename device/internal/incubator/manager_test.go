@@ -249,3 +249,40 @@ func TestTheSatelliteIsAnnouncedWhileItListens(t *testing.T) {
 		t.Fatalf("announcements %v (live %v), want %s", log, live, want)
 	}
 }
+
+// Standalone, the satellite outlives the controller link: its app stays
+// connected through it, and a reconnecting controller's identical message
+// keeps it as it is. Without it, link loss stops it as before.
+func TestAStandaloneSatelliteOutlivesTheControllerLink(t *testing.T) {
+	m, _, _ := manager(t)
+	m.Device = &fakeEcho{}
+	p := freePort(t)
+	set := Settings{Enabled: true, Name: "n", MAC: "m", Port: p, Standalone: true}
+	m.Apply(set)
+	c, r := dial(t, p)
+	defer c.Close()
+	readHello(t, r)
+	waitFor(t, "serving", m.Serving)
+	m.LinkDown()
+	if !m.Running() || !m.Serving() {
+		t.Fatal("link loss stopped a standalone satellite")
+	}
+	m.Apply(set) // the controller back, saying the same
+	c.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	if _, _, err := r.Read(); err != nil && !isTimeout(err) {
+		t.Fatalf("the app was dropped across the reconnect: %v", err)
+	}
+	if m.Want() != set {
+		t.Fatalf("Want %+v", m.Want())
+	}
+	m.Apply(Settings{Enabled: true, Name: "n", MAC: "m", Port: p}) // standalone off
+	m.LinkDown()
+	if m.Running() {
+		t.Fatal("not standalone, and link loss left it running")
+	}
+}
+
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}

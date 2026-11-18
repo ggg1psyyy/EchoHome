@@ -476,7 +476,8 @@ def test_a_capable_echo_is_asked_to_listen_and_the_controller_stands_down(on_ech
         assert inc.get_status(DEV) is None, "the controller's satellite is up beside the Echo's"
         (msg,) = on_echo["echo"].sent
         assert msg == {"type": "incubator_satellite", "enabled": True, "name": inc.node_name(DEV),
-                       "mac": "02:ec:12:34:56:78", "port": inc.ECHO_PORT, "monitor": False}
+                       "mac": "02:ec:12:34:56:78", "port": inc.ECHO_PORT, "monitor": False,
+                       "standalone": False}
         # Not advertised until the Echo says it listens.
         assert on_echo["registered"] == []
         view = inc.status_view(DEV)
@@ -835,4 +836,50 @@ def test_an_echo_that_announces_itself_is_still_announced_for(on_echo):
         await _state(echo, listening=True, port=6055, appConnected=False)
         (info,) = on_echo["registered"]
         assert info.parsed_addresses() == ["192.0.2.10"] and info.port == 6055
+    asyncio.run(run())
+
+
+def test_the_standalone_switch_reaches_the_echo_through_reconcile(on_echo):
+    echo = on_echo["echo"]
+    async def run():
+        echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.STANDALONE_CAPABILITY]
+        on_echo["config"][inc.STANDALONE_KEY] = True
+        await inc.device_connected(DEV)
+        assert echo.sent[-1]["standalone"] is True and echo.sent[-1]["monitor"] is False
+        on_echo["config"][inc.STANDALONE_KEY] = False
+        await inc.reconcile(DEV)
+        assert echo.sent[-1]["standalone"] is False
+        on_echo["config"][inc.STANDALONE_KEY] = True
+        echo.capabilities = ["mic", "speaker", "incubator_satellite"]
+        await inc.reconcile(DEV)
+        assert echo.sent[-1]["standalone"] is False  # firmware that cannot
+    asyncio.run(run())
+
+
+def test_a_hold_is_a_hold_on_the_echo_as_here():
+    """Standalone, the Echo tells a tap from a hold itself: by the same
+    threshold as the controller's (em_esphome.BUTTON_HOLD_MS)."""
+    import re
+    import em_esphome
+    from pathlib import Path
+    go = (Path(__file__).resolve().parents[2] / "device" / "cmd" / "incubator.go").read_text()
+    assert int(re.search(r"const incubatorHoldMs = (\d+)", go).group(1)) == em_esphome.BUTTON_HOLD_MS
+
+
+def test_a_standalone_echo_that_goes_offline_stays_announced(on_echo):
+    """Standalone, its satellite keeps answering without the controller link;
+    where mDNS does not cross VLANs the app finds it only by the controller's
+    record, so that stays while the Echo is offline. Not standalone, it goes."""
+    echo = on_echo["echo"]
+    echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.STANDALONE_CAPABILITY]
+    async def run():
+        on_echo["config"][inc.STANDALONE_KEY] = True
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True)
+        assert len(on_echo["registered"]) == 1
+        await inc.device_disconnected(DEV)
+        assert on_echo["unregistered"] == [] and DEV in inc._on_echo
+        on_echo["config"][inc.STANDALONE_KEY] = False
+        await inc.reconcile(DEV)
+        assert len(on_echo["unregistered"]) == 1 and DEV not in inc._on_echo
     asyncio.run(run())

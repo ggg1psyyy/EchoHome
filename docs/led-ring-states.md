@@ -100,6 +100,14 @@ availability than the code currently has.
 | **SUSPECT** | Socket believed up, but no recent evidence — or an interaction went unconfirmed | No — resolve to DOWN |
 | **DOWN** | Socket closed, or awaiting approval | No — show link state (layer 3) |
 
+**One exception, opt-in: a standalone Voice Incubator satellite**
+(`incubator_standalone`, the "Keep working without the controller" switch).
+While the link is DOWN and its app is connected, the Echo is of use without a
+controller: the link rings stand aside, the satellite's own ring (§4.4a)
+shows, and the action and volume buttons work (a tap goes to the satellite; a
+hold, whose Home Assistant event has no one to go to, does nothing). The
+moment the app goes too, the link ring returns and the buttons go inert.
+
 ### The problem with what exists [today]
 
 ```go

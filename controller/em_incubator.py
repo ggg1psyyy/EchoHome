@@ -100,6 +100,7 @@ MONITOR_KEY = "incubatorMonitor"
 while it listens). Enforced on the Echo, which offers it only when told."""
 MONITOR_CAPABILITY = "incubator_monitor"
 MDNS_CAPABILITY = "incubator_mdns"  # the Echo also announces itself (no stand-down)
+STANDALONE_KEY, STANDALONE_CAPABILITY = "incubatorStandalone", "incubator_standalone"  # outlives us
 """Firmware whose satellite takes button calls: the controller passes a voice
 press on (incubator_press) and the Echo decides what it means there -- stop
 a ringing timer, cancel its call, or start one -- as only it knows which."""
@@ -112,14 +113,11 @@ em_db.BLE_PORT_OFFSET). The channels' 100-port spacing carries over: GA
 18001+, EA 18101+, a dev add-on 18201+."""
 
 WAKE_LEAD_MS = 260
-"""What a private session carries from before the wake word's crossing
-(device/internal/listen WakeLead): HELLO's `preroll_ms`, and a wake call's
-pre-roll."""
+"""A private session's audio from before the crossing (listen WakeLead): the pre-roll."""
 
 OUTPUT_BUFFER_BYTES = 4 * proto.BYTE_RATE
-"""The controller holds a reply 4 s ahead of the Echo (em_player.LEAD_S =
-VOICE_LEAD_S, test-pinned), so that is the buffer it declares, in the app's
-16 kHz bytes."""
+"""A reply is held 4 s ahead of the Echo (em_player.LEAD_S = VOICE_LEAD_S, test-pinned):
+the buffer declared, in the app's 16 kHz bytes."""
 
 RECEIVE_BUFFER_BYTES = 16384
 """SO_RCVBUF for the app's connections (set on the listening socket; Linux
@@ -852,7 +850,7 @@ class EchoSatellite:
         self.name = node_name(device_id)
         self.mac = proto.normalise_mac(mac)
         self.port = port
-        self.monitor = False  # may the app listen live (MONITOR_KEY)
+        self.monitor = self.standalone = False  # MONITOR_KEY, STANDALONE_KEY
         self.address: Optional[str] = None
         self.state: dict = {}
         self._mdns_info: Optional[ServiceInfo] = None
@@ -860,7 +858,7 @@ class EchoSatellite:
     def message(self, enabled: bool) -> dict:
         return {"type": "incubator_satellite", "enabled": enabled,
                 "name": self.name, "mac": self.mac, "port": self.port,
-                "monitor": enabled and self.monitor}
+                "monitor": enabled and self.monitor, "standalone": enabled and self.standalone}
 
 
 _on_echo: dict[str, EchoSatellite] = {}
@@ -942,7 +940,9 @@ async def reconcile(device_id: str) -> None:
                 on_echo = wanted and wants_on_echo(cfg) and echo_capable(device_id)
             _note_backend(device_id, BACKEND_INCUBATOR if wanted else BACKEND_HA)
             sat = _satellites.get(device_id)
-            online = device_id in _online
+            online, rec = device_id in _online, _on_echo.get(device_id)
+            if wanted and not online and rec and rec.standalone and wants_on_echo(cfg) and cfg.get(STANDALONE_KEY) is True:
+                return  # it answers without us; our record still finds it across VLANs
             if not wanted or not online or not on_echo:
                 # Off the Echo's own satellite: tell a connected Echo to stop.
                 await _end_on_echo(device_id, tell=online)
@@ -955,7 +955,8 @@ async def reconcile(device_id: str) -> None:
                 # so the app never sees two under one MAC.
                 if sat is not None:
                     await _teardown(device_id, sat)
-                await _start_on_echo(device_id, loop, monitor_allowed(cfg, device_id))
+                await _start_on_echo(device_id, loop, monitor_allowed(cfg, device_id),
+                                     monitor_allowed(cfg, device_id, STANDALONE_KEY, STANDALONE_CAPABILITY))
                 return
             if sat is None:
                 voice_port = await loop.run_in_executor(None, db.get_esphome_port, device_id)
@@ -981,12 +982,11 @@ async def reconcile(device_id: str) -> None:
         log.exception(f"[{device_id}] Incubator reconcile failed: {e}")
 
 
-def monitor_allowed(config: dict, device_id: str) -> bool:
-    """Whether the app may listen live to this Echo: its switch is on and its
-    firmware can (MONITOR_CAPABILITY). Only True is ever sent as allowed."""
+def monitor_allowed(config: dict, device_id: str, key: str = MONITOR_KEY,
+                    capability: str = MONITOR_CAPABILITY) -> bool:
+    """An Echo's switch (live listening, standalone) on, and firmware that can: only True."""
     dev = em_state.devices.get(device_id)
-    return config.get(MONITOR_KEY) is True and \
-        MONITOR_CAPABILITY in (getattr(dev, "capabilities", None) or [])
+    return config.get(key) is True and capability in (getattr(dev, "capabilities", None) or [])
 
 
 def monitored(device_id: str) -> bool:
@@ -997,14 +997,13 @@ def monitored(device_id: str) -> bool:
     return rec is not None and bool(rec.state.get("monitored"))
 
 
-async def _start_on_echo(device_id: str, loop, monitor: bool = False) -> None:
+async def _start_on_echo(device_id: str, loop, monitor: bool = False, standalone: bool = False) -> None:
     rec = _on_echo.get(device_id)
     if rec is None:
         mac = await loop.run_in_executor(None, db.get_esphome_mac, device_id)
         rec = _on_echo[device_id] = EchoSatellite(device_id, mac)
-    # A change restarts the satellite on the Echo (the app reconnects and
-    # reads the new HELLO): so it goes in the message the Echo compares.
-    rec.monitor = monitor
+    # In the message the Echo compares: a change restarts it (the app reads a new HELLO).
+    rec.monitor, rec.standalone = monitor, standalone
     dev = em_state.devices.get(device_id)
     address = getattr(dev, "ip", None)
     if rec.address != address:
