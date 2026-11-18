@@ -1,144 +1,85 @@
 # CLAUDE.md — `controller/`
 
-The Python asyncio controller, its Home Assistant add-on, and the dashboard.
+The Python asyncio setup tool, its Home Assistant add-on, and the dashboard.
 Project-wide direction, compatibility rules, wire protocol and release scheme
 are in the repo-root `CLAUDE.md`; firmware in `device/CLAUDE.md`. **Every
 heading here has a same-named section in `docs/history/controller.md`** with
 the incidents, measurements and backstory behind its rules — read it before
 changing that area or reopening a decision.
 
+Since EchoHome the controller has **no voice path**: it hosts no satellite,
+scores no wake word, streams and takes no audio, and an Echo works with it
+stopped. What it does: provision (the wizard), pair and approve, push
+configuration, update firmware and emOS, announce each Echo's Voice Incubator
+satellite over mDNS (`em_incubator`), collect stats and support bundles, and
+serve the dashboard.
+
 ## Running the controller
 
 `cd controller && cp .env.example .env` (set `SERVER_IP`), `pip install -r
 requirements.txt`, `python em_controller.py` (Python 3.12); or
 `docker-compose up --build`. Dashboard `:8768`, devices `:8767`. Env:
-`SERVER_IP` (advertised via mDNS), `OWW_MODEL`/`OWW_THRESHOLD`,
-`DEVICE_APPROVAL` (`strict`/`auto`), `DEBUG` — read once at import, parsed as
-`== "1"` (em_start writes `"0"` for false), also add-on option `debug`.
+`SERVER_IP` (advertised via mDNS), `DEVICE_APPROVAL` (`strict`/`auto`),
+`DEBUG` — read once at import, parsed as `== "1"` (em_start writes `"0"` for
+false), also add-on option `debug`. The running controller imports no numpy
+or scipy (`tests/test_lazy_heavy_imports.py`); they are for the Python
+references the firmware's vectors come from (`em_eq`, `em_mbc`,
+`em_limiter`, `em_volume`, `em_resample`) and their tests.
 
 ### Home Assistant add-on
 
 `controller/config.yaml` + root `repository.yaml`. Supervisor clones the
 default branch, so add-on files work only from `main`; test a branch with
 `tools/make_dev_addon.sh` (local add-on, own slug, built on the HA host).
+**Never leave a copy of that add-on directory in `/addons`**: the same slug
+hides the new version. **After `ha store reload`, wait until `ha apps info`
+shows the new `version_latest` before `ha apps update`**, or the update does
+nothing (2026-11-18).
 
 - **Add-on and container are both first-class; neither may gain or lose
   capability.** Every `.env` variable is an add-on option (`options`,
   `schema`, `translations/en.yaml`, `em_start.OPTION_ENV_VARS`) or listed with
-  its reason in `test_deploy.FIXED_IN_THE_ADDON` (`DB_PATH`, `API_PORT`);
+  its reason in `test_deploy.FIXED_IN_THE_ADDON`;
   `test_every_env_var_reaches_the_addon_or_states_why_not` checks both ways.
-  `server_tls_port` cannot be 0 (an Echo holding a CA would be stranded).
-  **One accepted deviation: OIDC sign-in (`OIDC_*`, #868) is container-only**
-  (Wil, 2026-11-16): the add-on is ingress-only, so HA's login is its SSO.
-  Recorded as `OIDC_ISSUER` in `FIXED_IN_THE_ADDON`; any other is a new decision.
-- **`config.yaml`'s `version:` pins the pulled image**; `controller-release.yml`
-  refuses a tag/pin mismatch.
-- **Ingress**: `em_start.py` maps `/data/options.json` to env vars (the
-  controller never knows about HA); `em_api` injects `<base href>` from
-  `X-Ingress-Path`; every dashboard fetch uses `ingressPath()`.
-  `_ingress_only_middleware` admits only `request.remote == 172.30.32.2` —
-  the add-on's only network protection. `ha_ingress` gates nothing.
+  OIDC sign-in (`OIDC_*`, #868) is container-only. An option removed from the
+  schema is logged by Supervisor as unknown for installs that still have it,
+  and the add-on starts.
+- **`config.yaml`'s `version:` pins the pulled image**
+  (`ghcr.io/ggg1psyyy/echohome-controller`); `controller-release.yml` refuses
+  a tag/pin mismatch.
+- **Ingress**: `em_start.py` maps `/data/options.json` to env vars; `em_api`
+  injects `<base href>` from `X-Ingress-Path`; every dashboard fetch uses
+  `ingressPath()`. `_ingress_only_middleware` admits only `request.remote ==
+  172.30.32.2`.
 - **Ingress auth** (`POST /api/auth/ingress`, `em_ingressauth.decide`):
   `X-Remote-User-Id` counts only when `INGRESS_ONLY` **and** the peer is the
-  gateway — on the container it is attacker-supplied. `test_deploy.py` pins
-  the live arguments and that nothing else reads those headers. Users keyed
-  on `users.ha_user_id`, never the name. First user admin, the rest read-only
-  until `PATCH /api/users/{id}` (never demotes the last admin). **Roles are
-  not mirrored from HA** (no admin flag is forwarded; asking needs
-  `auth_api`, which includes `POST /auth/reset`) — revisit only under #171.
-- **Recordings and transcripts are admin-only, server-side**
-  (`_get_turn_audio`, `_redact_turns_for`). No Sign out for an ingress
-  session (`em_auth_via`).
+  gateway. Users keyed on `users.ha_user_id`. First user admin, the rest
+  read-only until promoted. **Roles are not mirrored from HA.**
 - **Channels** are separate add-ons: `controller/` GA, `controller-ea/`
   generated by `tools/sync_channels.py`, never edited
   (`tests/test_channels.py`). `controller-ea-v*` tags never move `:latest`.
-  Channels share no storage: switching (or migrating a fleet into the add-on)
-  means copying `/data`, at least all four `tls/` files, or every Echo with
-  the old CA fails wss. Satellite ports differ via `EM_ESPHOME_PORT_BASE`
-  (GA 16001, EA 16101, BLE +`BLE_PORT_OFFSET`), a floor at allocation, never
-  a seed; HA keys entries on host+port.
-- `version.parse` does not order prereleases; a fix must keep describe output
-  equal to its tag.
+  Channels share no storage: switching means copying `/data`, at least all
+  four `tls/` files.
 
-### Voice backend
+### Releases the setup tool installs
 
-The controller impersonates ESPHome voice satellites (`em_esphome.py` over
-`controller/esphome/`): one listener per device on 16001+, persisted, never
-reused; created at startup and on demand (`_register_device_server`,
-idempotent). Names `<label> Voice Assistant` / `<label> BT Proxy`;
-`project_name` carries `ESPHOME_DEVICE_MODEL` after the dot.
+`em_releases`: firmware from `firmware_repo` (default `ggg1psyyy/EchoHome`),
+emOS from `emos_repo` (default `wilbowes/EchoMuse`), each settable and
+checked against GitHub's owner/name rules. **A cached release counts only for
+the repository it came from** (`latest_repo`), and the binary cache is keyed
+by tag plus repository (`cache_key`): both repos can publish the same tag.
+Free space on an Echo is read with `em_df.parse_free_mb`.
 
-- **`mac_address` is a stored identity** (`db.get_esphome_mac`, assign-once,
-  v19; new = `02:EC` + 4 md5 bytes), resolved once and passed to
-  `_make_device_mdns_info`. Never derive it per call — HA keys devices on it.
-- **Entity names never repeat the label** (HA prefixes the device name);
-  the media player's is empty.
-- **`wake_word_phrase` must equal the advertised `wake_word`**
-  (`em_oww_models.display_name`); `""` for a button turn.
-- **Run events** (no run id exists; HA does not serialise runs, the satellite
-  must): `RUN_END` with no `RUN_START` is terminal → `pipeline_refused` +
-  `ack_anim`. `RUN_END` after `STT_END`, before `INTENT_END` is HA
-  cancelling for `ask_question`/`announce` → `superseded`, no closing
-  `AnnounceFinished`, no abort. `INTENT_END` with no `TTS_START`/`ERROR` →
-  `silent_reply` + `done_anim`. `VoiceAssistantRequest(start=False)` is the
-  abort; after one, `em_runbarrier` discards events until the next
-  `RUN_START` (delivered, one turn only). **The turn's `finally` runs `if
-  self._run_started and not self._run_finished: end_ha_run()`** —
-  idempotent, never labelled a barge — or a stale `RUN_END` kills the next
-  turn.
-- **Barges**: both paths flush before the claim
-  (`tests/test_barge_flush_order.py`), the turn loop waits on the claim
-  (`BARGE_DECISION_TIMEOUT_S` 3s). `em_barge.decide` needs two consecutive
-  frames over `bargeInThreshold` (0.25) — the two move together. When a
-  default moves for safety, decide explicitly about stored fleet values.
-- **HA's VAD may never engage**, and its 15s cap looks like a real endpoint.
-  `em_turnclock.ha_vad_stalled_verdict` ends such a turn keyed on the absence
-  of `STT_VAD_START` (2.5s grace, 1.0s from the last speech frame); while
-  engaged, HA owns end-of-turn. `vad_start_ms` `-1` = never engaged.
-- **Announcements**: `VoiceAssistantAnnounceRequest` blocks HA; `play_media`
-  `announce=true` does not. `AnnounceFinished` is sent when playback actually
-  ends, from a `finally`, never early, never omitted (`em_announce`, one
-  `_announce_play_cb`). Announcements show `meter_anim` unless a turn or
-  ringing timer owns the ring.
-- **Announce-then-listen** (`start_conversation=True`): advertise
-  `START_CONVERSATION` per device, gated on `mic`; listen after
-  `AnnounceFinished`; `ask_question` ends at `STT_END` → `_answer_only`,
-  outcome `answered`. Label `CONVERSATION_TRIGGER`, `preroll_discard=0`.
-  **A muted device runs the turn anyway** (HA waits forever otherwise; mute is
-  the device's `mic_start` rejection + ADC mute). The reply wait is
-  `EM_TTS_WAIT_TIMEOUT` (30s, max 120s; `em_scenes.SPIN_TTL` 135s covers it).
-- `VOICE_PREROLL_DISCARD` (240ms) applies only to a stream the controller
-  scored, never a session (`em_listen.tail_discard`).
-- **`cancel_event` is cleared by anything that starts playing.**
-- **Wake word on/off is `VoiceAssistantSetConfiguration`**, stored in
-  `system_config` (`em_db.get_wake_word_enabled`), policy in `em_wakeword.py`;
-  mute and picker never move each other. `wake_word_off` firmware gets
-  `wakeWordEnabled`; older private firmware has off declined
-  (`decline_off`). **Off is identical in both listening modes**:
-  `wake_allowed` has no mode argument and gates wakes and barges;
-  `follow_up_needs_turn_stream`; nothing streams while off (`stray_stream`).
+## The Voice Incubator record (`em_incubator`)
 
-### HA entities beyond the voice satellite
-
-Advertised **only when the device declares the capability**; keys are
-**append-only**. `ListEntities` is one-shot: caps that arrive before the
-server wait in `_pending_caps`; caps that change afterwards make
-`set_device_capabilities` bounce HA — only on an actual change. Never assume
-registration/server order (`tests/test_capabilities.py`).
-
-- **Action Button** (`button_hold`): hold → `long`, timed on the device
-  (`heldMs`). A tap fires `single` only under `buttonSingleTapEvent` (needs
-  `button_hold`); `double`/`triple` need `buttonMultiTapMs` (the window is
-  timed on arrival; the fix is a device-measured gap, #115). **Do not rewrite
-  the coalescer.** **Mute blocks the voice turn, not the gesture**
-  (`em_button.decide`); mute is enforced by `cmd/server.go`'s `mic_start`
-  rejection — keep it there. The evdev reader filters to `EV_KEY`.
-- **Ambient Light** (`ambient_light`): no sensor sends `missing_state`, not 0.
-- **CPU / Hottest Zone Temperature** (`thermal`, keys 5/6): off the stats
-  report's `cpuTempC`/`maxTempC`; diagnostic and disabled by default (the
-  chip, not the room). "Hottest Zone", never "Max": it is now, not a peak.
-  The push re-checks the capability, since older firmware sends the fields
-  with no entity to receive them; a missing reading is `missing_state`.
+Every approved Echo whose firmware announces `incubator_satellite` is asked
+to run its own satellite (`incubator_satellite`, `monitor` always false: the
+Echo owns live listening), and the controller registers an mDNS record for it
+at the Echo's address once the Echo reports it listens. The record **stays
+while a standalone-capable Echo is offline**: across VLANs it is how the app
+finds the Echo. `voiceBackend` and `incubatorStandalone` are retired:
+`backend()` is always the Incubator. Firmware without the capability is told
+to stop and logged; nothing here can serve it.
 
 ## Schema migrations
 
@@ -146,188 +87,35 @@ registration/server order (`tests/test_capabilities.py`).
 `em_db.MIGRATIONS` is **append-only and forward-only** (`schema_version`
 indexes it). v3 is an f-string over `DEFAULT_DEVICE_CONFIG`; leave it so.
 Each migration is one transaction with its fixup; failure refuses startup.
-A backup `<db>.pre-v<N>.bak` is taken first, **N being the version left** (v32 → v33 writes `pre-v32.bak`) and a failed backup refuses
-(`EM_SKIP_DB_BACKUP=1`). **A newer database refuses to start.** The image sets
-`DB_PATH=/app/data/echomuse.db`. mDNS binds SERVER_IP's interface only
-(`em_hostip.bind_mdns`).
-
-## Controller audio pipeline
-
-1. **Wake word: two paths per Echo from its `listen_state`**
-   (docs/listening.md). `_private_listen`: turns run as tasks, never awaited
-   (`_private_barge`); end of speech closes the session; session audio is
-   routed by `SessionRouter`, never `oww_paused`; controller-only measures are
-   absent, not zero. `_stream_listen`: openwakeword per device on
-   `mic_queue`, **lag bounded by frame age, never queue size**
-   (`em_listen.skip_backlog`).
-   **Arbitration** (`em_arbiter`): hold `ARB_HOLD_S` 250ms from first heard,
-   collect within `wakeArbitrationMs` (700), `pick()` the **loudest, no
-   margin** (`em_wakelevel`); earliest-heard only when levels cannot be
-   compared (missing, heard over own playback, differing gains). An Echo
-   ringing a timer wins before either (#862). Do not return
-   to SNR or first-detector-wins. **An Echo with no HA behind it stands down
-   BEFORE the claim** (`can_serve_turn` before `_claim_wake`, `test_deploy.py`)
-   and still records the wake and plays the cue (`record_dropped_wake`);
-   `em_arbiter` knows nothing of it.
-2. **Voice turn**: drain → `voice_lock` → mic to HA → TTS → EQ → guard →
-   limiter → `0x02` paced `VOICE_LEAD_S` 4.0s ahead, streamed, never
-   accumulated. **TTS is requested as WAV and passed through with no
-   decoder** (`em_wav`); else ffmpeg `-threads 1`. `contextlib.aclosing` at
-   every level. Retry only before the first PCM.
-3. **Media playback** (`em_player`): ffmpeg → same plane, `LEAD_S` 4.0s.
-   Pause = `speaker_flush` + bookmark; resume `-ss` before `-i`,
-   `SEEK_STALL_S` rejoins live; Music Assistant flows are `known_unseekable`.
-   **Voice turns and announcements OWN the speaker** (`interrupt()`, taken
-   unconditionally); user commands meanwhile are recorded, last write wins,
-   override auto-resume, pushed via `push_intent`. **Never send HA a
-   hardcoded `MediaPlayerState`**: `_media_state_msg()` reads
-   `em_player.reported_state` (our own pause still reports `PLAYING`).
-   **Music never sets `device.speaking`.** `SOURCE_STALL_MS` times only the
-   read and counts under `SOURCE_BEHIND_S`; `DATA_RECONNECT_GRACE_S` is per
-   stream, never per frame.
-4. **Speaker**: mono 48kHz on the wire; ~5.5s device buffer, ~1s prime.
-
-## Pacing: why the voice stream is held 4s ahead, not sent as fast as it can go
-
-Unpaced sends fill the device's 5.5s channel, block its reader, starve pongs
-and drop the link mid-reply. `VOICE_LEAD_S` = `em_player.LEAD_S` = 4.0,
-guarded against `audioChanDepth` in the Go source
-(`tests/test_voice_pacing.py`). Behind realtime = zero delay
-(`em_pacing.lead_delay`); first period exempt; the wait races
-`cancel_event`. **`send_ms` is socket-write time, never delivery.**
-
-## The output chain: EQ → bass guard → limiter
-
-`stock_sound` firmware adds the speaker voicing on the device (device/CLAUDE.md
-→ "The speaker's voicing"); this chain serves the jack and older firmware.
-Order is fixed: EQ (`em_eq`) → bass guard (`em_mbc`, dynamic below 115Hz) →
-limiter (`em_limiter`), in float.
-
-- **Updated in place, never rebuilt** (`StreamingEQ.update()`): instances
-  persist; enable is a flag, never `None` (bypassed guard still runs the LR4
-  allpass sum); crossover and look-ahead are not settable.
-- Changes are heard `LEAD_S` later. A/B the guard at flat EQ; tune with
-  `bassGuardEnabled`, not depth. `describe_chain` `n/a` = bypassed,
-  `0.00dB` = idle.
-- **On-device chain** (`output_chain` both ways): send `em_eq.Passthrough` at
-  all three paths (`tests/test_output_chain_on_device.py`). **This Python is
-  the reference**: `tests/test_outchain_vectors.py` fails until the Go vectors
-  are regenerated — change the Go in the same PR.
-- No hard clip, no gain trim fix; LR crossover, never subtractive; one
-  instance per stream; limiter chunk seed `_gain_db + _slew`; threshold
-  against 32767.
-
-## Ducking: music and voice are separate planes on the device
-
-On `audio_mix` firmware **a voice turn ducks music, never pauses it**
-(`0x04`/`0x05`, mixed on the device — the controller cannot duck audio already
-sent). Voice is never attenuated; the sum saturates; constant-slew ramp,
-per-sample; `duckDb` −18dB. Stop/pause sends `music_flush`; a turn sends no
-flush. With `MediaSession.ducked`, a deferred user pause must be applied at
-release. The device's wake bar counts music; `VoiceAudible` alone sets
-`barge`. `reported_state` remains for non-mixing firmware.
-
-## Sendspin: the music plane's second producer never crosses the controller
-
-Music Assistant talks to the Echo directly (`docs/audio-states.md` §6). The
-controller handles config (`sendspinEnabled`/`sendspinUnpaired`;
-`sendspinName` is the label, never stored), status (`Device.sendspin`), and
-the pairing token (`GET /api/devices/{id}/sendspin/token`, admin) — **never
-log, store or emit it** (`test_capabilities.py`). Ducking needs nothing new.
-Volume lives on the device; the player runs only while the link is up.
-
-## Timers, and owners are COUNTED not flagged
-
-The alarm is a fourth speaker owner (`em_timers.py`, `*_timer_alarm`):
-bursts gate on `speaker_busy`, dismissal sends `speaker_flush`,
-`MAX_RING_S` 15 min (do not shorten).
-
-- **#373 is owed and inverts today's code**: the alarm never waits — it rides
-  the music plane on `audio_mix` (else takes `0x02`) and is ducked under a
-  reply with its own depth; announcements wait for the burst in flight
-  (bounded), never the whole ring.
-- Playback completion is a FIFO of waiters; **`end_playback` in a
-  `finally`**. A cancelled playback releases `speaking` in a shielded
-  `finally`, or the device is deaf for good.
-- **Wake word + any speech stops a ringing timer fleet-wide**
-  (`DismissListen`, `_dismiss_by_speech`): the hold is a deadline
-  (`timer_alarm_hold_t`), never a flag; Silero, two speech frames after the
-  preroll; nothing reaches HA. **Never a word list. A wake alone never stops
-  it** (unless Silero is missing).
-- No `on_timer_event` log line = HA never sent the event (often its LLM).
-- **Overlapping owners are counted**: `duck_depth` (mixing only) and
-  `owner_depth` separate; wire only on 0↔1; `s.lead_s` follows
-  `duck_depth`; only the first claim clears `pending`; keep both call sites
-  balanced in `try`/`finally` (a leak = permanently quiet music).
-
-## Key Python modules
-
-`docs/controller-modules.md` maps the em_api split. Modules covered in a
-section above are not repeated.
-
-| File | Role and rules |
-|------|------|
-| `em_controller.py` | WebSocket server, `Device`, voice pipeline, mDNS. **Runs as `__main__`: nothing imports it by name** (`tests/test_loop_lag_reader.py`) |
-| `em_api.py`, `em_routes_*.py` | `create_app` registers each route module's `register(app)`; shared below them: `em_http`, `em_events`, `em_shell`, `em_device_view`, `em_device_config`, `em_ota`, `em_emos_ota`, `em_oww_sync`, `em_reconcile`, `em_payloads`, `em_releases`, `em_process_stats` |
-| `em_state.py` | Process-wide live state; import it, not em_controller |
-| `em_boards.py` | Board → HA model. **Biscuit's model string never changes**; unknown → `Echo (<id>)` |
-| `em_oww_assets.py` | Wake word asset plan. Pure; transports `em_oww_sync`, wizard |
-| `em_shadow.py` | Device crossings vs controller detections |
-| `em_listen.py` | `resolve` — the only source for privacy statements; `SessionRouter` |
-| `em_config_sections.py` | Section scoping, `STATE_KEYS`, `FLEET_KEYS` |
-| `em_recordings.py` | Utterance WAVs; ownership-checked `resolve` |
-| `em_turnclock.py` | **No-speech measured from the first real audio frame**, not turn start; `FIRST_AUDIO_GRACE` |
-| `em_speechgate.py` | Holds turn audio until Silero hears speech; all triggers and modes; fails open |
-| `em_wakelevel.py` | Wake level; same definition as `device/internal/client/wakelevel.go`, shared vector |
-| `em_endpoints.py` | `controller.json`; fleet sync removes only `managed_by` files, the wizard any |
-| `em_wifi.py` | SSID/PSK rules mirroring `ssid.go` and `_ssidProblem`/`_pskProblem` |
-| `em_tcp.py` | Thin-stream TCP, `TCP_INFO` loss, Link grade |
-| `em_health.py` | eMMC wear, boot reason (v28). MediaTek reboots through the watchdog, so a watchdog reason with a clean saved kernel log is a clean restart (`device_boots.prev_clean`, v33); a log never read stays a warning |
-| `em_dbwriter.py` | **No coroutine calls `db.*`** (`tests/test_db_off_loop.py`): `submit` writes, `run_in_executor` reads |
-| `em_tasks.py` | **No discarded `create_task`; `Event.wait()` tasks torn down in a `finally`** (`tests/test_tasks.py`) |
-| `em_output_mute.py` | HA mute = volume 0 + remembered level; 0 never persisted as `startupVolume` |
-| `em_ble_proxy.py` | BLE proxy device per Echo; `reconcile()` idempotent, per-device lock, logs never raises. **Connections never on a plaintext port**: `key is not None` alone decides encryption, `em_ble_gatt` handlers and ACTIVE_CONNECTIONS (`tests/test_ble_proxy_rules.py`); key only via one admin GET |
-| `em_ble_gatt.py` | GATT bridge, to HA's rules (value handle; no error on write-without-response; one `connected=false`); events queue behind results |
-| `esphome/` | Protocol; `noise.py` for BLE connections only. After touching either, run `tools/noise_client_check.py` and `tools/gatt_client_check.py` |
+A backup `<db>.pre-v<N>.bak` is taken first, **N being the version left** and
+a failed backup refuses (`EM_SKIP_DB_BACKUP=1`). **A newer database refuses
+to start.** EchoHome added no migration (still v33); its voice-era tables and
+columns stay and are simply no longer written. mDNS binds SERVER_IP's
+interface only (`em_hostip.bind_mdns`).
 
 ## Fleet vs device scoping (schema v8)
 
-Every key belongs to one of six sections in `em_config_sections.py`;
+Every key belongs to one of the sections in `em_config_sections.py`;
 `get_effective_device_config` = fleet overlaid with the device's overridden
-sections (`use_global_config` is derived, never authoritative). Guarded by
-`tests/test_config_sections.py`: the partition is total (new key → a section,
-same change); `dashboard.jsx`'s `CONFIG_SECTIONS` mirrors it (JSON, no
-comments); `STATE_KEYS` are never scoped. Reverting discards values. Writes
-push the **effective** config via `apply_live_config`, never the body. A fleet
-edit is ignored by a device overriding that section — such a control must say
-so. **Controller-consumed keys are mirrored in `handle_control` AND
-`apply_live_config`** (`tests/test_config_mirrors.py`). **Every key has a
-type in `em_config_types.KINDS`** (one bad value drops the device's whole
-push): POSTs refuse `bad_config_value`; pushes filter (`drop_invalid`,
-`well_typed`); `tests/test_config_types.py`.
+sections. Guarded by `tests/test_config_sections.py`: the partition is total;
+`dashboard.jsx`'s `CONFIG_SECTIONS` mirrors it; `STATE_KEYS` are never
+scoped; an unknown stored section id is dropped (`normalise`). Writes push the
+**effective** config via `apply_live_config`. **Every key has a type in
+`em_config_types.KINDS`**: POSTs refuse `bad_config_value`; pushes filter
+(`drop_invalid`, used by both full-config pushes, which also drops
+`RETIRED`). **A retired key stays in stored configs and is never pushed**:
+the Echo owns some of them now and a stale value must not contradict it.
 
-## Persistent activity stats
+## Persistent stats
 
-One `turns` row per turn. **Cost: one insert per turn, one upsert per
-30s/2s, nothing per audio frame.** Absent measurements are NULL, never 0.
-
-- `vad_start_ms` `-1` = HA's VAD never engaged; NULL = predates the column.
-- Delivery (v7) `playback_stats` attach to `device.last_turn_id`, consumed on
-  use. Rollups `wake_counters`, `device_metrics`; `turn_history` hydrates from
-  `turns`. **`send_ms` is never delivery.**
-- RTT (v9/v10): seq-stamped pings, one monotonic clock; **new RTT fields need
-  `drain_rtt` and `record_device_stats`** (`test_db_instrumentation.py`);
-  rates not counts; MTK RF counters are structurally zero — never surface
-  them. Excursions are TCP retransmission; both ends run thin-stream TCP;
-  `WS_PING_TIMEOUT_S` 30. Link loss (v26, `drain_tcp`, `tcpUpRetrans`):
-  per-connection deltas, NULLABLE; the Link tile grades loss, not RSSI.
-- **Recordings** (v12, `saveUtterances`, default OFF): tapped **below the
-  denoiser**; `KEEP_PER_DEVICE` 10, so read only through
-  `em_recordings.resolve`; fetched via `API.blob`.
-- **Wake samples** (v29, `wakeClipCapture`): pre-roll only while enabled and
-  only from a streaming Echo — never `0x07` session audio; reset on session
-  close and `owwOnDevice` change. Admin-only, 50 per device, never written
-  continuously, never auto-fed to training.
+**Cost: one upsert per 30s report, nothing per frame.** Absent measurements
+are NULL, never 0. RTT (v9/v10): seq-stamped pings, one monotonic clock; **new
+RTT fields need `drain_rtt` and `record_device_stats`**
+(`test_db_instrumentation.py`). Link loss (v26, `drain_tcp`, `tcpUpRetrans`):
+per-connection deltas, NULLABLE; the Link tile grades loss, not RSSI.
+`/api/devices/{id}/activity` serves the hourly metrics and turns recorded
+before EchoHome; recordings and wake samples are only ever deleted now
+(`em_recordings`, `em_wake_samples`, used by `em_db` when a device goes).
 
 ## The emOS console password
 
@@ -336,23 +124,14 @@ Knox** — do not harden it. **Provisioning deletes the record**; the full
 effective config is pushed on every connect, so it returns. `em_console_pw`
 hashes before storage (`<iterations>:<salt>:<hash>`), matching init
 (`emos/init/pwcheck.c`). Reads return the `__unchanged__` sentinel; empty
-removes, via an explicit button. **An unparseable record means no
-password**, both ends. Disabled only when every device POSITIVELY reported
-Android (`fleet_base_os`). Redacted by key (`redact_config`) and shape
-(`_PW_RECORD`).
+removes. **An unparseable record means no password**, both ends.
 
 ## Support bundles (`em_support.py`)
 
 `GET /api/support/bundle` (admin), `docs/support-bundle.md`. **An allowlist,
 always.** `tests/test_support.py` checks secrets appear nowhere in the
-serialised bundle. No speech and no opt-in (`build()` has no `transcripts`);
-labels pseudonymised; no SSID/BSSID/IP; account names (from the user table,
-longest first) → role; sizes, never paths; serials included.
-`log_levels` are read from the loggers. CPU over 1m/5m/1h, a half-empty
-window omitted. An allowlisted key nothing produces is caught by
-`test_metric_fields_match_what_the_reader_returns`. Log lines sanitised
-(quotes before URLs), transcript lines dropped whole. `controller_log_tail`
-(`LogRing`, 2000, no `aiohttp.access`) and `device_log_tail` (`thin_noise`).
+serialised bundle. Labels pseudonymised; no SSID/BSSID/IP; account names →
+role; serials included. Log lines sanitised.
 
 ## OTA update system
 
@@ -361,49 +140,23 @@ Each check below stands between a bad transfer and a device crash-looping
 onto nothing.**
 
 A/B slots: `/data/local/bin/server` → `server_a`/`server_b`;
-`start_server.sh` flips after 3 fast exits (<15s). Pushed over `/shell`. The
-supervisor logs to `/data/local/etc/echomuse/supervisor.log`
-(`em_api.SUPERVISOR_LOG`), collected on the next connect. emOS kernel crashes:
-`em_crashlog` reads `last_kmsg.prev`; clean only on `reboot: Restarting
-system`/`Power down`; marker after a complete read; SSIDs dropped.
+`start_server.sh` flips after 3 fast exits (<15s). Pushed over `/shell`.
 
-- **Updates are serialised controller-wide** (`em_ota.queue`, both entry
-  points, plus `em_oww_sync.sync`): fetch inside the lock, release in a
-  `finally`, failures do not stop the queue, `MAX_HOLD_S` 300s, `update_queued`
-  reported apart.
+- **Updates are serialised controller-wide** (`em_ota.queue`): fetch inside
+  the lock, release in a `finally`, failures do not stop the queue.
 - **The shell lock is released only by its owner** (`em_shell.owners`).
-- **Probe the destination directory first** — a backstop, not a gate.
 - **Android-only payloads gate on `Device.android_userspace`** (False only on
-  a positive `base_os: emos`) at all three call sites (`on_connect`,
-  `_post_debloat` → `not_android`, `_run_update_locked`), asserted per site.
-  `sync_start_script` is not gated.
+  a positive `base_os: emos`) at all three call sites.
 - **md5 decides success**: write `{dest}.part`, rename on match; a failed
   verify never reaches `ln -sf`. **Never delete the destination before
-  sending.** `TransferResult` names the stage; a silent shell is a link
-  fault. No `cut`; firmware `require_verify=True`. Free space via
-  `parse_free_mb`; unreadable = carry on.
-- **Release assets must be signed** once `em_release_sig.KEYS` holds a key:
-  `em_releases.download` (all four install paths) verifies `<asset>.sig`
-  (Ed25519 over tag + name + sha256) on download AND cache hit, and refuses
-  otherwise (`why_failed` gives the reason). Empty KEYS = not enforced. User
-  uploads are exempt. Signing is `tools/sign_release.py`, off GitHub and off
-  this box; the key PR also turns release workflows to drafts (immutable
-  releases forbid adding a `.sig` after publishing).
-- **The running version is refused** on a single update (`already_running`),
-  skipped in a fleet one (`extract_binary_version`); `force` must stay; the
-  upload token is popped only on commit.
-- Firmware cache (`em_firmware.py`): md5 decides a hit; a cache failure is
-  never an update failure; never `Path.with_suffix` on tag names.
+  sending.** Free space via `parse_free_mb`; unreadable = carry on.
+- **Release assets must be signed** once `em_release_sig.KEYS` holds a key
+  (empty = not enforced). User uploads are exempt.
+- **The running version is refused** on a single update (`already_running`).
 - Payloads live only in `controller/device_payloads/`, each with an update
-  path (`test_deploy.py`). `sync_debloat` checks the `pm hide` list with
-  `grep -qx`; `POST /api/devices/{id}/debloat` is required.
-- `com.amazon.whad` is `PERSISTENT`: `pm disable` is ignored, `am force-stop`
-  is a no-op, and `pm hide` leaves it running until the next reboot.
-- **All payloads reconcile on connect** (`em_reconcile.on_connect`):
-  sequential, each step caught alone, debounced 15 min with the stamp claimed
-  first and given back on an unfinished run (`_after_failure`, `RETRY_S`);
-  probes carry `em_shell.OK_MARK`. **Every device carries the full wake word
-  asset set; the reconcile never changes the mode** (AST tests).
+  path. **All payloads reconcile on connect** (`em_reconcile.on_connect`:
+  start script, controller address, debloat on Android), each step caught
+  alone, debounced 15 min, retried after a minute on an unfinished run.
 
 ## emOS update (`em_emos_update.py`, #573)
 
@@ -413,24 +166,13 @@ cable.**
 
 The running image is read off `mmcblk0p10`, its kernel, load addresses and
 cmdline kept byte for byte, the ramdisk rebuilt from the release's init, and
-written back (`POST /api/devices/{id}/emos_update`, on `em_ota.queue`). Same
-path for amonet 1 and 2. `run_update(io)` is tested against a real shell
-(`tests/test_emos_update_flow.py`); `_EmosIO` decides nothing; tools probed
-by running them; `dd conv=notrunc`. Gates in order: confirmed boot
-(`boot.state` 0); `reference_problems`; `boot-good.img` md5 equals the running
-image; `init_supports_trial` (asked of the binary); `built_problems`;
-read-back after `drop_caches`, undone from `boot-good.img` on mismatch.
-
-- **Trial mark** `/data/emos/update.pending`: written before the flash,
-  removed on re-registration; init rolls back after three unconfirmed boots
-  (`WATCH_S`). A controller down through that window costs a good update — by
-  design.
-- Confirmation is stateless (`status_on_connect`); `settle_on_connect`
-  reports `/data/emos/rollback.last`; redial vs restart by kernel uptime.
-- GA skips `emos-v*-ea.N` by flag and name (`choose_release`); order by
-  `version_key`, never list order.
-- Radar shares biscuit's 32-bit init; `keep_initramfs` is checked by
-  structure, never kernel hash.
+written back (`POST /api/devices/{id}/emos_update`, on `em_ota.queue`). Gates
+in order: confirmed boot (`boot.state` 0); `reference_problems`;
+`boot-good.img` md5 equals the running image; `init_supports_trial`;
+`built_problems`; read-back after `drop_caches`, undone from `boot-good.img`
+on mismatch. **Trial mark** `/data/emos/update.pending`: written before the
+flash, removed on re-registration; init rolls back after three unconfirmed
+boots. GA skips `emos-v*-ea.N`; order by `version_key`, never list order.
 
 ## Provisioning wizard (`dashboard.jsx`, `_WIZARD_STEPS`)
 
@@ -438,127 +180,63 @@ read-back after `drop_caches`, undone from `boot-good.img` on mismatch.
 Every rule here was broken once, silently.**
 
 - The failure panel shows the reason (`_stepFailureReason`) and offers only
-  what can help (`ensureF1r30s` + `_F1R30S_SHA256` before `runPatchBoot`;
-  escrow restore only with `emosRef`/`restored`).
+  what can help.
 - The finishing reboot belongs to the last step. **No step reports success
-  having done nothing.** `_pmNotReady` matches both shapes; `_pmVerdict`
-  stops only on rejection.
+  having done nothing.** Steps are addressed by id (`_E`) and position: the
+  FireOS flow's last step, once the wake word assets, keeps its place and id
+  as "Finish and Reboot".
 - `waitForFramework` polls `sys.boot_completed` and `pm path android`, 10 min,
-  throws. **Expect 163s** for a post-unlock first boot; a slow boot is not a
-  hang, and pulling the cable powers the Dot off and boots Android.
+  throws. **Expect 163s** for a post-unlock first boot.
 - **A lost device makes a step hang**: the USB `disconnect` listener and an
   epoch counter end it — never a `shell` timeout. `_STEP_MODE` is enforced at
-  every step (in Android `other-boot` is the unlock payload).
-- OOBE muting (`keyevent 25`) is best effort. `SmartHomeWifid`: name from
-  `init.svc.*`, `stop`, then kill.
-
-### Radar (#1017, 2026-10-23)
-
-Recognised from `/system` (`_echoBoard`, `echo_board.test.mjs`), refused on
-FireOS, board sent with the build; **read off the device, never the page**.
-`donorVerdict` skips biscuit's bootloader fingerprint. Restoring to stock:
-finish on `_b`.
-
-### Donut (2026-11-10, first run on hardware 2026-11-15)
-
-As radar: `AEODN`/`donut_puffin` from `/system`, emOS only, no LK fingerprint
-(kaeru). Its 32-bit FireOS 6 runs on a **64-bit** kernel, so the gate wants
-arm64 for it, and its WiFi files are the SDIO modules
-(`_emosSystemFiles().donut`), not MT6620's tools. Its FireOS has **no
-`e2fsck`**: emOS carries its own (#1182). TWRP's format of /data sets max
-mount count 10, so e2fsck runs a full check every tenth boot (0.07 s).
-
-**The emOS flow has no wake word asset step** (#1183): the on-connect
-reconcile delivers them and the Echo reports `degraded` until they land.
-Steps are addressed by id (`_E`), never position. `AdbClient.close()` is
-bounded (3 s); an unbounded close hung step 1 on the donut's TWRP.
+  every step.
 
 ### The emOS flow, and what a run against real hardware found
 
-Every check must be able to fail:
+Every check must be able to fail: test that a thing RUNS, not that a file
+exists; **a probe that cannot run never reads as a pass**; verify the bytes
+written, not the containing block; **amonet v2.0.0 is refused on evidence,
+never absence**; **before the first read that feeds a write, anything
+unreadable refuses** (`donorVerdict`). Uploads go in 512KB pieces
+(`em_chunked`). **Success is REGISTERING** (`firmware_ver`).
 
-- Test that a thing RUNS (`su -c "id -u"`), not that a file exists.
-- **A probe that cannot run never reads as a pass** — sentinels (`_CLEARCHK`,
-  `_MBCHK`, `_DBCHK`); run a probe in the shell it will use.
-- Verify the bytes written, not the containing block.
-- Recovery is a ramdisk: steps 4–5 call `prepareTwrpForInstall`.
-- Only the banner tells TWRP from Android; read `build.prop` from
-  `system_<slot>` (`readFireosBuild`).
-- **amonet v2.0.0 is refused on evidence, never absence** (`_unlockVerdict`):
-  `_amonetLk` on `lk_a` by GPT name (`8816885824790500` amonet 1,
-  `88168858407b0500` v2.0.0), TWRP ≥ 3.7 except `-bboeN`, Android 6+. An
-  `_x` alias on a v2 device is #598 — refuse.
-- **Before the first read that feeds a write, anything unreadable refuses**
-  (`donorVerdict`, `donor_gate.test.mjs`): unlock, recovery, layout, the
-  system slots the image or its way back needs, and every stock kernel must
-  agree on one FireOS generation; unknown LKs refused; `_emosSystemFiles`
-  non-empty.
-- Serial completion markers are assembled on the device; a failed step
-  releases the port.
-- Uploads: `_bootImageLength`, then 512KB pieces (`em_chunked`), memory only.
-- Leave a `wpa_supplicant.conf` skeleton, never overwrite one. Clear
-  `console.pw` at install; ask of anything on `/data` whose it is.
-- The packer checks the reference's md5, not its image id.
-- `/api/devices` is a bare array. **Success is REGISTERING** (`firmware_ver`);
-  nothing may depend on the wizard being closed.
-
-**Stock is preserved; emOS always goes in `boot_a`** (#544).
-`classifyBootSlots`/`chooseBootSlots` (`tests/slot_choice.test.mjs`): A+B
-stock → overwrite A; A only → copy to B through `_writeBootPartition`, touch
-A only if verified; B only → build from B, write A; neither, or no B →
-refuse. Escrow reads `plan.donorDev`. Ours-vs-stock by `emos.system=` or the
-full `ramoops.mem_address=0x44400000`. BCB set to A (`_activateBootSlot`).
-`emos.system=` from TWRP's by-name map, never BCB or suffix. v1 gated out.
-The restore shares `_writeBootPartition`.
-
-### The one partition the wizard writes
-
-Patch Boot Image is the only write; never preloader, LK, amonet payload or
-TWRP. **TWRP and Android map names differently** (TWRP `boot_a`=p10; Android
-`boot_a`=p17), so `classifyBootTarget` matches suffixes and reads every alias.
-`dd` stderr logged; `ANDROID!` checked before patching; cmdline read back;
-failures leave the device in TWRP.
-
-### Diagnostics when a step fails (`em_support.build_provision_diagnostics`)
-
+**Stock is preserved; emOS always goes in `boot_a`** (#544), by
+`classifyBootSlots`/`chooseBootSlots` (`tests/slot_choice.test.mjs`). Patch
+Boot Image is the only partition write; **TWRP and Android map names
+differently**, so `classifyBootTarget` matches suffixes and reads every alias.
 Raw probes go to `/api/provision/diagnostics` and are **redacted on the
-controller, never in the browser**; allowlisted by probe and key, JS list
-pinned to Python (`tests/test_support.py`). emOS steps use `_EMOS_PROBES`
-(`net_log`, `_probe_net_log`).
+controller, never in the browser**.
 
-## Dashboard device state
+Board notes (radar #1017, donut) are in `docs/history/controller.md`.
 
-**Setting `speaking` and pushing it are one operation** (`_set_speaking`).
-`False` comes from the device's `playback_stats`; `True` is an estimate.
-Speaking clears `thinking`; the push catches `BaseException`. **Every
-end-of-speech route calls `_enter_thinking`** (idempotent, one
-`_on_thinking` call site, not on no-speech —
-`tests/test_thinking_transition.py`).
+## Key Python modules
+
+| File | Role and rules |
+|------|------|
+| `em_controller.py` | WebSocket server, `Device`, the control plane, mDNS. **Runs as `__main__`** |
+| `em_api.py`, `em_routes_*.py` | `create_app` registers each route module's `register(app)` |
+| `em_state.py` | Process-wide live state, the shared zeroconf responder |
+| `em_incubator.py`, `em_incubator_proto.py` | The Echo's satellite: asked to listen, announced over mDNS; the protocol module also serves `tools/incubator_interop_check.py` |
+| `em_listen.py` | `resolve` — the only source for privacy statements |
+| `em_releases.py`, `em_firmware.py`, `em_df.py` | Release sources and caches, free space |
+| `em_device_config.py`, `em_config_types.py`, `em_config_sections.py` | Pushes, types, scoping, `RETIRED` |
+| `em_boards.py` | Board → HA model. **Biscuit's model string never changes** |
+| `em_dbwriter.py` | **No coroutine calls `db.*`** (`tests/test_db_off_loop.py`) |
+| `em_tasks.py` | **No discarded `create_task`** (`tests/test_tasks.py`) |
+| `em_eq.py`, `em_mbc.py`, `em_limiter.py`, `em_volume.py` | The Python references for the firmware's output chain and volume law (`tests/test_outchain_vectors.py`) |
 
 ## Device labels (`em_labels.py`)
 
-`check_label`: ≤32 code points trimmed; no Cc, Cs, or letterless labels; Cf
-allowed. **Duplicates refused** by `label_key` (NFKC + casefold + collapsed
-whitespace). Stored labels never rewritten.
+`check_label`: ≤32 code points trimmed; no Cc, Cs, or letterless labels.
+**Duplicates refused** by `label_key`. Stored labels never rewritten.
 
 ## Dashboard styling and theming
 
 - **Every chrome colour is a token**, same set in both themes
-  (`tests/test_design_tokens.py`; an undefined `var()` renders as nothing).
-  Literal on purpose: the Echo drawings, LED swatches, xterm theme,
-  `deviceState().dot`. Size, font, radius and spacing are tokens too
-  (`tests/test_design_scale.py`); prove "no change" by computed-style diff.
-- Clickable = keyboard-reachable (`<button>` or `asButton(...)`); a backdrop
-  that closes a dialog stays a plain `div`, with Escape as its keyboard path.
-  Inputs are `em-inset em-input`, labelled by `<label>`/`aria-label`.
+  (`tests/test_design_tokens.py`). Size, font, radius and spacing are tokens
+  too (`tests/test_design_scale.py`, `--update` after a shrink).
+- Clickable = keyboard-reachable (`<button>` or `asButton(...)`).
 - **Never concatenate hex alpha onto a colour**; use `color-mix`.
-- Theme set by an inline `<head>` script (`localStorage` `em-theme`). Dark is
-  the same warm hue, not an inversion. Shared chrome lives in `.em-*` classes.
-- **WCAG 2.2 AA, proven by `tests/test_contrast.py`**; move a failing colour
-  to the smallest passing value. Dark surfaces redefine the text tokens
-  (`em-on-dark`); state names use `deviceState().lcd`; never dim text with
-  `opacity`.
-- Audit with axe-core in Chromium against the published image (flatten
-  gradients, disable transitions, scope to `.em-modal`).
-- Slider for values tuned by ear; NumberField where the number is known,
-  stripping non-digits as typed, never rounding.
+- **WCAG 2.2 AA, proven by `tests/test_contrast.py`**.
+- The dashboard's device states (speaking, thinking, listening) stay idle
+  since EchoHome: nothing on the controller drives them.

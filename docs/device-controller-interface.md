@@ -1,58 +1,48 @@
 # The Device ↔ Controller Interface
 
-This is the contract a device binary implements to be driven by the EchoMuse
-controller. It exists so a **new board** — the Echo Show 8 (`crown`) is the
-first after the Echo Dot (`biscuit`) — can be built against a written
-specification rather than by reading the Dot's source. The controller is
-already board-agnostic; a new board is almost entirely a fresh set of hardware
-**Bindings** behind this same wire protocol.
+This is the contract between the firmware on an Echo and the EchoHome setup
+tool (the controller). Since EchoHome the Echo does its own voice work: it is
+a Voice Incubator satellite and an ESPHome device of its own, and it works
+with no controller. The link described here carries setup: registration,
+configuration, state reports, WiFi changes, the shell that OTA rides, and the
+controller's request that the Echo run its satellite.
 
-The authoritative
-source for every message and field is the code cited inline; where this
-document and the code disagree, the code wins and this document is the bug.
+The authoritative source for every message and field is the code cited
+inline; where this document and the code disagree, the code wins and this
+document is the bug. Any firmware can meet any controller, including firmware
+from before EchoHome (`controller/tests/test_capabilities.py`).
 
 ## The two rules everything else serves
-
-Both are guarded by `controller/tests/test_capabilities.py`. A board that
-honours them can pair with any controller version, and vice versa.
 
 - **Negotiate by capability, not version.** The device announces what it
   implements in its `register` message; the controller reads
   `Device.capabilities` and gates each feature on the relevant string. Never
-  compare version strings — that puts release history in the controller and
-  misjudges dev builds. A UI control whose capability the device lacks is shown
-  **disabled with the reason**, never as a control that silently does nothing.
+  compare version strings. A UI control whose capability the device lacks is
+  shown **disabled with the reason**, never as a control that silently does
+  nothing.
 - **Degrade to old behaviour, never to a wrong answer.** Unknown JSON fields
-  and message types are ignored in both directions. Where a new field records a
-  measurement, absence stores as **NULL, not 0** — a device that cannot report
-  a thing must not read as having reported zero.
+  and message types are ignored in both directions. Where a field records a
+  measurement, absence stores as **NULL, not 0**.
 
 ## The three planes
 
-Each device opens **three** WebSocket connections to the controller. The
-controller is discovered by mDNS (`_emcontroller._tcp.local`); the device dials
-out on all three.
+The controller is discovered by mDNS (`_emcontroller._tcp.local`, the name
+every firmware looks for); the device dials out.
 
-| Path | Payload | Direction | Purpose |
-|------|---------|-----------|---------|
-| `/control` | JSON text | bidirectional | Registration, LEDs, mic start/stop, button/state events, config push, WiFi, shell control |
-| `/data` | binary | bidirectional | Mic PCM in; speaker + music PCM out |
-| `/shell/{device_id}` | raw binary | device-dialled on demand | Root shell proxy, opened only after a `shell_open` command |
+| Path | Payload | Purpose |
+|------|---------|---------|
+| `/control` | JSON text | Registration, config, state reports, WiFi, LEDs, shell control |
+| `/data` | — | Idle. The device dials it and sends its identify line; nothing else flows either way. Firmware from before EchoHome sends audio and BLE frames on it, which the controller drops |
+| `/shell/{device_id}` | raw binary | Root shell proxy, dialled only after `shell_open`; OTA transfers ride it |
 
 All three exist in plain (`ws://`) and TLS (`wss://`) form; see
-[Link auth & TLS](#link-auth--tls). The `/shell` plane is not dialled until the
-controller asks for it.
+[Link auth & TLS](#link-auth--tls).
 
-**Keepalive and loss.** The controller sends a WebSocket ping every 20s on each
-plane and closes a connection after **30s** with no pong
-(`WS_PING_TIMEOUT_S`); answer pings promptly, which means never blocking the
-goroutine or thread that reads the socket. Home WiFi loses packets, so a device
-should set **`TCP_THIN_LINEAR_TIMEOUTS`** on its sockets (Linux: retransmit on a
-linear timer while under four segments are in flight, instead of doubling);
-the controller sets it on its end. On a board whose radio shares an antenna
-with Bluetooth, **stop any BLE scan while the link carries a turn, a reply or
-a shell session** — on the Dot a running scan made the AP resend 47-150% of
-frames (see "The LE scan costs the WiFi link" in `device/CLAUDE.md`).
+**Keepalive and loss.** The controller pings every 20s on each plane and
+closes a connection after **30s** with no pong (`WS_PING_TIMEOUT_S`); never
+block the goroutine that reads the socket. A device should set
+`TCP_THIN_LINEAR_TIMEOUTS` on its sockets; the controller does on its end.
+Losing the link changes nothing an Echo does for its owner.
 
 ## Registration and capabilities
 
@@ -64,7 +54,7 @@ message (`device/internal/client/control.go`):
   "type": "register",
   "device_id": "<stable id>",
   "version": "<firmware version, from build ldflags>",
-  "capabilities": ["mic", "speaker", ...],
+  "capabilities": ["speaker", "leds", ...],
   "ip": "<local ip, omitted if 127.0.0.1 or unresolved>",
   "ambient_light_status": { "...": "..." },
   "base_os": "emos | fireos | unknown",
@@ -79,357 +69,140 @@ message (`device/internal/client/control.go`):
 }
 ```
 
-`base_os`, `board` and the two `kernel_*` fields describe the boot and are
-informational: the controller stores and displays them, gates Android-only
-payloads on `base_os`, and names the Echo's model in Home Assistant from
-`board` (`em_boards`; absent or `unknown` shows the Dot 2's). The kernel pair is omitted if `uname` fails. A device
-for a new board should send all of them.
+`base_os`, `board` and the two `kernel_*` fields describe the boot: the
+controller stores and displays them, gates Android-only payloads on
+`base_os`, and names the Echo's model from `board` (`em_boards`). The kernel
+pair is omitted if `uname` fails.
 
 `boot_id`, `boot_reason` and `emmc` are boot-time health, each omitted when it
-cannot be read. The controller keeps one row per `boot_id` (a device
-re-registers on every redial) for the reason, and one row per day for the
-wear, which the device also sends on the `stats` tick, re-read every six
-hours, because a device can run for months without rebooting. Both show on
-the Status tab. `emmc` carries the eMMC's own EXT_CSD bytes (JEDEC JESD84-B51): `rev` is
+cannot be read. The controller keeps one row per `boot_id` for the reason and
+one row per day for the wear, which the device also sends on the `stats` tick.
+`emmc` carries the eMMC's EXT_CSD bytes (JEDEC JESD84-B51): `rev` is
 EXT_CSD_REV [192], and below 7 the other three mean nothing; `preEol` is
 PRE_EOL_INFO [267] (1 normal, 2 warning, 3 urgent); `lifeA`/`lifeB` are
 DEVICE_LIFE_TIME_EST_TYP_A/B [268]/[269] (1–10 in 10% steps, 11 past rated
 life). Find the eMMC by type (`/sys/bus/mmc/devices/*/type` = `MMC`), not by
-number. `boot_reason` comes from the kernel cmdline and is absent where the
-cmdline is truncated before it, as on biscuit's FireOS 6 kernel.
+number.
 
-`capabilities` is the negotiation signal. The Dot announces the capabilities
-below (`capabilities()` in `control.go`):
+### Capabilities
+
+`capabilities()` in `control.go`:
 
 | Capability | Condition | Meaning |
 |------------|-----------|---------|
-| `mic` | always | Streams mic PCM on `/data` |
-| `speaker` | always | Plays speaker PCM from `/data` |
-| `leds` | always | Accepts `leds` frames |
-| `led_anim` | always | Renders animations locally from one `led_anim` spec per state change (vs. controller-streamed frames) |
-| `buttons` | always | Emits `button` events |
-| `oww_shadow` | always | Can score the wake word locally and **report** (never act) |
-| `oww_trigger` | always | Can **act** on its own wake detection — kept separate from `oww_shadow` on purpose (see below) |
-| `button_hold` | always | Emits long-press (`heldMs`) |
-| `audio_mix` | always | Holds music on its own frame types and mixes it under voice rather than pausing |
-| `oww_local_only` | always | Can listen **privately**: score its own wake word and send nothing until it fires. Whether it is doing so is `listen_state` — see [listening.md](listening.md) |
-| `aec_hw_ref` | always | Can take the AEC far-end reference from a playback loopback in the mic capture itself, and falls back to the software tap at the ALSA write when the board has none |
-| `output_chain` | always | Can run the speaker output chain (EQ → bass guard → limiter) itself, at the ALSA write, from the config keys `eqBands`, `eqLoudness`, `limiter*`, `bassGuard*`. Runs it only when the controller's `ack` carries `output_chain` too, which is the controller saying it has stopped processing: either half alone keeps the old path, so audio is never shaped twice |
-| `wake_cue` | always | Can generate its own wake sound, at `wakeSoundLevel`, independent of volume. Plays it when `wakeSound` is on and a wake has WON: on `listen_ack` for a private-listening session, or on `play_cue` otherwise — never at the crossing, so a ceded wake is silent |
-| `volume_cue` | always | Can generate a `volumeButtonSound` preview at the newly selected level after a physical-button change, or repeat it for another Volume Up press at maximum; only while voice and music are idle |
-| `wake_mic` | always | Reads `wakeMic` (0 = the centre microphone, 1 to 6 = perimeter MK1 to MK6) and listens for the wake word on that microphone. For a unit whose centre microphone has failed (#705). Without it the controller shows the setting disabled. |
-| `remote_volume_arc` | always | Can show the cyan level arc for changed, non-zero remote volume commands when the opt-in `remoteVolumeArc` setting is on. Physical buttons remain unconditional; mute, boot restore, and duplicate state syncs remain silent |
-| `mute_ring_off` | when the mute button lights itself | Can leave the ring dark while muted (config `muteRing` false), the lit button alone showing it; firmware without it, or an Echo whose button has no light, always shows the red ring |
-| `response_level` | always | Can boost the voice plane relative to device volume with `responseLevel` (`low` / `medium` / `high` = 0 / +6 / +12dB). The boost is applied before voice/music mixing and capped so it plus device volume never exceeds unity |
-| `stock_sound` | always | Voices its own speaker while it runs the output chain with no plug in the jack: its own volume law, driver correction and compressor bands, with no key to turn them off. Keeps the bass guard on while it does, whatever `bassGuardEnabled` says; the controller hides that switch for such a device |
-| `identify_ring` | always | Handles `identify` (#860) by taking the whole ring for 30s, above turns, replies, the mute ring and the volume arc, whatever the Echo is doing and whether or not it is muted. The mute button's own LED is a separate GPIO and keeps showing mute. No fallback: the controller offers Identify only to firmware that announces this |
-| `ambient_light` | only if the sensor is actually readable (`als.Present()`) | Reports light readings |
-| `thermal` | only if the kernel exposes a thermal zone | `cpuTempC` and `maxTempC` on the `stats` report become CPU Temperature and Hottest Zone Temperature in Home Assistant, diagnostic sensors disabled by default; a reading it could not take is `null` |
-| `sendspin` | always | Can be a Sendspin player (#89) for synchronised multi-room audio from Music Assistant, run when `sendspinEnabled` is on. Music Assistant connects to the device directly (port 8928, advertised as `_sendspin._tcp`); nothing of the session crosses the controller. Whether it is running, connected or paired is the `sendspin` status |
-| `wake_word_off` | always | Honours `wakeWordEnabled: false` (Home Assistant's "No wake word"): a wake crossing is reported as a shadow cross and opens no session and no turn. The button still works. Without it the controller declines "No wake word" for an Echo in `listen_state` `local` |
-| `pairing` | always | Asks to pair itself when its owner holds the action button 7 s while it has no controller link or one over plain (5 s, on any link, before v2.19.0; an Echo on wss is already paired, and its hold reaches HA as a long press): a `pair_request` every 5 s on a live link, or otherwise registers with `"pairing": true` on every dial for the 2-minute window, falling back to plain (without its token) when wss cannot connect. The window closes early once new credentials land, so the redial they cause does not ask again. Without it the controller offers the admin a **Pair** action instead, since the device cannot ask |
-| `ble_connect` | always | Can hold Bluetooth LE connections for the controller and speak GATT over them (#656): up to three links, requests and results as `0x08` frames on `/data`. Acts only while `bleProxyEnabled` and `bleProxyConnections` are both on, and only against a controller announcing `ble_connect` back Since EchoHome the controller announces no `ble_connect`, so the bridge is never used: the Echo's own ESPHome device is a passive proxy. |
-| `esphome_server` | always | Can serve the ESPHome native API itself (`internal/esphome`, port 6053), when config `esphomeServer` is on: Home Assistant then connects to the Echo directly, as to a Voice PE. Messages are aioesphomeapi 46.25.0's (Home Assistant 2026.11's), generated (`tools/esphome_gen`); proven against aioesphomeapi (`tools/esphome_interop`). In development: a separate HA device under its own name (`echohome-<serial>`) and MAC beside the controller's, with the controller's entity keys and object ids (test-pinned); HA also keys on the MAC, so a takeover must adopt the controller's MAC (`em_db.get_esphome_mac`) as well; for now the action button's hold, ambient light, the two temperatures and the mute. Encrypted where the firmware also has `esphome_noise` |
-| `esphome_noise` | always | Its ESPHome server is encrypted (ESPHome's Noise transport, NNpsk0_25519_ChaChaPoly_SHA256) and refuses plaintext, with a key the Echo makes on first use and keeps (`/data/local/etc/echomuse/esphome.key`, never changed: HA stores it). Handed out only on `esphome_key_request` (`error` when none is set yet). The server also takes Home Assistant's time (`GetTimeRequest` on subscribe and every 15 min, as ESPHome's homeassistant time), stepped by the same 30 s rule as `time_ms`, so the Echo has a clock with no controller Its "Software Mute" switch is Home Assistant's (`internal/softmute`): the microphone channels zeroed at capture, the hardware and the button's light untouched, kept in `state.json` (`softMuted`). It shows only its own state, is refused while the button's mute is on, and any press of the button clears it; `mute_state` reports either mute. Its media player (`internal/mediaplayer`, the controller's key 1 and features, test-pinned) fetches Home Assistant's URL itself as WAV at the speaker's format (nothing decoded), music on the music plane fed 1.5 s ahead (pause = flush and rewind by what was flushed), announcements on the voice plane under a counted duck shared with the satellite; HA's mute silences the speaker without touching the kept volume. Like a Voice PE on Voice Incubator firmware it also has the LED Ring light (key 24: the ring's colour and brightness between calls, kept on the Echo) and the `start_call` action (key 25: a call, as the action button starts one). With the Bluetooth proxy on (`bleProxyEnabled`, Echo-owned: its HA switch, key 27), the server is also a passive ESPHome Bluetooth proxy (flags PASSIVE_SCAN | RAW_ADVERTISEMENTS, no connection slots): the Echo's scan goes to Home Assistant directly, as well as to the controller. |
-| `incubator_standalone` | always | Its satellite can outlive the controller, when `incubator_satellite` says `standalone`: saved on the Echo (identity, port, live listening, the ring's scene, the mute ring setting, the volume), started from it at boot before any controller, kept running through link loss. With no controller and its app connected the Echo's buttons are its own and the link rings stand aside (`docs/led-ring-states.md` §3). A controller that says something else replaces it; one that disables it or standalone deletes the saved copy. The controller keeps announcing a standalone Echo while it is offline |
-| `incubator_mdns` | always | Its satellite announces itself over mDNS while it listens (`_voice-incubator._tcp`, the node name as the instance, host `<name>-vi.local`, TXT `mac` and `protocol`), and withdraws it before it stops. The controller announces it as well, at the Echo's address, under the same name: where mDNS does not cross VLANs (the Echo on one, the app on another) the app hears only the controller's record. Firmware without it is announced by the controller alone |
-| `incubator_satellite` | always | Can be a Voice Incubator satellite itself (`internal/incubator`, protocol 2 of OHF-Voice's satellite protocol): listens on TCP (default 6055) and serves one app at a time, run only while the controller's `incubator_satellite` message enables it. The app connects to the Echo directly; the controller advertises the Echo on the app's network (`_voice-incubator._tcp`) while `incubator_state` says it listens. Without `incubator_wake` its HELLO announces no wake word, so the app pushes no models. Stopped when the controller link goes, started again by the next message |
-| `incubator_calls` | with `mic` | Its satellite takes calls started by the action button: the controller passes a tap it would have made a voice turn (or its cancel) on as `incubator_press`, and the Echo decides there what it means, in the reference firmware's order: stop a ringing timer, cancel its call, or start a manual call (no pre-roll); a muted tap is passed on too, and stops a ringing timer (nothing else, muted). The microphone goes to the app until the command ends (an app EVENT `processing`, `recognized`, `not_recognized`, `responding` or `result`, or the reply's first audio), at most 30 s from the call's start, and closes at mute; the reply plays with it closed, never cut by a limit, and the Echo ends the call (CALL_END `timeout`) if the reply has not begun 30 s after the command or the app has not hung up 10 s after it played. The app's replies play on the voice plane and are reported to the app, not as `playback_stats`. Its HELLO says `listen`: a `HANGUP` with `listen` (the app asking a question back, sent once the question has played out) starts the call that hears the answer at once, `wake_word` `follow_up` with no pre-roll, unless muted |
-| `incubator_ring` | with `mic` | Its satellite shows the app's state on the ring (thinking, the reply, the outcome, a ringing timer, an announcement, running timers, night mode; `docs/led-ring-states.md` §4.4a) with the specs the controller pushes as `incubatorRing` on the config message, beside `listeningAnim`, at registration and on every scene change |
-| `incubator_monitor` | with `mic` | Its satellite can let the app listen live outside a call (`MONITOR`, the app's Test page: `AUDIO_MONITOR` and a `WAKE_REPORT` per 80 ms chunk, detections reported and not answered), only when `incubator_satellite` says `monitor`; otherwise HELLO does not offer it and a `MONITOR` is ignored. Never during a call or muted; reported as `monitored` before the first audio; the ring pulses red meanwhile. No intercom, no second capture (`docs/listening.md`) |
-| `incubator_wake` | with `mic` | Its satellite runs the wake word models the app pushes it: HELLO says `wake_format` `mixednet`, 4 `model_slots`, `feature_size` 40, `max_pool` and a `preroll_ms` of 1500, and each `MODEL_START`/`MODEL_DATA`/`MODEL_END` is answered with `MODEL_RESULT`, refused as the reference firmware refuses it (and on a `sha256` that does not match). A detection starts a call (`CALL_START` with the model's `wake_word`, its `probability`, `max_probability` and `cutoff`) whose first 1.5 s of `AUDIO_IN` are from before it, ending at the 80 ms chunk that detected it, so the app can verify the word. While it holds a model, its microphone runs into the detector and a 1.5 s buffer on the Echo, and nothing leaves until a detection; mute closes it and empties the buffer. The Echo's own wake word stands down meanwhile (its crossings are only reported, as `oww_shadow`), and a wake word heard during a call is ignored. No `stop_word`: the "stop" model the app then pushes for a ringing timer runs while it is loaded, and starts a call (`wake_word` `stop`) |
+| `speaker`, `leds`, `buttons` | always | The hardware is driven by this firmware |
+| `led_anim` | always | Renders animations locally from one `led_anim` spec per scene change |
+| `aec_hw_ref` | always | Takes the AEC reference from a playback loopback where the board has one (`aecRef` on `stats` says which: `hw`, `sw`, `off`; absent from firmware too old to say, which must not read as `sw`) |
+| `oww_local_only` | always | Listens privately; what it is doing is `listen_state` ([listening.md](listening.md)) |
+| `output_chain` | always | Runs the output chain (EQ → bass guard → limiter) itself. EchoHome firmware runs it always; the capability stays for controllers that hand it over |
+| `stock_sound` | where the board has a voicing | Voices its own speaker (volume law, driver correction, compressor bands), the bass guard held on |
+| `volume_cue` | always | Plays a preview tone after a button volume change (`volumeButtonSound`) |
+| `remote_volume_arc` | always | Can show the level arc for remote volume changes; the setting is the Echo's own (HA switch) |
+| `mute_ring_off` | where the mute button lights itself | Can leave the ring dark while muted; the setting is the Echo's own (HA switch) |
+| `response_level` | always | Boosts the voice plane by `responseLevel` (0 / +6 / +12 dB), capped at unity with the volume |
+| `wake_mic` | always | Hears on the microphone `wakeMic` names (0 the board's default, 1..N an edge mic); the Echo's own select in HA, which a push only seeds |
+| `identify_ring` | always | Takes the whole ring for 30s on `identify` |
+| `pairing` | always | Asks to pair when its owner holds the action button 7s with no controller link or one over plain |
+| `sendspin` | always | Can be a Sendspin player for Music Assistant (port 8928, `_sendspin._tcp`); nothing of it crosses the controller |
+| `esphome_server` | always | Serves the ESPHome native API on 6053 from boot, always: Home Assistant connects to the Echo directly. Messages generated from aioesphomeapi's descriptors (`tools/esphome_gen`), proven against it (`tools/esphome_interop`) |
+| `esphome_noise` | always | That server is encrypted (Noise, NNpsk0_25519_ChaChaPoly_SHA256) with a key Home Assistant sets; handed out only on `esphome_key_request`. It also takes Home Assistant's time (`GetTimeRequest`), so the Echo has a clock with no controller |
+| `incubator_satellite` | always | Is a Voice Incubator satellite (`internal/incubator`, protocol 2) on TCP 6055, run while `incubator_satellite` enables it |
+| `incubator_standalone` | always | That satellite outlives the controller: saved on the Echo (`incubator.json`) and started from it at boot |
+| `incubator_mdns` | always | The satellite announces itself (`_voice-incubator._tcp`) while it listens; the controller announces it as well, at the Echo's address, for networks where mDNS does not cross VLANs |
+| `mic` | with a readable microphone | The board's capture works. Without it the Echo is speaker-only and `listen_state` is `degraded` |
+| `incubator_calls` | with `mic` | Takes calls the action button starts, decided on the Echo in the reference firmware's order |
+| `incubator_wake` | with `mic` | Runs the wake word models the app pushes (`mixednet`, 4 slots, 1.5s pre-roll); nothing leaves the Echo until a detection |
+| `incubator_ring` | with `mic` | Shows the app's state on the ring, with the specs pushed as `incubatorRing` |
+| `incubator_monitor` | with `mic` | Lets the app listen live outside a call (its Test page) while HA's "live listening" switch is on; reported as `monitored` |
+| `ambient_light` | only if the sensor is readable | Reports light readings |
+| `thermal` | only if the kernel exposes a thermal zone | `cpuTempC` and `maxTempC` on `stats` |
 
-**`aec_hw_ref` is a capability with a runtime companion, and both are needed.**
-The capability says the firmware knows *how* to use a hardware echo reference.
-Whether the board actually has one is answered by `aecRef` on the periodic
-`stats` message — `"hw"`, `"sw"` or `"off"`, and **absent** from firmware too
-old to say, which must not be read as `"sw"`.
+Retired with the controller's voice path, and announced only by firmware from
+before EchoHome: `oww_shadow`, `oww_trigger`, `button_hold`, `audio_mix`,
+`wake_cue`, `wake_word_off`, `ble_connect`. The controller reads none of them
+any more.
 
-The split exists because the proof is only available at runtime: a channel is
-confirmed as a playback loopback by being bit-exact silent at idle *and*
-carrying audio while the speaker plays, and nothing has played at registration
-time. It matters for the AEC delay control, which compensates write-to-ear
-latency for the software tap and means nothing on a frame-aligned hardware
-reference. Gating that control on the capability would grey it out on every
-current device, including those that fall back to the tap and need it; gating
-it on `aecRef == "hw"` disables it exactly where it does nothing.
-
-A board with no loopback announces `aec_hw_ref` and reports `aecRef: "sw"`
-forever, which is the correct degraded behaviour and needs no controller
-change.
-
-**`oww_shadow` and `oww_trigger` are two capabilities, not one, and that split
-is load-bearing.** Shadow shipped first, so there is firmware in the field that
-scores and reports but has no code to act on a detection. A controller that
-treated "can score" as "can trigger" would stand down its own wake detection
-and wait for a trigger the device never sends — a device that scores perfectly
-and never answers. A board that scores locally SHOULD announce both; a board
-that only relays scoring announces `oww_shadow` alone.
-
-The controller reads capabilities via `@property` gates on the `Device` class
-(`controller/em_controller.py`): `led_anim_capable`, `audio_mix_capable`,
-`button_hold_capable`, `oww_shadow_capable`, `oww_trigger_capable`,
-`aec_hw_ref_capable`, `identify_ring_capable`, plus direct
-membership checks for the base four (`mic`/`speaker`/`leds`/`buttons`). Every
-string the controller checks must be one the device can send, and every string
-the device sends must be one the controller understands — both directions are
-pinned by `test_capabilities.py`, because a typo on either side fails silently.
+The controller reads capabilities through `@property` gates on `Device`
+(`controller/em_controller.py`) and plain membership checks. Every string it
+checks must be one the device can send, and the reverse:
+`test_capabilities.py` pins both directions, because a typo on either side
+fails silently.
 
 ## `/control` — JSON messages
 
 Dispatched on the device by the type switch in `control.go`. Unknown types are
-ignored (forward-compatibility). Payload fields below are the ones acted on;
-absent optional fields take prior/default behaviour.
+ignored.
 
 **Device → Controller**
 
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `register` | see above | Handshake, sent once at connect |
-| `listen_state` | `state` (`local`/`stream`/`degraded`), `reason?` | What the device is doing with its wake stream. Sent on every change and after every `ack` |
-| `mute_state` | `muted` | Mute toggled (mute is device-sovereign — see `device/CLAUDE.md`) |
-| `volume_state` | `level` | Volume changed; controller persists it as `startupVolume` |
-| `ambient_light` | `lux` | Light reading, sent on a real change (only if `ambient_light`); the ~30s `stats` report carries it as `ambientLux` |
-| `stats` | hardware and link telemetry (`internal/client/stats.go`, `DeviceStats`) | Every ~30s, plus once on connect. Every field is optional and absence means **not measured**, never zero. `tcpUpRetrans` is the device's own TCP retransmits across its planes since the last report, `tcpUpSegs` the segments sent where the kernel counts them (FireOS 5's 3.18 does not); `ble` carries the scanner's counters, including `yields`/`yieldedMs` for time the scan stood aside for the link |
+| `listen_state` | `state` (`local`/`degraded`; `stream` from older firmware), `reason?` | What the device does with its microphone, for the privacy line (`em_listen.resolve`). Sent after every `ack` and on change |
+| `incubator_state` | `listening`, `port`, `appConnected`, `inCall`, `wakeModels`, `monitored`, `error` | The satellite's state as it changes, and in answer to every `incubator_satellite`. `monitored`: the microphone is streaming to the app outside a call now; the dashboard's privacy line follows it |
+| `mute_state` | `muted` | The button's mute or Software Mute changed (mute is the device's own) |
+| `volume_state` | `level` | Volume changed |
+| `ambient_light` | `lux` | Light reading on a real change (only with `ambient_light`) |
+| `stats` | `internal/client/stats.go`, `DeviceStats` | Every ~30s and once on connect. Every field optional; absence means **not measured**, never zero |
 | `wifi_scan_result` | `networks[]` of `{ssid, ssid_hex, signal}`, or `error` | Answer to `wifi_scan` |
 | `wifi_result` | `ok`, `ssid`, `error?` | Outcome of a `wifi_change`, re-sent until `wifi_commit` |
-| `pair_request` | — | The owner held the action button on a connected device (only if `pairing`). The controller shows **Approve pairing**; approval issues a rotated token and the CA over the shell plane, then bounces the link |
-| `sendspin_status` | `status` (`sendspin.Status`), or null when the player stopped | The Sendspin player's state as it changes: `state` (`listening`, `connected`, `playing`, `busy` while Home Assistant holds the music plane, `error`), `server`, `paired`, `pairedWith`, `group`, `synced`, `syncErrUs`, `bufferedMs`, player counters. No secrets. The `stats` report carries the same object as `sendspin` |
-| `esphome_key` | `key`, or `error` | Answer to `esphome_key_request`: the key (base64, 32 bytes) of the Echo's own ESPHome server, as Home Assistant set it; `error` when none is set yet. Handed to the one waiting request; never logged or stored by the controller |
-| `sendspin_token` | `token`, `clientId`, or `error` | Answer to `sendspin_token_request`. The token (`SP:0…`) carries the device's Sendspin pairing key: the controller hands it to the one waiting request and never logs or stores it |
-| `incubator_state` | `state`: `listening`, `port`, `appConnected`, `inCall`, `wakeModels`, `monitored`, `error` | The Voice Incubator satellite's state as it changes, and in answer to every `incubator_satellite` (a repeat included, so a reconnecting controller learns whether the app is still connected). `inCall` (firmware announcing `incubator_calls`): the microphone is going to the app now (a call's listening, not the reply after it), which `listen_state` cannot say. `wakeModels` (firmware announcing `incubator_wake`): how many wake word models the app has pushed it, which it is listening for instead of its own wake word; absent is none. `monitored` (firmware announcing `incubator_monitor`): the microphone is streaming to the app outside a call now; the dashboard's privacy line follows it, never the switch. Only from firmware announcing `incubator_satellite` |
-| `log` | `level`, `message` | A device log line for the dashboard and support bundles. The controller persists and pushes it |
-| `pong` | `id`, `mono` when answering a `ping` that carried an `id` | Keepalive reply. `id` echoes the ping's; `mono` is the device's monotonic clock in ms (any fixed origin), which the controller maps onto its own to date `capturedMono`. Unsolicited keepalive pongs carry neither |
+| `pair_request` | — | The owner held the action button on a connected device (only with `pairing`). The controller shows **Approve pairing** |
+| `sendspin_status` | `status`, or null when the player stopped | The Sendspin player's state as it changes. No secrets |
+| `esphome_key` | `key`, or `error` | Answer to `esphome_key_request`; handed to the waiting request, never logged or stored |
+| `sendspin_token` | `token`, `clientId`, or `error` | Answer to `sendspin_token_request`; never logged or stored |
+| `log` | `level`, `message` | A device log line for the dashboard and support bundles |
+| `pong` | `id`, `mono` when answering a `ping` that carried an `id` | Keepalive reply and RTT sample |
 
-Firmware older than EchoHome also sends `button`, `oww_wake`,
-`oww_shadow_cross`, `listen_end` and `playback_stats`: the Home Assistant
-voice mode's messages; early EchoHome firmware sends `settings_changed`,
-from when the controller kept the settings Home Assistant changes on the
-Echo (the Echo owns them now). Since EchoHome the controller has no
-voice path and ignores them (an unknown type is logged at debug); an Echo
-whose voice is its own satellite handles its button and wake word itself.
+Firmware from before EchoHome also sends `button`, `oww_wake`,
+`oww_shadow_cross`, `listen_end` and `playback_stats` (the Home Assistant
+voice mode), and early EchoHome firmware `settings_changed`. The controller
+ignores them (logged at debug).
 
 **Controller → Device**
 
 | `type` | Payload | Meaning |
 |--------|---------|---------|
-| `ack` | `device_id`, `features[]` | Registration accepted. `features` is the CONTROLLER's capability list — the mirror of the device's own, and read the same way: a feature that is absent is one the controller cannot do. Absent entirely on controllers before 2.23.0. Current: `ble_adverts_data`, `listen_session`, `output_chain`, `ble_connect` |
-| `refused` | — | Not admitted: link auth refused this device's credentials (a wrong token, or a token it has stopped presenting). Sent before the close; firmware with `pairing` shows the refused ring, which tells the owner to hold the action button to pair. A device also treats a TLS certificate its CA did not sign as refused. Older firmware ignores it |
-| `pending` | `pairing?` | Not admitted: the device is unapproved, or with `pairing:true` its pairing request is recorded and waiting for an admin. Keep redialling within the window; an approval admits the next dial |
-| `leds` | `leds[]`, `listening?` | One LED frame; `listening:true` marks the listening ring so the direction overlay keys off it |
-| `led_anim` | `{pattern, colors, periodMs, ttlSec}` | Local animation spec; sent only if `led_anim` |
-| `mic_start` | `lock_mic?` | Start mic stream. `lock_mic:false`/absent = always-on ungated wake stream; `true` = bounded, VAD-gated turn |
-| `mic_stop` | — | Stop the mic stream. Under private listening it ends a bounded turn but **not** a session (only `listen_close` does, by id) and **not** local listening, which is what hears a barge-in |
-| `listen_ack` | `session` | A private-listening wake was taken; stops the device's 3s ack clock |
-| `listen_close` | `session`, `reason` | End that session. Ignored if it is not the open one |
-| `beam_lock` / `beam_unlock` | — | Lock beamformer to the chosen perimeter mic for a turn / return to omni |
-| `volume_set` | `level` | Set absolute volume |
-| `duck` | `on` | Duck music under a voice turn (turn start/end) |
-| `config` | `ConfigMessage` fields | Push configuration (see below) |
-| `wifi_scan` | — | Scan for networks; answered with `wifi_scan_result` |
-| `wifi_change` / `wifi_commit` | `ssid`, `ssid_hex?`, `psk` / — | Switch WiFi with auto-rollback; commit finalises |
-| `shell_open` / `shell_close` | `pty?` | Ask the device to dial `/shell` (`pty:true` = interactive) / close it |
-| `identify` | — | Take the whole ring for 30s so a person can find this Echo; sent only if `identify_ring`. No payload and no duration: the device owns the 30s, and a second `identify` while one runs extends it. Overrides mute, the volume arc, the link pulse and every turn animation, which keep their state underneath and get the ring back afterwards |
-| `play_cue` | `cue` | Play a cue the device generates itself. Only `"wake"` today, sent when `wakeSound` is on and a wake outside a private-listening session has won arbitration; unknown names are ignored |
-| `music_flush` / `speaker_flush` | — | Flush the music / voice buffer (barge-in uses `speaker_flush`) |
-| `esphome_key_request` | — | Ask for the key of the Echo's own ESPHome server (`esphome_noise`), for the dashboard to show on an admin's request; answered with `esphome_key` |
-| `sendspin_token_request` | — | Ask for the Sendspin pairing token, for the dashboard to show on an admin's request; answered with `sendspin_token` |
-| `incubator_satellite` | `enabled`, `name`, `mac`, `port`, `monitor`, `standalone` | Run (or stop) the Voice Incubator satellite, under the identity the app already knows the Echo by (its ESPHome node name and the controller's stored MAC), on `port` (outside 1-65535: 6055). Sent only to firmware announcing `incubator_satellite`, on connect and on any change; an identical message keeps the running satellite and its app. Older firmware ignores it, as every unknown message. `monitor`: the app may listen live (`incubator_monitor`, the dashboard's per-Echo switch); a change restarts the satellite, so the app reads a new HELLO |
-| `incubator_press` | — | An action-button tap, decided by the controller to be a voice press (not a hold, a tap event, a muted tap or a tap with no microphone), for the Echo's own satellite to act on. Sent only to firmware announcing `incubator_calls` whose satellite the controller has asked to listen, and only while the app is connected (otherwise the controller shows the error ring) |
+| `ack` | `device_id`, `features[]`, `time_ms` | Registration accepted. `features` is the controller's capability list: `ble_adverts_data` and `listen_session`, both read only by firmware from before EchoHome (adverts on the data plane, where they are dropped; private listening rather than streaming). `time_ms` sets the device clock, stepped only past 30s |
+| `refused` | — | Link auth refused this device's credentials. Firmware with `pairing` shows the refused ring |
+| `pending` | `pairing?` | Unapproved, or a pairing request waiting for an admin. Keep redialling |
+| `config` | `ConfigMessage` fields | Push configuration (below) |
+| `incubator_satellite` | `enabled`, `name`, `mac`, `port`, `monitor`, `standalone` | Run the satellite under the identity the app knows the Echo by, on `port` (outside 1-65535: 6055). Sent to firmware announcing `incubator_satellite`, on connect and on change; an identical message keeps the running satellite and its app. EchoHome sends `monitor` false (live listening is the Echo's own switch) and `standalone` true wherever the firmware announces `incubator_standalone` |
+| `led_anim` / `leds` | `{pattern, colors, periodMs, ttlSec}` / `leds[]` | A scene's animation spec (only with `led_anim`); a frame, used to clear the ring |
+| `identify` | — | Take the whole ring for 30s (only with `identify_ring`); a second one extends it |
+| `wifi_scan` | — | Scan; answered with `wifi_scan_result` |
+| `wifi_change` / `wifi_commit` | `ssid`, `ssid_hex?`, `psk` / — | Switch WiFi with automatic rollback; commit finalises |
+| `shell_open` / `shell_close` | `pty?` | Dial `/shell` (`pty:true` interactive) / close it |
+| `esphome_key_request` | — | Ask for the ESPHome key, for the dashboard on an admin's request |
+| `sendspin_token_request` | — | Ask for the Sendspin pairing token, likewise |
+| `ping` | `id?` | Keepalive; answered with `pong` |
+
+The firmware still handles `volume_set`, `music_flush`, `speaker_flush` and
+`incubator_press` from controllers before EchoHome, which sent them; an
+EchoHome controller sends none.
 
 **An SSID is 0–32 arbitrary bytes**, so a name alone cannot always address
 one. `ssid` is for display (invalid UTF-8 shown as U+FFFD); `ssid_hex` is the
 exact bytes, reported in each scan result and sent back in `wifi_change` when
 the network came from a scan. A `wifi_change` without it means the UTF-8 of
 `ssid`. `psk` is empty for an open network, 8–63 printable ASCII characters,
-or a raw 64-hex PSK. Firmware that predates `ssid_hex` ignores it.
-
-## `/data` — binary frames
-
-First byte is the frame type; the rest is the payload. **The type codes are
-namespaced by direction** — `0x04`/`0x05` mean different things depending on who
-sent them, and this is deliberate (`device/internal/client/data.go:25`). A
-board implementer must not read a single global table.
-
-**Controller → Device (playback)**
-
-| Code | Name | Meaning |
-|------|------|---------|
-| `0x02` | speaker | Voice-response PCM chunk; played immediately |
-| `0x03` | speaker EOS | End of voice stream |
-| `0x04` | music | Music PCM chunk on its own plane — **only if `audio_mix`** |
-| `0x05` | music EOS | End of music stream — **only if `audio_mix`** |
-| `0x08` | ble gatt | One JSON request of the Bluetooth connection bridge — **only if the device announced `ble_connect`** |
-
-**Device → Controller (capture)**
-
-| Code | Name | Meaning |
-|------|------|---------|
-| `0x01` | mic | Mic PCM chunk (mono `S16_LE`, 16 kHz) |
-| `0x04` | VAD-end | Bounded turn: speech was detected, then ended |
-| `0x05` | no-speech-timeout | Bounded turn: no speech ever detected before the timeout |
-| `0x06` | ble adverts | Batch of scanned BLE advertisements — **only if the controller announced `ble_adverts_data`**. Since EchoHome the controller drops it: the Echo's own ESPHome device is the proxy |
-| `0x07` | session audio | `[0x07][session u32 BE][seq u16 BE][PCM]` — private-listening audio, **only if the controller announced `listen_session`** |
-| `0x08` | ble gatt | One JSON result or event of the Bluetooth connection bridge — **only if the controller announced `ble_connect`** |
-
-`0x04`/`0x05` are safe to reuse because playback frames only ever flow to the
-device and capture frames only ever flow from it. The two capture sentinels are
-distinct on purpose: "wake word then silence" (quietly give up) must be
-distinguishable from "spoke, and the backend had nothing to say."
-
-Mic stream shapes (`device/CLAUDE.md`, Device audio pipeline):
-
-- **Always-on wake stream** (`mic_start` without `lock_mic`) is ungated and
-  AGC-free — every period is sent continuously so the wake scorer sees an
-  uninterrupted stream.
-- **Bounded turn stream** (`lock_mic:true`) is VAD-gated with a preroll ring,
-  ends with a `0x04` sentinel when the gate closes after speech, and ends with
-  `0x05` if no speech arrived within the timeout.
-- **Private listening** (`owwOnDevice=on`, device announces `oww_local_only`,
-  controller announces `listen_session`): the always-on stream still runs, but
-  on the device only — it feeds the local scorer and sends nothing. A wake
-  opens a session and its audio goes up as `0x07` until the controller closes
-  it at end of speech or a device-side limit does. The full contract is
-  [listening.md](listening.md); a new board that scores locally should
-  implement it rather than stream.
-
-### `0x06` — BLE advertisements
-
-Payload is UTF-8 JSON, `{"adverts": [ ... ]}`, each entry as described under
-`ble_adverts` above. It carries no sequence header: a batch is self-contained
-and a lost one is not worth retransmitting.
-
-**Send these only when the controller announced `ble_adverts_data` in its
-`ack`.** A controller that did not will ignore the frame — unknown frame types
-are ignored in both directions — and every advertisement disappears with no
-error anywhere. Fall back to the `ble_adverts` control message instead.
-
-Two sender-side rules, neither of which the controller can enforce for you:
-
-- **Do not send while a BOUNDED TURN is streaming** (`mic_start` with
-  `lock_mic:true`). The data plane is one TCP stream, so a frame already
-  written cannot be preempted; the only way a turn's audio is not queued
-  behind telemetry is not to write the telemetry. A turn lasts seconds and
-  Home Assistant tolerates 195s of staleness per device, so nothing
-  downstream notices.
-
-  **Do not extend that to the always-on wake stream.** It is always on for
-  any device whose wake word is scored controller-side, so holding adverts
-  back whenever the mic is streaming drops every batch forever and the proxy
-  dies with no error at either end.
-- **Drop a batch you cannot send, rather than falling back to the control
-  plane.** Falling back puts bulk telemetry onto the liveness channel exactly
-  when the link is already in trouble, which is what this frame exists to
-  avoid.
-
-### `0x08` — Bluetooth connections (GATT)
-
-The one frame code used in both directions. The payload is one UTF-8 JSON
-object. The device is a GATT **client**: it connects out to peripherals for
-Home Assistant, and holds at most three links (`limit` below says how many).
-
-**Negotiated both ways.** The device sends nothing unless the controller's
-`ack` carried `ble_connect`; the controller sends nothing unless the device
-announced it. Connections also need `bleProxyEnabled` and
-`bleProxyConnections` on — the links live inside the scan session.
-
-Controller → device. Every request carries a `req` number the result echoes.
-Addresses are `aa:bb:cc:dd:ee:ff`; `addr_type` is 0 public, 1 random.
-
-| `t` | Fields | Result adds |
-|-----|--------|-------------|
-| `connect` | `addr`, `addr_type` | `mtu` |
-| `disconnect` | `addr` | — (already gone is `ok`) |
-| `services` | `addr` | `services[]`: `uuid`, `start`, `end`, `chars[]`: `uuid`, `handle` (declaration), `value_handle`, `props`, `descs[]`: `uuid`, `handle` |
-| `read` | `addr`, `handle` | `value` (base64; a long value is followed to its end) |
-| `write` | `addr`, `handle`, `value` (base64), `response` | — |
-| `slots` | — | answered by a `slots` event carrying the `req` |
-
-Device → controller.
-
-| `t` | Fields | Meaning |
-|-----|--------|---------|
-| `result` | `req`, `ok`, and on failure `error`, `att?`, `detail?` | The answer to one request |
-| `notify` | `addr`, `handle`, `value` (base64), `ind` | A notification, or an indication (`ind:true`, already confirmed to the peer) |
-| `disconnected` | `addr`, `reason` | A link ended, whoever ended it. `reason` is the HCI code (`0x08` supervision timeout, `0x13` the peer, `0x16` us) |
-| `slots` | `free`, `limit`, `addrs[]` | Sent whenever it changes. `free` is 0 while connections are switched off |
-
-`error` is one of: `disabled` (the setting is off), `no_slots`, `timeout` (the
-peer did not answer a connect within 20s), `already_connected`,
-`not_connected`, `disconnected` (the link dropped mid-request), `att` (the
-peer refused; `att` carries its ATT error code, e.g. 5 for insufficient
-authentication), `att_timeout` (no answer in 30s, after which the link is
-dropped, as the ATT specification requires), `too_long` (a write over
-MTU−3 bytes), `not_running` (the scan session is down), `busy`, `bad_request`,
-`failed` (`detail` says what, for a log).
-
-Rules a device must keep:
-
-- **Requests for one peer run in the order they arrived.** Home Assistant
-  writes a command and then reads its result. Different peers must not wait
-  for each other: a connect can take 20s.
-- **UUIDs are the full 128-bit form**, lowercase with hyphens, whatever
-  length the peer used.
-- **Uuids, handles and values are the peer's own and are passed on as given.**
-  The device does not subscribe on the controller's behalf: enabling a
-  notification is a `write` of the CCCD descriptor like any other, and every
-  notification that arrives is forwarded.
-- **There is no pairing.** A peer's Security Request is answered with Pairing
-  Not Supported, and attributes that need it fail with `att` 5.
-- **Drop every link when the control connection goes.** A result has nowhere
-  to go, and a peripheral's connection slot is better freed than held.
-- **Do not hold these frames back for a turn**, unlike `0x06`. A result is
-  owed to a request.
-- A link is made at a 30ms connection interval and moved to 500ms after 5s
-  without a request, because the interval decides how much of the scan
-  survives beside it (24% of adverts at 30ms, about 56% at 500ms, measured on
-  biscuit). A board with separate radios need not do this.
+or a raw 64-hex PSK.
 
 ## Config push — `ConfigMessage`
 
-The controller sends `config` on connect and on any per-device config change.
-Fields are camelCase (`device/internal/config/config.go`). **Partial update:
-non-zero/non-nil fields are applied; zero/nil fields are ignored**, so pointer
-types (`*bool`, `*int`) exist where `false`/`0` must be distinguishable from
-"unset." Changes take effect immediately — no restart.
+The controller sends `config` on connect and on any change. Fields are
+camelCase (`device/internal/config/config.go`). **Partial update:
+non-zero/non-nil fields are applied; zero/nil are ignored**, so pointer types
+exist where `false`/`0` must be distinguishable from unset. Changes take
+effect at once.
 
-The canonical field set (repo-root `CLAUDE.md`, "Device config push"):
-
-```
-vadThreshold, vadSpeechMs, vadSilenceMs,
-owwThreshold, owwModel, owwSpeexNs, owwOnDevice,
-adcDigitalGain, adcMicpga, micGainDb,
-startupVolume,
-beamAngle, beamformingEnabled,
-aecEnabled, aecDelayMs, aecTailMs, agcEnabled, nsAsr,
-bargeInEnabled, bargeInThreshold,
-bleProxyEnabled, bleProxyConnections,
-sendspinEnabled, sendspinUnpaired, sendspinName,
-eqBands, eqLoudness, limiterEnabled, limiterThreshold, limiterRelease,
-bassGuardEnabled, bassGuardDb,
-ledScene, ledListenColor, ledThinkColor,
-meterAttack, meterDecay, meterFloor, meterGamma, meterRef, meterCurve,
-wakeArbitrationMs, duckDb, responseLevel,
-buttonSingleTapEvent, buttonMultiTapMs,
-owwOnDevice, saveUtterances, streamReply,
-wakeSound, wakeSoundLevel, volumeButtonSound
-```
-
-`wakeWordEnabled` is sent on its own, not with the stored config: it is
-Home Assistant's per-Echo picker state, pushed on connect and on change to
-firmware announcing `wake_word_off`. A pointer, because false is the value
-that matters.
-
-Not every field is acted on by the device. The output-chain keys (`limiter*`,
-`bassGuard*`), `eq*`, `saveUtterances`, `streamReply`, `wakeArbitrationMs`, and the
-`button*` timing keys are **controller-side** — that processing happens before the audio
-reaches the wire, or is used only for config scoping. `owwOnDevice` is both
-controller-consumed (scoping) and device-acted. `sendspinName` is not a
-stored setting: it is the device's label, added to the push at registration
-and sent alone on a rename, because Music Assistant lists the player by it. A
-new board only needs to
-implement the keys relevant to hardware it actually has; unknown keys are
-ignored, which is the correct degrade.
+Every key, its section, default, type, whether the Echo applies it and which
+modules read it: [config-keys.md](config-keys.md), generated by
+`controller/tools/config_map.py`. Keys retired with the voice path or now
+owned by the Echo (`em_config_types.RETIRED`) stay in stored configs and are
+**never pushed**. The settings Home Assistant changes on the Echo are kept
+there (`settings.json`); a push only seeds one the Echo has no value of. The
+Echo saves the last push (`config.json`) and applies it at boot, before any
+controller.
 
 ## Link auth & TLS
 
@@ -439,116 +212,51 @@ ignored, which is the correct degrade.
   A device holding a CA **never** sends its token on a plain dial.
 - A device with a CA on disk dials **only** `wss://`, at the `tls_port` from
   mDNS TXT or its endpoint file; with no `tls_port` it does not dial at all.
-  The one exception is a pairing window (`pairing`, below): wss first, then
-  plain without the token, both registering with `"pairing": true`. A device
-  with no CA dials plain. The server identity is the fixed DNS SAN
-  `echomuse-controller`, never an IP.
-- Certs are backdated/long-lived **and** the device clamps its verification
-  clock to the firmware build time, because an Echo boots with a bogus clock
-  pre-NTP and a device that cannot connect cannot fix its clock. A new board
-  inherits this — do not "normalise" either half.
-- Enforcement is `em_linkauth.decide` (`controller/em_linkauth.py`): a wrong
-  token always rejects; a stored token with none presented is allowed only
-  until the device has presented it once (the credential push itself rides
-  the plain plane), and refused after that; a token for a device with nothing
-  on record is ignored, not rejected. `REQUIRE_DEVICE_TLS=1` makes TLS+token
-  mandatory. **A device binary must send its token on all three planes**, or
-  it is refused on the ones that lack it once the controller has seen it.
+  The one exception is a pairing window: wss first, then plain without the
+  token, both registering with `"pairing": true`. A device with no CA dials
+  plain. The server identity is the fixed DNS SAN `echomuse-controller`,
+  never an IP.
+- Certs are backdated and long-lived **and** the device clamps its
+  verification clock to the firmware build time, because an Echo boots with a
+  bogus clock and a device that cannot connect cannot fix its clock. Do not
+  "normalise" either half.
+- Enforcement is `em_linkauth.decide`: a wrong token always rejects; a stored
+  token with none presented is allowed only until the device has presented it
+  once, and refused after that; a token for a device with nothing on record
+  is ignored. `REQUIRE_DEVICE_TLS=1` makes TLS+token mandatory. **A device
+  must send its token on all three planes.**
 - `/data` and `/shell` are admitted only from the address, and with the
   scheme, of the device's live `/control` connection
-  (`em_linkauth.follows_control`), so a real device must dial all three from
-  one address.
+  (`em_linkauth.follows_control`).
 
 ## What the device binary owns
 
-For any board, the device binary is the local hardware agent for a voice
-satellite. Its responsibilities:
+Everything an Echo does for its owner, with or without a controller:
 
-- **Voice assistant capture** — mic streaming (wake stream + bounded turns),
-  the on-device capture pipeline (beamform/gain/AEC/AGC/VAD as the hardware
-  supports), and optionally on-device wake scoring/triggering.
-- **Playback** — speaker output, and music on its own plane mixed under voice
-  (ducking) if `audio_mix` is announced.
-- **Buttons** — press/hold/mute events, resolved by device **name**, not by
-  index (`event2` is a button on one board and a touchscreen on another).
-- **Announcements** — playing controller-pushed audio outside a turn.
-- **Status output** — LEDs on the Dot; on a screenless-or-borrowed-screen board,
-  whatever minimal status surface that board defines (or none).
+- **Voice**: the Voice Incubator satellite (wake word, calls, the app's
+  replies) and the microphone path that feeds it (`device/CLAUDE.md`).
+- **Home Assistant**: its own ESPHome device (media player, LED ring light,
+  mute, action button, sensors, the Bluetooth proxy, its settings).
+- **Playback**: the output chain, volume, Sendspin.
+- **Buttons and the ring**, resolved by device **name**, never by number.
 
-Everything a backend can reasonably drive — intents, TTS, HA entities — stays
-in the controller / Home Assistant via the ESPHome Voice Assistant API. The
-device does not reimplement it, and does not depend on Amazon HALs or libraries
-to do its own job (see the direction note in the repo-root `CLAUDE.md`).
-
-## Board profile — `crown` (Echo Show 8, 1st gen)
-
-The `crown` bindings are built behind a Go build tag mirroring `server`
-(ADR-0001). The hardware inventory — ALSA cards/devices, formats, input-device
-paths, autostart — lives in `docs/echo-show-8-hardware-map.md` on the branch of
-[PR #358](https://github.com/wilbowes/EchoMuse/pull/358), which has not merged; this section records
-only what the *interface* commits to for MVP.
-
-**Capabilities for MVP** (subset of the Dot's):
-
-| Capability | crown MVP | Note |
-|------------|-----------|------|
-| `speaker` | yes | `card0,device0` → RT5616 (issue #5). Streams clean, but `Ext_Speaker_Amp_Switch` is inverted (`On`=silent, `Off`=audible) — same trap as checkers, confirmed by ear 2026-08-26. Must be driven `Off` in the binding's init; the boot default is `On` |
-| `mic` | **proven** | `card0,device22`, 6ch/16kHz/`S24_3LE`, confirmed by capture on real hardware 2026-08-26 — real signal, not digital zeros. HW_REFINE matches checkers' driver constants exactly. Open: quiet-room/across-room SNR, not raw capture — see below |
-| `buttons` | yes | Resolved by name (`gpio-keys` vol, action button, camera shutter) |
-| `leds` / `led_anim` | **no** | No LED ring; a "voice turn" status overlay on the display is deferred past MVP and even then stays out of the user's way |
-| `audio_mix` | later | Not required for the MVP voice loop |
-| `ambient_light` | tbd | Only if a readable sensor is found |
-| `oww_shadow` / `oww_trigger` | no (MVP) | MVP uses **controller-side** wake word |
-
-**Audio ownership** (ADR-0002): `crown` seizes the mic and speaker exclusively
-while EchoMuse runs, exactly like the Dot. The mic is **held continuously** —
-MVP wake word is controller-side, so the device streams mic PCM the whole time
-or it goes deaf to the next wake word. The **speaker** is grabbed for a turn
-(the reply plus any media the turn asked for) and released to idle — the Alexa
-model. The screen belongs entirely to the user's own software throughout.
-
-**The mic was the MVP blocker; it isn't any more.** The mics sit on external
-TLV320AIC3101 dies (TDM, `card0,device22`, 6ch/16 kHz/`S24_3LE`) — the same
-format the Dot already captures (`device/internal/bindings/mic/pcm_microphone.go`,
-9ch/16000 Hz/`tinyalsa.PCM_FORMAT_S24_3LE`), just fewer channels, same
-`Channels * 3` stride, same `DeviceConfig`-driven path downstream. Proven on
-real hardware 2026-08-26 with `device/tools/capture_mics`: opens clean, real
-signal on all 4 mic channels, no digital zeros. `device/tools/hw_refine_probe`
-confirms the driver's own range matches checkers' constants exactly. Full
-history (why "digital zeros" was the original wrong read, the gain-fix
-investigation, the actual capture data) is in the same file on
-[PR #358](https://github.com/wilbowes/EchoMuse/pull/358)'s branch.
-
-**Still open: quiet-room/across-room SNR**, not raw capture — today's test was
-a loud-room sanity check with music playing, not a wake-reliability
-measurement. Speaker (#5) and mic (#6) are both proven now; SNR is the
-remaining go/no-go for the MVP milestone (boot → connect → HA → wake → Assist
-→ spoken reply).
-
-Applies to every crown binding, not just mic: resolve input devices and i2c
-addresses **by name**, never by number — `eventN` numbering isn't stable
-across boards (it's the volume button on `biscuit`, the touchscreen on
-`checkers`), and a wrong-number open fails silently rather than erroring. See
-also issue #36 (Echo Show 5 / `checkers`) — same shape of bring-up problem,
-worth reading before writing crown-specific bindings.
+It does not depend on Amazon HALs or libraries to do any of it (the direction
+note in the repo-root `CLAUDE.md`). A new board is a fresh set of bindings
+behind `pkg/board`; see [boards.md](boards.md).
 
 ## Invariants (what the tests pin)
 
 `controller/tests/test_capabilities.py` is the guard rail for this contract:
 
 - The device announces the expected baseline capabilities.
-- Every capability string the controller checks is one the device can send, and
-  vice versa (bidirectional typo guard).
-- `oww_shadow` and `oww_trigger` stay separate.
-- Pending capabilities reported before the ESPHome server exists are not lost.
-- A capability change bounces the HA connection so the entity list refreshes.
+- Every capability string the controller checks is one the device can send,
+  and vice versa.
 - A disabled UI control does not silently write when its capability is absent.
-- Private listening is negotiated both ways: `oww_local_only` from the device,
-  `listen_session` on the ack, with the same strings on both sides.
+- Private listening is negotiated both ways for firmware from before
+  EchoHome: `oww_local_only` from the device, `listen_session` on the ack.
 
-The session rules themselves — the device-side deadlines, the ring, which
-session a frame may reach — are pinned by `device/internal/listen` and
-`controller/tests/test_listen.py`.
+The privacy line's states are pinned by `controller/tests/test_listen.py`;
+the push's retired keys by `controller/tests/test_config_types.py`.
 
 A board or protocol change that breaks one of these must update the test with
 the reason, not route around it.

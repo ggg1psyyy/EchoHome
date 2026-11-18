@@ -245,6 +245,16 @@ record; they appear as pending and are approved onto fresh config.
   the add-on ever serves the dashboard outside ingress, this exception ends:
   wire the `OIDC_*` options through `em_start.OPTION_ENV_VARS` instead.
 
+- 2026-11-18 (EchoHome): after `ha store reload` a local add-on's new
+  version shows in `ha apps info … version_latest` only some seconds later;
+  `ha apps update` run before that does nothing and reports nothing, and a
+  deploy that then waits unbounded for the new version hangs. Loop on
+  `version_latest` with a time limit, then update.
+- 2026-11-18 (EchoHome): with `oww_model`, `oww_threshold`,
+  `esphome_project_version` and `esphome_port_base` removed from the schema,
+  an install that still has them in its options gets a Supervisor warning
+  about unknown options and the add-on starts normally; nothing to migrate.
+
 ### Voice backend
 
 The controller impersonates ESPHome voice satellites: one asyncio TCP listener per device on ports 16001+ (persisted in the device registry, never reused). Home Assistant's built-in ESPHome integration dials in and drives voice turns via Assist. Implemented in `em_esphome.py` on top of the protocol layer in `controller/esphome/` (`frame_protocol.py`, `satellite_server.py`, vendored aioesphomeapi protobufs in `esphome/vendor/`). Servers are created at startup for every approved device **and on demand** when a device approved after boot first connects (`_register_device_server` — idempotent on purpose: the startup loop and `device_connected()` race, first creation wins). HA naming: friendly name is `<label> Voice Assistant` (BT proxy: `<label> BT Proxy`); `project_name` carries `ESPHOME_DEVICE_MODEL` after the dot because HA displays that segment as the device Model, overriding DeviceInfo's `model` field. (A legacy `claracore` WebSocket backend was removed 2026-07-12 — ESPHome/HA is the only voice path.)
@@ -1363,7 +1373,7 @@ against `config.go`, makes every `DEFAULT_DEVICE_CONFIG` key either listed or
 named as read defensively elsewhere, and fails if a push skips the filter —
 so **a new config key needs its type added there**.
 
-## Persistent activity stats
+## Persistent stats
 
 Every voice turn is persisted to SQLite at completion (`turns` table, `db.insert_turn` from `em_esphome`): trigger, wake model/score/threshold, room noise floor at detection, outcome, STT text, stage latencies, and playback underruns.
 

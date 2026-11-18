@@ -87,7 +87,7 @@ and the only visible sign was a wall of paragraphs. Fixing it afterwards means
 (`gh release edit` has no `--notes-file`), and re-appending GitHub's generated
 commit list by hand, since the PATCH replaces the whole body.
 
-## Device audio pipeline
+## The microphone path (the satellite's)
 
 Playback has a second plane: music rides `0x04`/`0x05` into its own buffer and
 is mixed against voice at the ALSA write, so a voice turn **ducks** music
@@ -1357,7 +1357,7 @@ firmware no longer runs `tinymix` at all (`guard_test.go` fails on
   The four mic ADCs (`tlv320aic3101`, `0-0018`..`0-001b`) have no regmap, so
   capture is proven by signal, not by register.
 
-## The BLE proxy, and what it costs the device running it
+## The Bluetooth proxy, and what it costs the Echo
 
 Passive HCI scan over `/dev/stpbt`, forwarded to the controller and
 re-presented to Home Assistant as a second ESPHome device. The recon and the
@@ -1789,7 +1789,7 @@ Volume is **state, not a setting** — it rides the config channel but has no da
 
 Volume persists through reboots **controller-side**: every device `volume_state` report is stored into the device's `startupVolume` config, and the device restores it via `Server.SeedVolume` on the **first config push per run only** (later pushes must not stomp live changes). Until seeded (or a local volume change makes the device authoritative), the device suppresses its connect-time `volume_state` report — reporting the boot-default level is what used to clobber the stored value on reboot. Mute is the opposite: **device-sovereign**, persisted locally in `/data/local/etc/echomuse/state.json` (survives OTA slot flips; written on toggle, restored at boot pre-connect — ADC mute immediately, red ring/button LED after LED init). **The write is synced, not only atomic (#849, 2026-10-11):** temp file, `Sync`, rename, then a sync of the directory. Write-then-rename alone survives a torn write but not a power cut: ext4 can commit the rename ahead of the data. In the 2.26.0 UAT a mute followed by pulling the power within seconds left VVV with a zero-length `state.json` ("unreadable, ignoring", boots unmuted) and 15LE with the previous `{"muted":false}`, twice each, while C95 kept its mute on timing; the same step had passed in the 2.25.0 UAT for the same reason. An unreadable file still boots unmuted. `sendspin/store.go`, `aec/persist.go` and `config/report.go` use the unsynced pattern and were left: losing them costs a re-pair, a re-learn or a snapshot.
 
-## LED priority system
+## LED ring
 
 Turn-state ring colours (listening ring, thinking spinner) come from **LED scenes** (`em_scenes.py`), configurable per device (`ledScene` + custom colours). Firmware with the `led_anim` capability (v2.9+) **animates locally**: the controller sends one `led_anim` message per state change ({pattern: solid|spin|rotate|pulse|meter|off, colors, periodMs, ttlSec}) and the device renders frames on its own ticker (`internal/server/animator.go`) — controller/WiFi jitter can't judder the ring. `meter` throbs with the live speaker RMS (tapped at the ALSA write, so it tracks audible audio, not the ~5.5s-ahead send) — measured on the **voice plane only, before the music mix**, unlike the AEC far-end tap which deliberately sees the mixed output; a meter fed the mix throbs to the music bed before the response has started; its response curve is config-tunable (`meter*` keys → `AnimSpec` pointer fields → `resolveMeter`, which clamps independently of the dashboard ranges) because it is a taste parameter that needs iterating in a real room, not a firmware OTA per pass. `ttlSec` is bounded per phase — 30s listening, 135s spinner (**coupled to `_fetch_tts_audio`'s 60s timeout ×2 attempts, since the spinner spans HA think time AND the fetch — move one and move the other**), and computed per response for `meter` via `em_scenes.meter_ttl` so a long TTS cannot self-clear mid-answer. Loss-resilience: newer spec or raw `leds` frame atomically replaces the animation (generation counter), and `ttlSec` is a dead-man that self-clears the ring if the controller dies mid-turn. Legacy firmware falls back to controller-streamed frames. Controller `leds` messages carry an explicit `listening: true` flag on listening-ring frames — the device's direction overlay keys off it (pre-scene firmware inferred "listening" from an all-green ring, which breaks for any other scene; the heuristic remains as fallback for old controllers). The direction overlay brightens the base ring colour instead of painting green. Mute ring (red) and volume arc (cyan) are device-local and scene-independent by design.
 

@@ -9,59 +9,66 @@ the matching section there before changing that area or a rule.
 **Before diagnosing a fault, reopening a decision or changing a default, grep
 `docs/history/` and `JOURNAL.md` for the symptom, setting or function name.**
 The stories behind the rules are no longer loaded; this is how they are found.
-JOURNAL.md is an archive to 2026-10-25. **A finding that produces no commit**
-(a measurement, a cause ruled out, a hardware fact) **goes in
-`docs/history/<area>.md` as a dated bullet under the matching heading.**
+JOURNAL.md is an archive to 2026-10-25, from EchoMuse. **A finding that
+produces no commit** (a measurement, a cause ruled out, a hardware fact)
+**goes in `docs/history/<area>.md` as a dated bullet under the matching
+heading.**
 
 ## What this is
 
-EchoMuse repurposes Amazon Echo Dot Gen 2 (FireOS 5 / Android 5.1, codename "biscuit") as an open-source voice assistant satellite:
+EchoHome (`ggg1psyyy/EchoHome`) is a fork of EchoMuse (`wilbowes/EchoMuse`)
+that makes a rooted Amazon Echo behave like a Home Assistant Voice PE on the
+Voice Incubator firmware:
 
-- **`device/`** — Go binary that runs directly on the rooted Echo Dot
-- **`controller/`** — Python asyncio WebSocket server that manages devices, runs wake word detection, and proxies to a voice pipeline
-- **`oww_forge/`** — standalone Docker trainer for custom openWakeWord models (`oww_forge/README.md`). Prefer the published image (`forge-v*` → `ghcr.io/wilbowes/echomuse-forge`, `:latest` CUDA, `:latest-cpu`) to a local build; its Dockerfile's upstream pins must not move. `piper_voices.py`'s catalogue is **fetched, never hardcoded**.
+- **`device/`** — the Go binary on the Echo (the "firmware"; strictly an
+  application, started by emOS's or FireOS's init through
+  `/data/local/bin/start_server.sh`). It is the Echo's **Voice Incubator
+  satellite** (`internal/incubator`, wake word on the Echo,
+  `internal/mixednet`) and its **own ESPHome device** (`internal/esphome`:
+  media player, LED ring light, mute, action button, ambient light,
+  temperatures, the passive Bluetooth proxy, and its settings as switches and
+  a select). It works with no controller at all.
+- **`controller/`** — the **setup tool**: provisioning (the wizard), pairing,
+  configuration, firmware OTA and the emOS update, support bundles, the
+  dashboard. It runs as a Home Assistant add-on or a container and can be
+  stopped once the Echoes are set up. It has no voice path: it hears nothing
+  of the room and sends no audio.
+- **`emos/`** — emOS's init, from upstream. EchoHome does not change or
+  release emOS: the setup tool installs EchoMuse's emOS releases.
 
-Custom wake models upload via `/api/oww_models/upload` into `oww_models/` beside the DB, checked first by `em_oww_check` (loads in onnxruntime — not from aiohttp's `bytearray` — one float input `[N, T, 96]`, first output one score per frame, 0–1 on silence). Always score via `em_oww_models.prediction_key` (openwakeword keys by filename stem). Passing the check does not prove a model runs on an Echo's armv7 ORT: export a fixed `[1, 16, 96]` input, and put a new classifier architecture through `device/tools/oww_probe` on an Echo first.
+Removed in EchoHome (2026-11-18), recorded in `docs/history/` and the commit
+log: the controller's Home Assistant voice mode, its wake word and
+arbitration, the emulated ESPHome satellites and BLE proxy, the wake word
+asset sync, `oww_forge`, the Activity tab, and on the Echo the old voice
+mode's streaming, scorer, speech gate and Bluetooth connections.
 
-## Who this file is for
+## Standing decisions (the owner's)
 
-It is checked in so that how the project is run can be seen (Wil, 2026-10-05),
-and it is written for the maintainers' own sessions. If you are preparing a
-contribution, or are an assistant working for someone who is:
-
-- **The engineering rules apply to you**: capability negotiation, hardware by
-  name, conforming to a spec and proving it, the listening rules.
-- **The voice rules do not.** "Writing to people" and the
-  `— Team EchoMuse (powered by Claude)` sign-off are for replies made on the
-  project's behalf. Post as yourself. Never sign as Team EchoMuse, and never
-  tell a user what the project will do.
-- **Leave this file and the two directory-scoped ones out of your pull
-  request.** We update them after a merge.
-
-Written down because an assistant took the whole file as its own
-instructions: five pull requests on 2026-10-04 were signed as the project,
-a support reply on #712 read as an official answer, and #763 then rewrote the
-sign-off rule itself.
-
-## Where the detail lives
-
-This file holds what is true across both halves. The depth sits in two
-directory-scoped files, which load when you touch files in those trees — read
-the relevant one before changing anything there.
-
-- **`device/CLAUDE.md`** — building the firmware and the pinned compiler,
-  the mic/audio pipeline, on-device wake word and asset distribution, the
-  external audio jack, CPU topology and thermals, volume/mute persistence,
-  the LED priority system, cgo.
-- **`controller/CLAUDE.md`** — running the controller, the Home Assistant
-  add-on and release channels, the ESPHome voice backend and HA entities,
-  the output chain and ducking, schema migrations, config scoping, activity
-  stats, support bundles, OTA, the emOS update, the provisioning wizard, the
-  dashboard.
+- **emOS stays upstream and its paths on the Echo are fixed.** Its init reads
+  `/data/local/etc/echomuse/` (`console.pw`, the TLS files) and starts
+  `/data/local/bin/start_server.sh`; renaming either strands every Echo. The
+  same holds for `_emcontroller._tcp` (older firmware finds the controller by
+  it), the add-on slugs, the `em_` module names and the Go module path. The
+  rename to EchoHome is of what a person reads.
+- **Releases**: firmware from EchoHome (`firmware_repo`, default
+  `ggg1psyyy/EchoHome`), emOS from EchoMuse (`emos_repo`, default
+  `wilbowes/EchoMuse`). A cached release counts only for the repository it
+  came from (`em_releases`); a binary cache entry is keyed by tag and
+  repository.
+- **The Voice Incubator app's mDNS limit across VLANs** is answered by the
+  controller's mDNS record for each Echo (`em_incubator`) until the app can
+  be told the satellite's address. That change goes to OHF-Voice from the
+  owner's fork (`ggg1psyyy/voice-incubator`), under OHF's AI policy: **no
+  assistant opens or comments on an upstream PR or issue; the owner writes
+  the description and replies in their own words.** Prepare code and notes;
+  never post upstream.
+- Echoes are named by the last four characters of their serial in anything
+  committed or published (00LQ, 0SE7). The pre-commit check greps the diff
+  AND the message for names, addresses and serials.
 
 ## Direction: portable, and not dependent on Amazon
 
-**EchoMuse should run on more than one piece of hardware, with minimal change
+**EchoHome should run on more than one piece of hardware, with minimal change
 per platform, and should not depend on Amazon's software to work.** Judge a
 change by that. The Android surface in `device/` is about twenty call sites
 (`tinymix`, `stop <service>`, `svc wifi`, `getprop`); the rest is ALSA, i2c,
@@ -77,15 +84,17 @@ evdev, sysfs and wpa_supplicant.
   the findings** (PR #168).
 - No Android build (LineageOS included) is the target: same vendor blobs.
 
-Do not own the OS work, but do not prevent it: keep `pkg/led`, `pkg/mic`,
-`pkg/speaker` and `pkg/buttons` honest as interfaces.
+Keep `pkg/led`, `pkg/mic`, `pkg/speaker` and `pkg/buttons` honest as
+interfaces.
 
 ## Where a standard exists, conform to it and prove it
 
 **If what we are handling has a known standard or spec, abide by the spec, and
 have a test that proves it**, written from the spec's edges (min/max lengths,
 every permitted character class, forbidden forms, published test vectors) and,
-where possible, run against the real implementation. Worked example: #586.
+where possible, run against the real implementation. Worked examples: #586,
+GitHub's owner/name rules in `tests/test_release_sources.py`, the ESPHome
+native API against aioesphomeapi's descriptors (`device/tools/esphome_gen`).
 
 **Never interpolate user-supplied text into a shell command** (serial console,
 `adb shell`, `sh -c`). Send hex, base64 or a file.
@@ -93,200 +102,161 @@ where possible, run against the real implementation. Worked example: #586.
 ## Writing to people: bottom line first
 
 Anything a **person** reads leads with the answer and stays short — PR
-comments, issue replies, review feedback, release notes. These go out on the
-project's behalf to someone who did not sit through the reasoning, and Wil
-sends many of them without following the internals: a reply he has to decode
-before he can send it has failed, however accurate it is.
+comments, issue replies, review feedback, release notes. Replies are the
+owner's, in their own voice: **no project sign-off.**
 
 - **The first line answers it** — the verdict, the decision, or the ask.
-  Everything after is support the reader is free to skip.
-- **Three points, maximum.** Evidence is the *number*, not the derivation:
-  "4.6–7.1% packet loss" rather than a paragraph on how it was measured.
-- **Match the recipient.** A contributor who sent working code gets
-  specifics; a user with a dead device gets what to do next; a passing
-  question gets one line.
-- **Cut** process narration, restating the person's own issue back at them,
-  and hedging. That includes narrating your own structure or candour — "I'm
-  going to make three points", "the point is", "here's where it gets
-  interesting", "to be honest". Make the points.
-- **Offer detail rather than pre-empting it.** One line does that.
+- **Three points, maximum.** Evidence is the *number*, not the derivation.
+- **Match the recipient**; cut process narration, restating the question and
+  hedging. **Never contrastive negation** ("not X, it's Y").
+- **The exception is anything irreversible**, or anything asking someone to
+  act on their own hardware — an OTA, rooting, a schema migration, a
+  partition write. The caveat stays whatever it costs in length.
 
-**Five habits to spend sparingly** (derived from claudisms.ai, CC0). Generated
-prose is recognisable by frequency rather than by any single phrase, so these
-are budgets, not bans — except the third, which is a ban.
+None of this applies to commit messages, this file, or code comments: those
+are the record, and their density is load-bearing.
 
-**The target is prose that does not read as stock, and authorship is not the
-point.** Claude wrote most of this project and the record says so — commit
-trailers, the `— Team EchoMuse (powered by Claude)` sign-off on every issue
-reply. Nothing here is concealment, so do not write self-consciously to avoid
-sounding like a model; that reads as strangely as the clichés do. Aim at clear.
-A reader's objection is to stock phrasing, never to who typed it.
+## Listening is private, and every claim about it is the Echo's own
 
-- **Say it; don't rate it.** No "this matters", "worth noting", "the most
-  interesting part", "the right way". The reader decides what is important.
-- **Plain verb before metaphor** — "is", "happens", "shows" ahead of "lives",
-  "sits", "surfaces", "names", "carries". About one metaphor a page, where it
-  does work a plain verb cannot.
-- **Never contrastive negation**: "not X, it's Y", "not only X, but Y". Every
-  published analysis of AI tells lands on this one first, and it is the
-  easiest to write without noticing.
-- **Vary sentence length.** Four short declaratives in a row is a tic; one
-  short sentence after a long one is punctuation.
-- **No corporate verbs**: leverage, unpack, double-click, surface.
+**`docs/listening.md` is the spec.** EchoHome firmware sends nothing of the
+room to the controller, in any state; the Voice Incubator app hears it only in
+a call (after the Echo's own wake word or a press) or while the app's Test
+page listens with HA's "live listening" switch on, which the Echo reports
+(`incubator_state` `monitored`).
 
-**The exception is anything irreversible**, or anything asking someone to act
-on their own hardware — an OTA, rooting, a schema migration, a partition
-write. A truncated warning is how somebody bricks a device, so the caveat
-stays whatever it costs in length.
-
-**None of this applies to commit messages, this file, or code comments.**
-Those are the record rather than correspondence, and their density is
-load-bearing — the "why" written down here is what keeps a fixed bug fixed,
-and most of this file exists because something was learned the expensive way.
-Short where a person is being addressed; complete where something is being
-recorded.
-
-## Listening is private by default, and every claim about it is the Echo's own
-
-**`docs/listening.md` is the spec; the wake word runs in one place per Echo.**
-"On this Echo" (`owwOnDevice=on`, the default) sends nothing until the Echo's
-own wake word fires, then only until end of speech; "On the controller"
-(`off`) streams continuously and is labelled as streaming wherever it shows.
-`shadow` is a developer diagnostic, not a user choice.
-
-- **Privacy statements come from what the Echo REPORTS (`listen_state` →
-  `em_listen.resolve`), never from configuration.** Unknown shows as unknown.
-- **Nothing ever falls back to streaming.** An Echo that cannot run its own
-  wake word is `degraded` (button only) and says why.
-- **The device enforces its own limits** (ack timeout, max session length,
-  mute, link loss), so no controller failure can leave an Echo streaming.
+- **Privacy statements come from what the Echo REPORTS** (`listen_state` →
+  `em_listen.resolve`, and `monitored`), never from configuration. For
+  firmware that can listen privately its report outranks any stored
+  `owwOnDevice`. Unknown shows as unknown.
+- **Nothing ever falls back to streaming.** `owwOnDevice` stays pushed (no
+  control) only so firmware from before EchoHome keeps listening privately.
+- **The device enforces its own limits**: mute closes the satellite's
+  microphone and nothing remote lifts it.
 
 ## Device/controller compatibility
 
-Any device/controller pairing can occur in the field (`tests/test_capabilities.py`):
+Any device/controller pairing can occur in the field (`tests/test_capabilities.py`),
+including firmware from before EchoHome (0SE7 runs v2.19.0 until it is
+updated):
 
-- **Negotiate by capability, never by version string.** The register message lists them (`internal/client/control.go`, `capabilities()`): `mic`, `speaker`, `leds`, `led_anim`, `buttons`, `oww_shadow`, `oww_trigger`, `button_hold`, `audio_mix`, `aec_hw_ref`, `oww_local_only`, `output_chain`, `wake_cue`, `volume_cue`, `remote_volume_arc`, `response_level`, `stock_sound`, `wake_mic`, `pairing`, `sendspin`, `ble_connect`, `wake_word_off`, `ambient_light` only when the sensor is readable, and `thermal` only when the kernel exposes a thermal zone. A UI control whose feature is missing is **disabled with the reason**. `oww_shadow` (scores) and `oww_trigger` (acts) must stay two; without `audio_mix` keep the pause/resume path. When a capability cannot be proven at registration, report the runtime state separately (`aec_hw_ref` vs `aecRef` on stats) and gate UI on that.
-- **Both ways**: the `ack` carries the controller's `features`. Adding a message is safe unnegotiated; MOVING one never is — the new path is silently discarded.
-- **A static boot property rides REGISTER, not the stats tick, and is persisted** — its consumer (`em_reconcile.on_connect`) runs before the first tick. `base_os` (schema v21): absence means Android for payload gating, but must NOT disable a control.
-- The controller sets the device clock via `time_ms` on the `ack`, stepped only past 30s; no NTP on the device.
-- **Degrade to old behaviour, never to a wrong answer.** Unknown fields and messages are ignored; a missing measurement stores **NULL, not 0**.
+- **Negotiate by capability, never by version string.** The register message
+  lists them (`internal/client/control.go`, `capabilities()`): `speaker`,
+  `leds`, `led_anim`, `buttons`, `aec_hw_ref`, `oww_local_only`,
+  `output_chain`, `volume_cue`, `remote_volume_arc`, `response_level`,
+  `wake_mic`, `pairing`, `sendspin`, `identify_ring`, `incubator_satellite`,
+  `incubator_mdns`, `incubator_standalone`, `esphome_server`, `esphome_noise`;
+  with a readable mic `mic`, `incubator_calls`, `incubator_wake`,
+  `incubator_ring`, `incubator_monitor`; and `stock_sound`, `ambient_light`,
+  `mute_ring_off`, `thermal` where the hardware has them. A UI control whose
+  feature is missing is **disabled with the reason**.
+- **Both ways**: the `ack` carries the controller's `features`
+  (`ble_adverts_data`, `listen_session` — both only for firmware from before
+  EchoHome). Adding a message is safe unnegotiated; MOVING one never is.
+- **A static boot property rides REGISTER, not the stats tick, and is
+  persisted.** `base_os` (schema v21): absence means Android for payload
+  gating, but must NOT disable a control.
+- The controller sets the device clock via `time_ms` on the `ack`, stepped
+  only past 30s; HA's `GetTimeRequest` sets it with no controller.
+- **Degrade to old behaviour, never to a wrong answer.** Unknown fields and
+  messages are ignored; a missing measurement stores **NULL, not 0**.
+- **Before changing what is pushed, ask what the running firmware and the
+  oldest fielded one do with it in the gap** — the settings the Echo now owns
+  were once overwritten by the old firmware between an add-on update and its
+  OTA (2026-11-18). Retired keys (`em_config_types.RETIRED`) are dropped from
+  every push.
 
 ## Versioning / releases
 
-Three independent tag namespaces, each `git tag -a --cleanup=verbatim` (the
-default strip deletes `#` heading lines from the notes):
+Three tag namespaces, each `git tag -a --cleanup=verbatim` (the default strip
+deletes `#` heading lines from the notes):
 
-- **Device** `v*` → `release.yml` → Release with a `server` asset; OTA compares the embedded tag to `firmware_ver` — don't change the scheme. EA is `vX.Y.Z-ea.N`, a prerelease that GA controllers skip by flag and name. Updates compare by version, never string (`version.firmware_update`).
-- **emOS** `emos-v*` → `emos-release.yml` → `init` (aarch64) as its own asset, which must keep that name (`em_releases.fetch_emos`), and `init32` (armv7a) in `emos-payload.zip`; both static. **Only an init is ever published** — an image would redistribute Amazon's kernel. The `emos-v*` prefix keeps it out of `fetch_firmware` and stamps `/etc/os-release`. EA is `emos-vX.Y-ea.N`.
-- **Controller** `controller-v*` → `controller-release.yml` → `ghcr.io/wilbowes/echomuse-controller` (amd64 + arm64). No GitHub Release: the annotation is the only copy of the notes. Newest by parsed version, never list order. The update notice is **advisory only** (`tests/test_deploy.py`).
+- **Firmware** `v*` → `release.yml` → a GitHub Release with a `server` asset;
+  OTA compares the embedded tag to `firmware_ver` — don't change the scheme.
+  EA is `vX.Y.Z-ea.N`, a prerelease GA controllers skip. EchoHome's line
+  starts at 3.0.0, above every EchoMuse release.
+- **Controller** `controller-v*` / `controller-ea-v*` →
+  `controller-release.yml` → `ghcr.io/ggg1psyyy/echohome-controller`
+  (amd64 + arm64). No GitHub Release: the annotation is the only copy of the
+  notes. The release workflow **re-tags `:sha-<short>`, it does not build**,
+  and refuses a commit whose `Controller Build (main)` failed: merge → green
+  build on the merge commit → tag. If the tag raced the build, `gh run rerun
+  <id>`; never re-cut the tag.
+- **emOS** is EchoMuse's (`emos-v*` there). EchoHome tags none.
 
-**UAT gates GA, not EA**: full run (`tools/uat`, `docs/uat-results/<GA>.md`)
-on FireOS 5, emOS 32-bit and emOS 64-bit; a point release gets targeted
-checks in its notes instead. Echoes are named by their last four characters in
-anything published.
+`config.yaml`'s `version:` pins the pulled image; the release refuses a
+tag/pin mismatch. EA notes go in `controller-ea/CHANGELOG.md`; EA is
+generated by `tools/sync_channels.py --set-version`, never edited.
 
-**A critical GA fix ships from `release/X.Y.Z` off the GA tag**, never as an EA
-(that would downgrade EA users): fix, pin and changelog only, the same fix on
-main as its own PR, bench-checked on the UAT rig before tagging; main's
-`controller/config.yaml` moves to it once the image exists.
+**Pipeline hygiene**: actions pinned by SHA, runners by release, base images
+by digest (`tests/test_workflow_pins.py`); workflows default to `permissions:
+contents: read`; release workflows refuse a tag that is not a version.
 
-**EA notes go in `controller-ea/CHANGELOG.md`, never the GA file.**
-
-**Pipeline hygiene**: actions pinned by SHA, runners by release (never
-`-latest`), base images by digest (`tests/test_workflow_pins.py`); workflows
-default to `permissions: contents: read`; release workflows refuse a tag that
-is not a version; the apt layer is keyed on the ISO week (`APT_SNAPSHOT`).
-Nothing checks build attestations before OTA yet.
-
-**The release workflow re-tags `:sha-<short>`, it does not build**, and refuses
-a commit whose main build failed. Order: merge → `Controller Build (main)`
-green on the merge commit → tag. If the tag raced the build,
-`gh run rerun <id>`; never re-cut the tag. A commit touching neither
-`controller/` nor `controller-ea/` needs a `workflow_dispatch` build first.
-
-Version resolution: `controller/version.py` (`EM_CONTROLLER_VERSION` → `git describe --match 'controller-v*'` → `dev`); pass the build arg on a local build.
+Version resolution: `controller/version.py` (`EM_CONTROLLER_VERSION` → `git
+describe --match 'controller-v*'` → `dev`).
 
 ## Architecture
 
 ### Device → Controller protocol
 
-**The wire contract is `docs/device-controller-interface.md`**; keep this a
-summary. Each device opens three WebSockets: `/control` (JSON), `/data` (PCM,
-`0x01` in, `0x02`/`0x03` out), `/shell/{device_id}` (opened on `shell_open`).
-The controller is found by mDNS (`_emcontroller._tcp.local`).
+**The wire contract is `docs/device-controller-interface.md`**. Each device
+opens `/control` (JSON), `/data` (idle since EchoHome: the controller sends
+and takes no audio; old firmware's frames are dropped) and `/shell/{device_id}`
+(on `shell_open`). The controller is found by mDNS (`_emcontroller._tcp.local`).
 
 ### Device-link TLS + token auth
 
 Plain on 8767, TLS on 8770. The cert's identity is the DNS SAN
 `echomuse-controller`, never an IP. Certs are backdated and the device clamps
-its clock to the build time (`BuildUnix`) — don't "normalise" either.
+its clock to the build time (`BuildUnix`) — don't "normalise" either. The
+device re-reads `/data/local/etc/echomuse/{ca.pem,token}` on every dial; with a
+CA it dials **wss only**. `em_linkauth.decide`: a wrong token always rejects; a
+missing token is allowed only until the device has presented it once. A first
+token comes only from a human (wizard over USB, or an approval). **Deleting a
+device closes its control plane**, after the row is gone.
 
-The device re-reads `/data/local/etc/echomuse/{ca.pem,token}` on every dial.
-With a CA it dials **wss only** and never sends the token over plain; the only
-exception is a pairing window.
+### The Echo's own ESPHome device
 
-`em_linkauth.decide`: a wrong token always rejects; a missing token is allowed
-only until the device has presented it once (`devices.token_confirmed_at`). A
-first token comes only from a human (wizard over USB, or an approval).
-`/data` and `/shell` must follow the control connection. A token for an unknown
-device is **ignored, not rejected**. Flip `REQUIRE_DEVICE_TLS=1` only when every
-Link row is green `wss (TLS)`; re-pairing under it is USB only.
-
-**Deleting a device closes its control plane** (`_delete_device`), after the
-row is gone. `issue_credentials` writes to whoever holds the connection, so it
-runs only behind an approval (`em_pairing`); a pairing device's token is
-cleared before the auth decision, never bypassing it.
+`device/internal/esphome` serves the native API on 6053 from boot, always,
+encrypted with a key Home Assistant sets (`api_encryption_provisionable`).
+Entity keys are **append-only** (1-6, 20-28). Settings HA changes there are
+**the Echo's own** (`internal/owned`): kept on the Echo, never reported, and a
+controller push only seeds a value the Echo has none of.
 
 ## Device config push
 
 `config.ConfigMessage` (camelCase JSON) is sent on connect and on change.
-Non-zero fields apply; zero/nil are ignored. No restart needed.
-
-Every key, its section, default, type, whether the Echo applies it and which
-modules read it: `docs/config-keys.md`, generated by
-`controller/tools/config_map.py` and held current by
-`tests/test_config_map.py`. Regenerate it in the same change as any key.
-
-`wakeWordEnabled`, `consolePassword` and `consoleTimeoutMin` are **pointers** —
-false, empty and zero are meaningful. A key marked *no* under Echo is still
-pushed and ignored by the device; `controllerEndpoints` is fleet-only,
-delivered as `controller.json` (the fleet sync removes only a file it wrote).
-Output-chain keys apply only when both sides announce `output_chain`.
-`responseLevel` is capped so gain × volume never exceeds unity.
+Non-zero fields apply; zero/nil are ignored. Every key, its section, default,
+type, whether the Echo applies it and which modules read it:
+`docs/config-keys.md`, generated by `controller/tools/config_map.py` and held
+current by `tests/test_config_map.py`. Regenerate it in the same change as any
+key.
 
 ## Build and test quickref
 
 ```bash
 git submodule update --init          # GoTinyAlsa fork — see device/CLAUDE.md
 cd device && ./compile.sh            # needs the echomuse-compiler image
-cd device && go test ./...
+cd device && go test ./internal/... ./pkg/...   # cmd/ needs -tags server: vet it in the compiler image
 cd controller && python -m pytest tests/   # needs: pytest numpy scipy pyyaml
-cd controller && python -m pytest scenarios/   # + aioesphomeapi; never in one run with tests/ (protobuf clash)
+BABEL_STANDALONE=/tmp/babel.min.js node controller/tests/dashboard_globals.test.mjs
 cd emos/init && cc -O2 -o /tmp/ringsim ringsim.c -lm && /tmp/ringsim --check
-cd emos/init && cc -O2 -o /tmp/pwcheck pwcheck.c && /tmp/pwcheck
-cd emos/init && cc -O2 -o /tmp/tmoutcheck tmoutcheck.c && /tmp/tmoutcheck
-cd emos/init && cc -O2 -o /tmp/wpacheck wpacheck.c && /tmp/wpacheck
-cd emos/init && cc -O2 -o /tmp/cmdlinecheck cmdlinecheck.c && /tmp/cmdlinecheck
-cd emos/init && cc -O2 -o /tmp/serialcheck serialcheck.c && /tmp/serialcheck
-cd emos/init && cc -O2 -o /tmp/trialcheck trialcheck.c && /tmp/trialcheck
-cd emos/init && cc -O2 -o /tmp/devcheck devcheck.c && /tmp/devcheck
-sh emos/device/em-wifi-check.sh
 ```
 
 CI runs both suites, `go vet`, a headless-Chromium walk of every dashboard tab
-(`uat/`), and `test_design_tokens.py` for CSS the browser drops silently.
+(`uat/`), and `test_design_tokens.py`. CI on a fork starts disabled; EchoHome's
+was enabled 2026-11-18.
 
 **A source guard finds code through `tests/_sources.py`** (`MODULES`,
-`find_def`, `code_only`), never by reading one file by name — else moved code
-silently passes the guard.
+`find_def`, `code_only`), never by reading one file by name.
+**`tests/test_device_attrs.py`** fails on an attribute read off a Device that
+no Device has — pyflakes cannot see it, and it bit twice in the strip.
 
-**Three ratchets keep the module split**: `tests/test_layering.py` (only
-em_controller imports em_api; `em_routes_*` only from em_api and each other;
-base modules never reach upward), `tests/test_size_ratchet.py` (modules over
-1,500 lines or functions over 150 may not grow; `controller/tools/size_ratchet.py
---update` after a shrink; a raise goes in the same change), and
-`tests/coverage_floor.json` (never lowered; a new module needs a floor).
+**Three ratchets keep the module split**: `tests/test_layering.py`,
+`tests/test_size_ratchet.py` (`controller/tools/size_ratchet.py --update`
+after a shrink) and `tests/coverage_floor.json` (never lowered; a new module
+needs a floor; `em_emos_*` need busybox on the host).
 
-**emOS's off-target tools ARE its suite**: each `#include`s `init.c` and drives
-the real functions. Add one wherever a wrong answer is SILENT on hardware. CI
-asserts the init is static — a dynamic PID 1 prints nothing at all.
+**Accept on hardware with no controller**: after an OTA, stop the add-on,
+reboot the Echo (`kill -TERM 1` on emOS, which has no `reboot`), and check the
+wake word and a call, the button, both mutes, HA media, the ring and the HA
+switches.

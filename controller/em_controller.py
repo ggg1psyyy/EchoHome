@@ -1,57 +1,23 @@
 """
-EchoMuse Controller
-===================
+EchoHome setup tool — the device link
+=====================================
 
-WebSocket server. Echo Dot devices connect via mDNS discovery.
+The WebSocket server Echoes dial, found by mDNS (_emcontroller._tcp, the
+name older firmware looks for), and the Device each connection becomes. The
+HTTP API and dashboard are registered by em_api on API_PORT.
 
-mDNS advertisement is handled internally — no separate container required.
+Each Echo opens three planes (docs/device-controller-interface.md is the
+contract):
+    /control — JSON: register/ack, config, stats, state reports, WiFi, the
+               satellite's enable (incubator_satellite), shell control
+    /data    — binary, idle: the controller sends no audio and takes none;
+               an older Echo's frames are dropped
+    /shell   — raw binary, dialled by the Echo on shell_open (OTA transfers,
+               the dashboard's shell)
 
-Architecture:
-- Advertise _emcontroller._tcp on SERVER_PORT (zeroconf, host network)
-- Devices open THREE connections:
-    /control — JSON control plane (buttons, LEDs, mic_start/stop, ping,
-                                   register, config, log, pending)
-    /data    — binary data plane (mic PCM frames in, speaker PCM frames out)
-    /shell   — raw binary stdin/stdout (demand-opened for shell sessions
-                                        and OTA binary transfer)
-- HTTP API and dashboard SPA served by aiohttp on API_PORT
-
-Device WebSocket protocol:
-  /control — Device → Server:
-    {"type": "register", "device_id": "G0K0XXXXXXXX", "ip": "...",
-     "version": "v2.0.1", "capabilities": [...]}
-    {"type": "button", "clickType": 138, "down": false}
-    {"type": "log", "level": "info", "message": "..."}
-    {"type": "playback_stats", "periods": 123, "underruns": 0}
-    {"type": "listen_state", "state": "local", "reason": ""}
-    {"type": "oww_wake", "score": .9, "threshold": .5, "ageMs": 80,
-     "session": 7, "floor": .002, "barge": false}   (docs/listening.md)
-    {"type": "listen_end", "session": 7, "reason": "ack_timeout"}
-    {"type": "pong"}
-
-  /control — Server → Device:
-    {"type": "ack",     "device_id": "...", "features": [...]}
-    {"type": "pending"}
-    {"type": "config",  "adcDigitalGain": 100, ...}
-    {"type": "leds",    "leds": [...]}
-    {"type": "mic_start"}
-    {"type": "mic_stop"}
-    {"type": "listen_ack",   "session": 7}
-    {"type": "listen_close", "session": 7, "reason": "end_of_speech"}
-    {"type": "ping"}
-
-  /data — Device → Server:
-    <binary> [0x01][seq_hi][seq_lo][PCM mono S16_LE 2560 bytes]
-    <binary> [0x06][JSON {"adverts": [...]}]   (only if ble_adverts_data)
-
-  /data — Server → Device:
-    <binary> [0x02][PCM mono S16_LE 48kHz — 4096 bytes per period]
-    <binary> [0x03] end of audio stream
-
-  /shell — bidirectional raw binary (demand-opened by device on
-           receipt of shell_open control message — not yet implemented
-           in this revision; shell connections come inbound from the
-           Go binary to the controller's /shell/{device_id} path)
+Since EchoHome there is no voice path here: an Echo's wake word, calls and
+replies are its own Voice Incubator satellite's, and it works with this
+process stopped.
 """
 
 import asyncio
@@ -305,8 +271,6 @@ BLE_ADVERTS_TYPE   = 0x06
 # its output chain always (no "output_chain", which once handed the chain
 # over from a controller that processed the audio itself).
 CONTROLLER_FEATURES = ["ble_adverts_data", "listen_session"]
-SPEAKER_FRAME_TYPE = 0x02
-SPEAKER_EOS_TYPE   = 0x03
 
 _device_level_to_ha = em_volume.device_level_to_ha
 
@@ -678,21 +642,7 @@ class Device:
         await self.send_control({"type": "ping"})
 
 
-    async def beam_lock(self):
-        # Lock the beamformer onto the speaker's perimeter mic mid-stream —
-        # no stream restart. Device no-ops if already locked or if
-        # beamformingEnabled is false in its config.
-        await self.send_control({"type": "beam_lock"})
 
-    async def beam_unlock(self):
-        await self.send_control({"type": "beam_unlock"})
-
-    async def play_cue(self, name: str):
-        """
-        Ask the device to play a cue it generates itself: one small JSON
-        message, never delayed by the prime gate or dropped by a flush.
-        """
-        await self.send_control({"type": "play_cue", "cue": name})
 
     async def identify(self):
         """Ask the Echo to take its whole ring for 30s (identify_ring, #860)."""
