@@ -237,6 +237,16 @@ func (c *ControlClient) SendIncubatorState(state any) error {
 	return c.writeJSON(map[string]any{"type": "incubator_state", "state": state})
 }
 
+// SendESPHomeMDNS reports the Echo's ESPHome mDNS record (esphome_mdns): the
+// node name, the API's port and the TXT records, as the Echo announces them
+// itself. The controller announces the same record at the Echo's address on
+// its own network, for a Home Assistant the Echo's multicast does not reach
+// (another VLAN), as it does the satellite's. Sent on connect and whenever
+// the record changes; older controllers ignore it.
+func (c *ControlClient) SendESPHomeMDNS(name string, port int, txt []string) error {
+	return c.writeJSON(map[string]any{"type": "esphome_mdns", "name": name, "port": port, "txt": txt})
+}
+
 // SendSendspinStatus reports the Sendspin player's state as it changes. The
 // stats tick carries it too; this is what makes the dashboard follow a
 // pairing or a stream starting without a 30s wait. Unknown message types are

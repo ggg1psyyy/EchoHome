@@ -15,9 +15,10 @@ import (
 // the wrong Echo), on the Echo's IPv4 addresses. At boot (a service can
 // start before WiFi has an address) and whenever the addresses or the TXT
 // records change, the record follows: no address yet is retried, a change
-// is re-announced. txt is read on every tick. emOS admits the queries
-// (sport 5353, init.c firewall()).
-func announce(tag, instance, service, host string, port int, txt func() []string) func() {
+// is re-announced. txt is read on every tick; changed, if set, runs after
+// each re-announcement. emOS admits the queries (sport 5353, init.c
+// firewall()).
+func announce(tag, instance, service, host string, port int, txt func() []string, changed func()) func() {
 	quit := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
@@ -42,6 +43,9 @@ func announce(tag, instance, service, host string, port int, txt func() []string
 						at = "" // try again on the next tick
 					} else {
 						log.Printf("[%s] announced %s.%s at %s", tag, instance, service, strings.Join(ips, ","))
+						if changed != nil {
+							changed()
+						}
 					}
 				}
 			}

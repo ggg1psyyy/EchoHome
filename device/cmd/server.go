@@ -524,6 +524,7 @@ func main() {
 		// What the microphone does, for the dashboard's privacy line: a
 		// restarted controller has no record of it.
 		reportListenState(controlClient)
+		esphomeReportMDNS() // the controller announces it too, across VLANs
 		if s.VolumeSeeded() {
 			controlClient.SendVolumeState(s.VolumeLevel())
 		}

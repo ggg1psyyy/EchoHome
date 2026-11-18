@@ -63,6 +63,7 @@ import em_mbc
 import em_scenes
 import em_health
 import em_listen
+import em_esphome_mdns
 import em_incubator
 import em_volume
 import em_loglevel
@@ -1095,6 +1096,7 @@ CONTROL_HANDLERS = {
     "stats":            _on_stats,
     "sendspin_status":  _on_sendspin_status,
     "incubator_state":  em_incubator.on_incubator_state,
+    "esphome_mdns":     em_esphome_mdns.on_esphome_mdns,
     "sendspin_token":   _on_sendspin_token,
     "esphome_key":      _on_esphome_key,
     "wifi_result":      _on_wifi_result,
@@ -1470,6 +1472,7 @@ async def _release_device_services(device) -> None:
         )
         await api.notify_device_disconnected(device.device_id)
         await em_incubator.device_disconnected(device.device_id)
+        await em_esphome_mdns.device_disconnected(device.device_id)
     except asyncio.CancelledError:
         raise
     except Exception as e:

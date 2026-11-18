@@ -132,6 +132,7 @@ COPY em_volume.py .
 COPY em_wifi.py .
 COPY em_identify.py .
 COPY em_loglevel.py .
+COPY em_esphome_mdns.py .
 COPY em_incubator.py .
 COPY em_incubator_proto.py .
 COPY em_resample.py .

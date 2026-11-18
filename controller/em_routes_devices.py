@@ -16,6 +16,7 @@ import time
 from aiohttp import web
 
 import em_auth as auth
+import em_esphome_mdns
 import em_incubator
 import em_config_sections as sections_mod
 import em_config_types
@@ -186,6 +187,7 @@ async def _delete_device(request: web.Request) -> web.Response:
 
     await loop.run_in_executor(None, db.delete_device, device_id)
     await em_incubator.device_deleted(device_id)
+    await em_esphome_mdns.device_deleted(device_id)
     # A re-added device is the one whose payloads are least likely to be
     # right, so it must not inherit the deleted row's debounce and skip its
     # first reconcile — the bounce below has it redialling within seconds.

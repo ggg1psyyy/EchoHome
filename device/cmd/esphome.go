@@ -79,6 +79,8 @@ type esphomeEcho struct {
 	info    esphome.DeviceInfo
 	// withdraw ends the server's mDNS announcement, while it serves.
 	withdraw func()
+	// cc reports the announcement to the controller.
+	cc *client.ControlClient
 }
 
 var esphomeOnEcho *esphomeEcho
@@ -170,7 +172,7 @@ func setupESPHome(cc *client.ControlClient, s *server.Server, spk *speaker.PcmSp
 	}
 	sum := sha256.Sum256([]byte("echohome:" + serial))
 	id := board.IDOf(board.Current())
-	e := &esphomeEcho{info: esphome.DeviceInfo{
+	e := &esphomeEcho{cc: cc, info: esphome.DeviceInfo{
 		Name:         "echohome-" + short,
 		FriendlyName: "EchoHome " + strings.ToUpper(short[max(0, len(short)-4):]),
 		MAC:          fmt.Sprintf("02:EC:%02X:%02X:%02X:%02X", sum[0], sum[1], sum[2], sum[3]),
@@ -251,7 +253,9 @@ func applyESPHome(on bool) {
 		// Home Assistant sets, a rename).
 		srv := e.srv
 		e.withdraw = announce("esphome", e.info.Name, esphome.ServiceType, e.info.Name,
-			esphome.DefaultPort, func() []string { return srv.MDNSText(e.info.Model) })
+			esphome.DefaultPort, func() []string { return srv.MDNSText(e.info.Model) },
+			// No e.mu here: stopping holds it while it waits for this loop.
+			func() { reportESPHomeMDNS(e.cc, srv, e.info) })
 		log.Printf("[esphome] serving Home Assistant on %d as %s (%s), key set: %v", esphome.DefaultPort, e.info.Name, e.info.MAC, e.srv.HasKey())
 		if bleProxyOn() {
 			e.srv.SetBluetoothProxy(esphome.BLEPassiveScan | esphome.BLERawAdvertisements)
@@ -279,6 +283,29 @@ func esphomeFriendlyName(info esphome.DeviceInfo) string {
 		return n
 	}
 	return info.FriendlyName
+}
+
+// esphomeReportMDNS tells the controller the record the Echo announces, so
+// it can announce it too where the Echo's multicast does not reach: on
+// connect, and from the announcement whenever it changes.
+func esphomeReportMDNS() {
+	e := esphomeOnEcho
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	srv, info := e.srv, e.info
+	e.mu.Unlock()
+	reportESPHomeMDNS(e.cc, srv, info)
+}
+
+func reportESPHomeMDNS(cc *client.ControlClient, srv *esphome.Server, info esphome.DeviceInfo) {
+	if cc == nil || srv == nil || !cc.IsConnected() {
+		return
+	}
+	if err := cc.SendESPHomeMDNS(info.Name, esphome.DefaultPort, srv.MDNSText(info.Model)); err != nil {
+		log.Printf("[esphome] mDNS record not reported: %v", err)
+	}
 }
 
 // esphomeFollowName renames the running server after a config push carried

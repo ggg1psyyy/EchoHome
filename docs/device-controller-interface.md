@@ -150,6 +150,7 @@ ignored.
 | `sendspin_status` | `status`, or null when the player stopped | The Sendspin player's state as it changes. No secrets |
 | `esphome_key` | `key`, or `error` | Answer to `esphome_key_request`; handed to the waiting request, never logged or stored |
 | `sendspin_token` | `token`, `clientId`, or `error` | Answer to `sendspin_token_request`; never logged or stored |
+| `esphome_mdns` | `name`, `port`, `txt[]` | The ESPHome record the Echo announces itself (`_esphomelib._tcp`): node name, API port, TXT strings. The controller announces the same record at the Echo's address on its own network while the Echo is connected (`em_esphome_mdns`), for a Home Assistant the Echo's multicast does not reach; a record outside RFC 1035/6763's limits or without `mac` is refused. Sent on connect and when the record changes |
 | `log` | `level`, `message` | A device log line for the dashboard and support bundles |
 | `pong` | `id`, `mono` when answering a `ping` that carried an `id` | Keepalive reply and RTT sample |
 

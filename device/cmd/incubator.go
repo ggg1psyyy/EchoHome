@@ -390,7 +390,7 @@ func incubatorLocalPress(heldMs int) {
 func announceSatellite(name, mac string, port int) (func(), error) {
 	txt := []string{"mac=" + mac, "protocol=" + strconv.Itoa(incubator.Protocol)}
 	return announce("incubator", name, "_voice-incubator._tcp", name+"-vi", port,
-		func() []string { return txt }), nil
+		func() []string { return txt }, nil), nil
 }
 
 // incubatorStreamEnded takes the speaker's end-of-stream report when a
