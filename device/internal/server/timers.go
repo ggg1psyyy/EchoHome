@@ -11,9 +11,13 @@ import (
 // 64ce6c2a). The whole ring is the longest timer's length (the scale); each
 // timer, soonest first, lies on top of the later ones as far as it runs, an
 // LED past the one before at least. Only the last (the longest) fades out
-// within its last LED; a sooner one's LED is lit from its second half on. A
-// dimmer LED steps round once a second through the soonest, unless paused.
-// The times count down from when the pattern starts.
+// within its last LED; a sooner one's LED is lit from its second half on.
+// One LED steps round the whole ring once a second, unless paused, like a
+// second hand: dark where the ring is lit, faintly lit in the soonest's
+// colour where it is dark. (The VPE dims an LED of the soonest's arc alone,
+// so its tick vanishes as the timer runs down; on an Echo, without the VPE's
+// gamma, a dimmed LED was barely seen either; 00LQ, 2026-11-18.) The times
+// count down from when the pattern starts.
 
 // TimerArc is one running timer: its time left when the pattern starts, and
 // its color, brightness already applied.
@@ -22,11 +26,9 @@ type TimerArc struct {
 	Color  [3]uint8
 }
 
-// timerStepDim is the stepping LED's share of its color: a third. The VPE's
-// 230/255 shows through its ring's 2.8 gamma; the Echo's ring has none, and
-// at a fifth of full brightness 90% could not be told apart (00LQ,
-// 2026-11-18).
-const timerStepDim = 85
+// timerStepLit is the stepping LED's share of the soonest timer's colour
+// where the ring is dark.
+const timerStepLit = 0.5
 
 // timersFrame is the ring for arcs (soonest first) elapsed into the pattern,
 // with the stepping LED at step.
@@ -56,11 +58,14 @@ func timersFrame(arcs []TimerArc, scaleMs int, elapsed time.Duration, step int, 
 			}
 		}
 	}
-	step %= numLEDs
-	if !paused && float64(step+1) < ends[0] {
-		l := frame[step]
-		frame[step] = led.Led{ID: step, R: uint8(uint16(l.R) * timerStepDim / 255),
-			G: uint8(uint16(l.G) * timerStepDim / 255), B: uint8(uint16(l.B) * timerStepDim / 255)}
+	if !paused {
+		step %= numLEDs
+		if l := frame[step]; l.R|l.G|l.B != 0 {
+			frame[step] = led.Led{ID: step}
+		} else {
+			c := arcs[0].Color
+			frame[step] = led.Led{ID: step, R: scale8(c[0], timerStepLit), G: scale8(c[1], timerStepLit), B: scale8(c[2], timerStepLit)}
+		}
 	}
 	return frame
 }

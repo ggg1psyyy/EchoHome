@@ -15,14 +15,14 @@ func TestTheTimersFrameIsTheVoicePEs(t *testing.T) {
 	m := [3]uint8{255, 0, 255}
 
 	// One timer, half its scale left: ends = 6. LEDs 0..5 full, the rest
-	// dark; the stepping LED at 0 is dimmed to a third.
+	// dark; the stepping LED at 0, inside the lit part, is dark.
 	f := timersFrame([]TimerArc{{LeftMs: 30000, Color: y}}, 60000, 0, 0, false)
-	if rgb(f[0]) != [3]uint8{85, 85, 0} || rgb(f[5]) != y || rgb(f[6]) != [3]uint8{} {
+	if rgb(f[0]) != [3]uint8{} || rgb(f[5]) != y || rgb(f[6]) != [3]uint8{} {
 		t.Fatalf("one timer at half: %v %v %v", f[0], f[5], f[6])
 	}
 	// A quarter LED into the 7th: 12*31250/60000 = 6.25 -> LED 6 at 25%.
 	f = timersFrame([]TimerArc{{LeftMs: 31250, Color: y}}, 60000, 0, 3, false)
-	if rgb(f[6]) != [3]uint8{63, 63, 0} || rgb(f[3]) != [3]uint8{85, 85, 0} {
+	if rgb(f[6]) != [3]uint8{63, 63, 0} || rgb(f[3]) != [3]uint8{} {
 		t.Fatalf("partial last LED: %v, step %v", f[6], f[3])
 	}
 	// Two: the soonest (magenta, 10 s of a 60 s scale: 2 LEDs) on top of the
@@ -53,6 +53,12 @@ func TestTheTimersFrameIsTheVoicePEs(t *testing.T) {
 	f = timersFrame([]TimerArc{{LeftMs: 30000, Color: y}}, 60000, 15*time.Second, 0, false)
 	if rgb(f[2]) == [3]uint8{} || rgb(f[3]) != [3]uint8{} {
 		t.Fatalf("counted down: %v %v", f[2], f[3])
+	}
+	// The step goes on round the dark part: faintly lit in the soonest's
+	// colour (step 9, past the 6 lit LEDs).
+	f = timersFrame([]TimerArc{{LeftMs: 30000, Color: m}, {LeftMs: 31000, Color: y}}, 60000, 0, 9, false)
+	if rgb(f[9]) != [3]uint8{127, 0, 127} {
+		t.Fatalf("the step in the dark part: %v", f[9])
 	}
 	// Paused: no stepping LED, no count-down.
 	f = timersFrame([]TimerArc{{LeftMs: 30000, Color: y}}, 60000, 0, 0, true)
