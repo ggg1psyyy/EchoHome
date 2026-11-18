@@ -250,3 +250,34 @@ func TestAQuietClientIsPingedAndKeptIfItAnswers(t *testing.T) {
 		t.Fatal("a silent client was kept")
 	}
 }
+
+// Home Assistant's time is asked when it subscribes, and given to the sink.
+func TestTheTimeIsAskedOnSubscribeAndHandedOn(t *testing.T) {
+	s := New(DeviceInfo{Name: "n"})
+	got := make(chan time.Time, 1)
+	tzs := make(chan string, 1)
+	s.SetTimeSink(func(at time.Time, tz string) { got <- at; tzs <- tz })
+	c := dialServer(t, s)
+	c.send(&api.SubscribeStatesRequest{})
+	if _, ok := c.recv().(*api.GetTimeRequest); !ok {
+		t.Fatal("the time was not asked")
+	}
+	c.send(&api.GetTimeResponse{EpochSeconds: 1795000000, Timezone: "CET-1CEST,M3.5.0,M10.5.0/3"})
+	select {
+	case at := <-got:
+		if at.Unix() != 1795000000 || <-tzs != "CET-1CEST,M3.5.0,M10.5.0/3" {
+			t.Fatalf("%v", at)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the sink was not called")
+	}
+	// No time (0) is no opinion: never handed on.
+	c.send(&api.GetTimeResponse{})
+	c.send(&api.PingRequest{})
+	c.recv()
+	select {
+	case at := <-got:
+		t.Fatalf("a zero time handed on: %v", at)
+	default:
+	}
+}

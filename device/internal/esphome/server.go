@@ -34,6 +34,9 @@ var (
 	keepaliveIdle = 60 * time.Second
 	// keepaliveTick is how often the writer looks.
 	keepaliveTick = 5 * time.Second
+	// timeRefresh is how often the time is asked again: ESPHome's
+	// homeassistant time's default update interval.
+	timeRefresh = 15 * time.Minute
 	// readIdle: a client silent this long, pinged and not answering, is gone
 	// (a host that lost power sends no FIN).
 	readIdle = 90 * time.Second
@@ -63,6 +66,8 @@ type Server struct {
 	info DeviceInfo
 	// keyStore, set, makes the server provisionable (SetKeyStore).
 	keyStore func(psk []byte) error
+	// timeSink, set, takes Home Assistant's time (SetTimeSink).
+	timeSink func(t time.Time, timezone string)
 
 	keyMu    sync.Mutex
 	psk      []byte // nil: no key
@@ -109,6 +114,14 @@ func (s *Server) SetKey(psk []byte) error {
 // clears it); it must be durable, as HA holds the key from then on. Before
 // Serve.
 func (s *Server) SetKeyStore(store func(psk []byte) error) { s.keyStore = store }
+
+// SetTimeSink asks Home Assistant for the time, as ESPHome's homeassistant
+// time platform does: a GetTimeRequest to each client that subscribes to
+// states (HA does on connect), and again every timeRefresh to one that is
+// subscribed. HA's client answers by itself (aioesphomeapi connection.py
+// _handle_get_time_request_internal) with the time to the second and its
+// timezone. Before Serve.
+func (s *Server) SetTimeSink(sink func(t time.Time, timezone string)) { s.timeSink = sink }
 
 // HasKey reports whether a key is in use.
 func (s *Server) HasKey() bool {
@@ -314,6 +327,7 @@ type conn struct {
 	once       sync.Once
 	subscribed atomic.Bool
 	lastIn     atomic.Int64 // unix nanoseconds of the last frame read
+	lastTime   atomic.Int64 // unix nanoseconds the time was last asked
 	pinged     atomic.Bool  // a ping is out since the last frame read
 }
 
@@ -347,6 +361,12 @@ func (c *conn) reply(m proto.Message) {
 	c.send(p)
 }
 
+// askTime sends GetTimeRequest.
+func (c *conn) askTime() {
+	c.lastTime.Store(time.Now().UnixNano())
+	c.reply(&api.GetTimeRequest{})
+}
+
 // writeRaw writes bytes straight to the socket: the handshake's, before the
 // writer runs.
 func (c *conn) writeRaw(b []byte) error {
@@ -365,6 +385,10 @@ func (c *conn) write() {
 		case <-c.done:
 			return
 		case <-tick.C:
+			if c.s.timeSink != nil && c.subscribed.Load() &&
+				time.Since(time.Unix(0, c.lastTime.Load())) >= timeRefresh {
+				c.askTime()
+			}
 			if time.Since(time.Unix(0, c.lastIn.Load())) >= keepaliveIdle && !c.pinged.Swap(true) {
 				p, _ := packetOf(&api.PingRequest{})
 				var err error
@@ -501,10 +525,17 @@ func (c *conn) handle(m proto.Message) bool {
 		c.reply(&api.ListEntitiesDoneResponse{})
 	case *api.SubscribeStatesRequest:
 		c.subscribed.Store(true)
+		if s.timeSink != nil {
+			c.askTime()
+		}
 		for _, e := range s.entities {
 			if st := e.State(); st != nil {
 				c.reply(st)
 			}
+		}
+	case *api.GetTimeResponse:
+		if s.timeSink != nil && m.EpochSeconds != 0 {
+			s.timeSink(time.Unix(int64(m.EpochSeconds), 0), m.Timezone)
 		}
 	case *api.PingRequest:
 		c.reply(&api.PingResponse{})

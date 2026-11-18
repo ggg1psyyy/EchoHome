@@ -14,6 +14,7 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/atomicfile"
 	"github.com/wilbowes/EchoMuse/internal/bindings/als"
 	"github.com/wilbowes/EchoMuse/internal/client"
+	"github.com/wilbowes/EchoMuse/internal/clock"
 	"github.com/wilbowes/EchoMuse/internal/config"
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
@@ -32,7 +33,8 @@ import (
 // it must also adopt the controller's MAC (em_db.get_esphome_mac).
 //
 // The switch is kept on the Echo (esphomeOnPath), so the server starts at
-// boot with no controller.
+// boot with no controller, and the Echo takes its clock from Home Assistant
+// (esphomeTime), as ESPHome's homeassistant time does.
 //
 // Encrypted (ESPHome's Noise transport) with a key Home Assistant sets, as
 // it sets one on an ESPHome device with no key in its YAML: the Echo starts
@@ -121,6 +123,34 @@ func storeESPHomeKey(psk []byte) error {
 		return nil
 	}
 	return atomicfile.Write(esphomeKeyPath, []byte(base64.StdEncoding.EncodeToString(psk)+"\n"), 0o600)
+}
+
+var esphomeTZ struct {
+	sync.Mutex
+	tz string
+}
+
+// esphomeTime sets the Echo's clock from Home Assistant's, as the
+// controller's time_ms on the ack does and by the same rule
+// (clock.ShouldStep: only past 30 s, so the two never fight): with no
+// controller it is the Echo's only clock, which boots reading 2010. HA's
+// timezone (POSIX TZ) is logged when it changes, for the day something
+// local (night) needs it.
+func esphomeTime(t time.Time, tz string) {
+	if ms := t.UnixMilli(); clock.ShouldStep(time.Now(), ms) {
+		if err := clock.Step(ms); err != nil {
+			log.Printf("[esphome] could not set the clock from Home Assistant: %v", err)
+		} else {
+			log.Printf("[esphome] clock set from Home Assistant")
+		}
+	}
+	esphomeTZ.Lock()
+	changed := tz != esphomeTZ.tz
+	esphomeTZ.tz = tz
+	esphomeTZ.Unlock()
+	if changed && tz != "" {
+		log.Printf("[esphome] Home Assistant's timezone: %s", tz)
+	}
 }
 
 // esphomeKeyReply answers esphome_key_request: the key in use, or none yet.
@@ -225,6 +255,7 @@ func applyESPHome(on bool) {
 		}
 		e.srv = esphome.New(e.info, e.entries...)
 		e.srv.SetKeyStore(storeESPHomeKey)
+		e.srv.SetTimeSink(esphomeTime)
 		if k := loadESPHomeKey(); k != nil {
 			e.srv.SetKey(k)
 		}

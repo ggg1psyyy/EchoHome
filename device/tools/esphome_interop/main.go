@@ -34,6 +34,9 @@ func main() {
 	s := esphome.New(esphome.DeviceInfo{Name: "echohome-interop", FriendlyName: "EchoHome interop",
 		MAC: "02:EC:00:00:00:99", Manufacturer: "EchoHome", Model: "biscuit",
 		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted)
+	s.SetTimeSink(func(t time.Time, tz string) {
+		log.Printf("time from the client: %s (%s), %v off", t.UTC().Format(time.RFC3339), tz, time.Until(t).Round(time.Second))
+	})
 	if len(os.Args) > 2 && os.Args[2] == "provision" {
 		s.SetKeyStore(func(psk []byte) error {
 			log.Printf("kept a key of %d bytes", len(psk))
