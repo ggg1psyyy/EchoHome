@@ -73,24 +73,24 @@ func setupOwned(cc *client.ControlClient, s *server.Server, muteRingCapable bool
 	return out
 }
 
-// muteEntity is the mute as a switch, as a Voice PE has it
-// (home-assistant-voice.yaml master_mute_switch): it is Home Assistant's
-// soft mute (internal/softmute), which HA turns on and off; the button's
-// hard mute is apart, and only the button undoes it. The switch shows
-// muted while either is on, so HA turning it off under the button's mute
-// changes nothing it shows.
+// muteEntity is Home Assistant's "Software Mute" (internal/softmute): the
+// microphones silenced in software, the button's hardware mute apart. It
+// shows only its own state; it cannot be turned on while the button's mute
+// is on, and any press of the button clears it (chosen 2026-11-18).
 func muteEntity(s *server.Server) *esphome.Switch {
 	muteSwitch = &esphome.Switch{Desc: &api.ListEntitiesSwitchResponse{ObjectId: "mute", Key: esphomeMuteKey,
-		Name: "Mute", Icon: "mdi:microphone-off"}}
+		Name: "Software Mute", Icon: "mdi:microphone-off"}}
 	muteSwitch.OnCommand = func(on bool) {
-		if !on && s.HardMuted() {
-			log.Printf("[esphome] unmute from Home Assistant: the button's mute stays, only the button undoes it")
-		}
-		s.SetSoftMute(on) // the mute callback reports the result
+		s.SetSoftMute(on)
+		muteSwitch.Set(s.SoftMuted()) // a refusal leaves it off
 	}
-	muteSwitch.Set(s.IsMuted())
+	muteSwitch.Set(s.SoftMuted())
+	softMuted = s.SoftMuted
 	return muteSwitch
 }
+
+// softMuted reads the software mute for the mute callback.
+var softMuted func() bool
 
 // applyOwnedAtBoot puts the kept values in force, after the standalone
 // satellite has started from its own saved copy (the Echo's are newer).
@@ -184,9 +184,10 @@ func reportOwned() {
 	}
 }
 
-// esphomeMuteSwitch follows the mute.
-func esphomeMuteSwitch(muted bool) {
-	if muteSwitch != nil {
-		muteSwitch.Set(muted)
+// esphomeMuteSwitch follows the software mute on any change of the mute
+// (the button clears it).
+func esphomeMuteSwitch(bool) {
+	if muteSwitch != nil && softMuted != nil {
+		muteSwitch.Set(softMuted())
 	}
 }

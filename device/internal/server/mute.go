@@ -76,13 +76,19 @@ func (m *muteController) SoftMuted() bool {
 	return m.soft
 }
 
-// SetSoft turns Home Assistant's mute on or off. It never touches the
-// button's: while that is on the Echo stays muted whatever this says.
-func (m *muteController) SetSoft(on bool) {
+// SetSoft turns Home Assistant's software mute on or off; false if refused.
+// It never touches the button's, and is never on under it: turning it on
+// while the button's mute is on is refused (chosen 2026-11-18).
+func (m *muteController) SetSoft(on bool) bool {
 	m.mu.Lock()
+	if on && m.muted {
+		m.mu.Unlock()
+		log.Println("Mute: software mute refused — the button's mute is on")
+		return false
+	}
 	if m.soft == on {
 		m.mu.Unlock()
-		return
+		return true
 	}
 	m.soft = on
 	hard := m.muted
@@ -104,6 +110,7 @@ func (m *muteController) SetSoft(on bool) {
 	if cb != nil {
 		cb(on || hard)
 	}
+	return true
 }
 
 // RestoreSoft re-applies a persisted soft mute at boot (the LEDs are
@@ -127,13 +134,13 @@ func (m *muteController) muteHard() {
 	m.Toggle()
 }
 
-// Toggle is the button. Muted for either reason, it unmutes both: the
-// person at the Echo has the last word over Home Assistant's mute. Else it
-// mutes in hardware.
+// Toggle is the button: the hard mute on or off. Either way it clears the
+// software mute (chosen 2026-11-18): that is never on under the button's,
+// and the button turning its mute off leaves the Echo listening.
 func (m *muteController) Toggle() {
 	m.mu.Lock()
 	wasSoft := m.soft
-	m.muted = !(m.muted || m.soft)
+	m.muted = !m.muted
 	m.soft = false
 	muted := m.muted
 	// Copy under the lock — SetOnMuteChange writes this field under mu from

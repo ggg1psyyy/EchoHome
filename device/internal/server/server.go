@@ -285,9 +285,13 @@ func (s *Server) IsMuted() bool {
 // HardMuted is the button's mute alone.
 func (s *Server) HardMuted() bool { return s.mute.HardMuted() }
 
-// SetSoftMute is Home Assistant's mute (softmute): the microphones zeroed
-// in software, the button's mute and light untouched.
-func (s *Server) SetSoftMute(on bool) { s.mute.SetSoft(on) }
+// SetSoftMute is Home Assistant's software mute (softmute): the microphones
+// zeroed in software, the button's mute and light untouched. False if
+// refused (on, under the button's mute).
+func (s *Server) SetSoftMute(on bool) bool { return s.mute.SetSoft(on) }
+
+// SoftMuted is Home Assistant's software mute alone.
+func (s *Server) SoftMuted() bool { return s.mute.SoftMuted() }
 
 // CancelVolumeDisplay releases the volume arc's 2s hold on the ring so a
 // turn's listening frame can paint immediately. See volumeController.
