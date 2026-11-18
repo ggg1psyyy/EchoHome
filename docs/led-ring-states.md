@@ -249,6 +249,7 @@ suppress it as they do any `led_anim`.
 | I7 | `timer_ringing`, no call | amber pulse (`em_timers.TIMER_ANIM`), no TTL | `timer_stopped`, a press, the app gone |
 | I8 | `announcement` `active`, no call | meter (C3) | `active` false |
 | I9 | Monitored: the app listens live (`incubator_monitor`, opt-in), no call | red pulse, 1s period, no TTL, the Echo's own (never a scene's) | the app stops, a call, mute, the app gone |
+| I10 | Running timers (`timer_progress`), nothing above | the VPE's timer ring (`timers` pattern, server/timers.go): the ring is the longest timer's length, each timer (up to six, soonest first) on top of the later ones in its own colour (the scene's thinking colour for the app's -1), at a fifth of full for one, half for several; a dimmer LED steps round once a second; counted down on the Echo from the event, repainted each 100 ms | `shown` 0, the app gone |
 
 The app's sounds and its answer share one stream (voice_incubator
 `server.py` `Cues`): the "heard" sound plays the moment the command ends,
@@ -257,12 +258,19 @@ after `responding` is the answer. The app's error path says its apology
 without `responding`: the spinner stays until the error flash.
 
 A call outranks monitoring, and monitoring a timer and an announcement; a timer ringing at the end of a
-call is shown instead of the outcome flash. Music already playing is ducked
+call is shown instead of the outcome flash. An outcome flash is shown over
+the running timers (I10) for its length, then the timers again (the VPE's
+`show_result`).
+
+**Night mode** (the app's `night` event, its area's switch): every state is
+painted amber at a fifth of full, but a ringing timer (I7) and the monitored
+pulse (I9); a command's outcome, the app saying nothing at night, is one slow
+green pulse (done) or two quick red blinks (not done, or not understood). The
+Echo's own sounds are unchanged. Music already playing is ducked
 in every state but dark and the flashes (`Ring.Ducks`), as a voice turn ducks
 it from the wake to the end of the reply, and comes back 0.8 s after the ring
 goes dark, so a question's answer call, which follows it a moment later,
-does not let it swell in between. The app's `timer_progress` and
-`night` events have no EchoMuse animation and are not shown. Firmware without
+does not let it swell in between. Firmware without
 `incubator_ring`, or an older controller that sends no `incubatorRing`, shows
 only I1 (a state with no spec goes dark).
 

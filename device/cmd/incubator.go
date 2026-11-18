@@ -84,33 +84,108 @@ func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
 // their TTLs are a dead man for a controller that sends them from afar, and
 // here the satellite in this process clears every path itself (a reply
 // longer than any TTL would otherwise go dark while it plays).
-func (e *echoParts) Show(r incubator.Ring) {
+func (e *echoParts) Show(v incubator.RingView) {
+	r := v.State
 	if r == incubator.RingMonitored {
 		// The Echo's own, never a scene's: a privacy indicator, as the mute
 		// ring is. Red as the VPE's ring blinks while monitored; a pulse,
-		// never the mute ring's solid red, which means the opposite.
+		// never the mute ring's solid red, which means the opposite. Never
+		// dimmed or recoloured at night.
 		e.srv.StartAnim(monitoredAnim)
 		e.duckFor(r)
 		return
 	}
 	snap := config.Get().Snapshot()
-	var raw json.RawMessage
-	if r == incubator.RingListening {
-		raw = snap.ListeningAnim
-	} else if r != incubator.RingOff {
-		var specs map[string]json.RawMessage
-		json.Unmarshal(snap.IncubatorRing, &specs)
-		raw = specs[ringSpecKey[r]]
-	}
+	var specs map[string]json.RawMessage
+	json.Unmarshal(snap.IncubatorRing, &specs)
 	var spec server.AnimSpec
-	if len(raw) == 0 || json.Unmarshal(raw, &spec) != nil || spec.Pattern == "" {
-		spec = server.AnimSpec{Pattern: "off"}
+	switch {
+	case r == incubator.RingTimers:
+		spec = timersAnim(v, specs["spin"])
+	case v.Night && r == incubator.RingDone:
+		spec = nightDoneAnim
+	case v.Night && r == incubator.RingError:
+		spec = nightErrorAnim
+	default:
+		var raw json.RawMessage
+		if r == incubator.RingListening {
+			raw = snap.ListeningAnim
+		} else if r != incubator.RingOff {
+			raw = specs[ringSpecKey[r]]
+		}
+		if len(raw) == 0 || json.Unmarshal(raw, &spec) != nil || spec.Pattern == "" {
+			spec = server.AnimSpec{Pattern: "off"}
+		}
+		// At night dim and warm, a ringing timer as bright as ever.
+		if v.Night && r != incubator.RingTimer && spec.Pattern != "off" {
+			spec.Colors = nightColors(spec)
+		}
 	}
 	if r == incubator.RingSpeaking || r == incubator.RingAnnouncement || r == incubator.RingTimer {
 		spec.TTLSec = 0
 	}
 	e.srv.StartAnim(spec)
 	e.duckFor(r)
+}
+
+// Night mode's colours, as the VPE's ring_rgb and ring_brightness have them
+// (devices/voice-pe.yaml): amber at a fifth of full.
+var (
+	nightAmber    = [3]uint8{51, 13, 0} // 0xFF4000 x 0.2
+	nightAmberDim = [3]uint8{17, 4, 0}  // a spinner's trail, a third of it
+	// At night a command's outcome, the app saying nothing: one slow green
+	// pulse when it was done, two quick red blinks when it wasn't (the VPE's
+	// "Result").
+	nightDoneAnim  = server.AnimSpec{Pattern: "pulse", Colors: [][3]uint8{{0, 255, 64}}, PeriodMs: 1000, TTLMs: 1000}
+	nightErrorAnim = server.AnimSpec{Pattern: "pulse", Colors: [][3]uint8{{255, 0, 0}}, PeriodMs: 300, TTLMs: 600}
+)
+
+func nightColors(spec server.AnimSpec) [][3]uint8 {
+	if spec.Pattern == "spin" {
+		return [][3]uint8{nightAmber, nightAmberDim}
+	}
+	out := make([][3]uint8, max(len(spec.Colors), 1))
+	for i := range out {
+		out[i] = nightAmber
+	}
+	return out
+}
+
+// timersAnim draws the app's running timers (server's "timers" pattern):
+// each in its colour (-1, the ring's own: the scene's thinking colour), at
+// the VPE's brightness (a fifth for one, a half for several, so their
+// colours tell apart; at night all amber at a fifth), counted down from
+// when the app sent them.
+func timersAnim(v incubator.RingView, spin json.RawMessage) server.AnimSpec {
+	own := [3]uint8{255, 255, 255}
+	var s server.AnimSpec
+	if json.Unmarshal(spin, &s) == nil && len(s.Colors) > 0 {
+		own = s.Colors[0]
+	}
+	t := v.Timers
+	gain := 0.2
+	if len(t.Lefts) > 1 {
+		gain = 0.5
+	}
+	var since time.Duration
+	if !t.Paused && !t.At.IsZero() {
+		since = time.Since(t.At)
+	}
+	arcs := make([]server.TimerArc, len(t.Lefts))
+	for k, left := range t.Lefts {
+		c := own
+		if k < len(t.Colors) && t.Colors[k] >= 0 {
+			x := t.Colors[k]
+			c = [3]uint8{uint8(x >> 16), uint8(x >> 8), uint8(x)}
+		}
+		c = [3]uint8{uint8(float64(c[0]) * gain), uint8(float64(c[1]) * gain), uint8(float64(c[2]) * gain)}
+		if v.Night {
+			c = nightAmber
+		}
+		ms := int(left*1000) - int(since.Milliseconds())
+		arcs[k] = server.TimerArc{LeftMs: max(ms, 0), Color: c}
+	}
+	return server.AnimSpec{Pattern: "timers", Timers: arcs, TimerScaleMs: int(t.Scale * 1000), TimersPaused: t.Paused}
 }
 
 // unduckGrace is how long music waits, once the satellite goes quiet, before

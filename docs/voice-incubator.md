@@ -102,8 +102,12 @@ one answers nothing.
 - **The ring** shows the app's state with your ring scene: listening, the
   spinner while it works, the meter while it answers, a short flash when a
   command needed no reply (or failed), an amber pulse while a timer rings,
-  the meter during an announcement. A wake word said during an answer is
-  ignored; a tap cancels.
+  the meter during an announcement, and **running timers** between calls,
+  each in its colour, the ring counting down to the next. In the app's
+  **night mode** (its per-area switch in Home Assistant) the ring is dim and
+  amber, a ringing timer aside, and shows how a command went as a green
+  pulse or two red blinks. A wake word said during an answer is ignored; a
+  tap cancels.
 - **Questions back** ("Which room?") are answered without the wake word:
   the Echo listens again once the question has played.
 - **Live listening (optional)**: the app's Test page can listen to the Echo
@@ -146,7 +150,8 @@ one answers nothing.
   chosen in the app's settings. To have it answer about your home ("how
   warm is the living room?"), expose those entities to voice in Home
   Assistant (Settings → Voice assistants → Expose).
-- **Timer progress and night mode** are not shown on the ring.
+- **Timer progress and night mode** show on the ring only with the Echo's
+  own satellite.
 
 ## Privacy
 

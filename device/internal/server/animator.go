@@ -37,6 +37,15 @@ type AnimSpec struct {
 	// TTLSec auto-clears the ring if no newer spec arrives — protects
 	// against a controller that died mid-turn. 0 → no TTL.
 	TTLSec int `json:"ttlSec"`
+	// TTLMs, when set, is the pulse's TTL in milliseconds instead (a flash
+	// shorter than a second). Device-local: the controller sends TTLSec.
+	TTLMs int `json:"-"`
+	// Timers and TimerScaleMs are the "timers" pattern's (timers.go), the
+	// Echo's own Voice Incubator satellite's running timers: never sent by
+	// the controller.
+	Timers       []TimerArc `json:"-"`
+	TimerScaleMs int        `json:"-"`
+	TimersPaused bool       `json:"-"`
 
 	// ── meter-only response curve ────────────────────────────────────────
 	// Pointer-typed so 0 is expressible and "absent" is distinguishable
@@ -130,6 +139,8 @@ func (s *Server) StartAnim(spec AnimSpec) {
 		go s.runPulse(gen, spec)
 	case "meter":
 		go s.runMeter(gen, spec)
+	case "timers":
+		go s.runTimers(gen, spec)
 	default:
 		log.Printf("StartAnim: unknown pattern %q — clearing ring", spec.Pattern)
 		s.SetLEDs(blackFrame(), boolPtr(false))
@@ -216,6 +227,9 @@ func (s *Server) runPulse(gen int, spec AnimSpec) {
 	var deadline time.Time
 	if spec.TTLSec > 0 {
 		deadline = time.Now().Add(time.Duration(spec.TTLSec) * time.Second)
+	}
+	if spec.TTLMs > 0 {
+		deadline = time.Now().Add(time.Duration(spec.TTLMs) * time.Millisecond)
 	}
 	base := paletteFrame(spec.Colors)
 	start := time.Now()

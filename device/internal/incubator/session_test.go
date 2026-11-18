@@ -24,6 +24,7 @@ type fakeEcho struct {
 	muted   bool
 	block   chan struct{} // when set, Play waits on it
 	rings   []Ring
+	views   []RingView
 }
 
 func (f *fakeEcho) MicOpen(d func([]byte)) { f.mu.Lock(); f.deliver = d; f.opens++; f.mu.Unlock() }
@@ -41,7 +42,22 @@ func (f *fakeEcho) Play(p []byte) error {
 func (f *fakeEcho) End()        { f.mu.Lock(); f.ends++; f.mu.Unlock() }
 func (f *fakeEcho) Flush()      { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
 func (f *fakeEcho) Muted() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
-func (f *fakeEcho) Show(r Ring) { f.mu.Lock(); f.rings = append(f.rings, r); f.mu.Unlock() }
+func (f *fakeEcho) Show(v RingView) {
+	f.mu.Lock()
+	f.rings = append(f.rings, v.State)
+	f.views = append(f.views, v)
+	f.mu.Unlock()
+}
+
+// lastView is the last view the ring was given.
+func (f *fakeEcho) lastView() RingView {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.views) == 0 {
+		return RingView{}
+	}
+	return f.views[len(f.views)-1]
+}
 
 // shown is what the ring was given, in order.
 func (f *fakeEcho) shown() []Ring {

@@ -31,7 +31,7 @@ type Device interface {
 	// the device ducks music by (any state but dark and the outcome
 	// flashes). Called under the session's lock, in order: it must not
 	// block or call back.
-	Show(r Ring)
+	Show(v RingView)
 }
 
 const (
@@ -171,6 +171,12 @@ type session struct {
 	muted      bool // the Echo's mute: no microphone at all
 	replying   bool // a call's reply is sounding (until its PLAYBACK_DRAINED)
 	shown      Ring // what the ring was last given
+	shownKey   shownKey
+	flashGen   int
+	flashing   bool      // an outcome flash is up (ring.go outcomeLocked)
+	night      bool      // the app's night mode (its area's switch)
+	timers     TimerView // the app's last timer_progress
+	timersGen  int
 	askBack    bool // a HANGUP asked for an answer: its call follows at once
 	// monitoring (monitor.go)
 	allowMonitor bool // the Echo's switch: HELLO said monitor
@@ -423,6 +429,7 @@ func (s *session) close() {
 	was := s.endLocked("")
 	s.syncMicLocked()
 	s.replying, s.timerRings, s.announcing = false, false, false
+	s.timers, s.night, s.flashing = TimerView{}, false, false
 	s.showLocked()
 	s.mu.Unlock()
 	s.updateMonitor() // off, and said so
@@ -513,6 +520,17 @@ func (s *session) handle(m Message, p []byte) error {
 				}
 				json.Unmarshal(e.Data, &d)
 				s.announcing = d.Active
+			case "timer_progress":
+				// Kept whenever it comes, in a call too, counted down from
+				// its arrival.
+				s.timers = parseTimerProgress(e.Data, time.Now())
+				s.timersGen++
+			case "night":
+				var d struct {
+					On bool `json:"on"`
+				}
+				json.Unmarshal(e.Data, &d)
+				s.night = d.On
 			}
 			if c := s.call; c != nil && callEvents[e.Type] {
 				c.stale = false

@@ -244,7 +244,7 @@ func TestARepliesFramesAfterACancelBeforeItPlayedAreDiscarded(t *testing.T) {
 func TestMusicIsDuckedFromListeningToTheEndOfTheAnswer(t *testing.T) {
 	want := map[Ring]bool{RingOff: false, RingListening: true, RingThinking: true,
 		RingSpeaking: true, RingTimer: true, RingAnnouncement: true, RingDone: false, RingError: false,
-		RingMonitored: false}
+		RingMonitored: false, RingTimers: false}
 	for r, d := range want {
 		if r.Ducks() != d {
 			t.Errorf("%v ducks %v, want %v", r, r.Ducks(), d)
@@ -272,4 +272,86 @@ func TestAMutedPressStopsARingingTimer(t *testing.T) {
 	if echo.count(&echo.opens) != 0 {
 		t.Fatal("a muted press opened the microphone")
 	}
+}
+
+const twoTimers = `{"shown":1,"remaining":30,"total":60,"paused":0,"count":2,"scale":120,` +
+	`"left0":30,"color0":-1,"left1":90,"color1":16776960}`
+
+func TestRunningTimersShowBetweenCalls(t *testing.T) {
+	_, echo, _, a := connectApp(t)
+	event(a, "timer_progress", twoTimers)
+	rings(t, echo, RingTimers)
+	v := echo.lastView()
+	if len(v.Timers.Lefts) != 2 || v.Timers.Lefts[1] != 90 || v.Timers.Colors[1] != 0xFFFF00 ||
+		v.Timers.Colors[0] != -1 || v.Timers.Scale != 120 || v.Timers.At.IsZero() {
+		t.Fatalf("the timers given: %+v", v.Timers)
+	}
+	// New figures repaint; the same state otherwise would not.
+	event(a, "timer_progress", `{"shown":1,"remaining":20,"total":60,"count":1,"scale":60,"left0":20,"color0":-1}`)
+	rings(t, echo, RingTimers, RingTimers)
+	event(a, "timer_progress", `{"shown":0}`)
+	rings(t, echo, RingTimers, RingTimers, RingOff)
+}
+
+func TestTimerProgressIsClamped(t *testing.T) {
+	now := time.Now()
+	v := parseTimerProgress([]byte(`{"shown":1,"count":9,"scale":0,"remaining":-5,"left0":-1,"color0":99999999,"left3":"x"}`), now)
+	if len(v.Lefts) != TimerLayers || v.Scale != 1 || v.Lefts[0] != 0 || v.Colors[0] != -1 || v.Lefts[3] != 0 {
+		t.Fatalf("%+v", v)
+	}
+	if v := parseTimerProgress([]byte(`not json`), now); len(v.Lefts) != 0 {
+		t.Fatal("garbage shows timers")
+	}
+	if v := parseTimerProgress([]byte(`{"shown":1,"remaining":5,"total":10}`), now); len(v.Lefts) != 1 || v.Lefts[0] != 5 || v.Scale != 10 {
+		t.Fatalf("an older app's (no count): %+v", v)
+	}
+}
+
+// A call while timers run: the call's ring, its outcome flash over the
+// timers, then the timers again (the VPE's show_result).
+func TestACallOverRunningTimersFlashesThenShowsThemAgain(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	event(a, "timer_progress", twoTimers)
+	rings(t, echo, RingTimers)
+	s.Press()
+	a.expect(CallStart)
+	event(a, "processing", "")
+	a.send(Hangup, []byte(`{"reason":"done"}`)) // nothing said: done
+	rings(t, echo, RingTimers, RingListening, RingThinking, RingDone)
+	time.Sleep(flashFor(RingDone, false) + 200*time.Millisecond)
+	rings(t, echo, RingTimers, RingListening, RingThinking, RingDone, RingTimers)
+}
+
+func TestNightRepaintsWhatIsShown(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	event(a, "timer_progress", twoTimers)
+	rings(t, echo, RingTimers)
+	event(a, "night", `{"on":true}`)
+	rings(t, echo, RingTimers, RingTimers)
+	if !echo.lastView().Night {
+		t.Fatal("night not passed to the ring")
+	}
+	// At night a command is not understood without a word: the red blinks.
+	s.Press()
+	a.expect(CallStart)
+	event(a, "processing", "")
+	a.send(Hangup, []byte(`{"reason":"not_recognized"}`))
+	rings(t, echo, RingTimers, RingTimers, RingListening, RingThinking, RingError)
+	if v := echo.lastView(); !v.Night {
+		t.Fatal("the night flash is not marked night")
+	}
+	event(a, "night", `{"on":false}`)
+	time.Sleep(flashFor(RingError, true) + 200*time.Millisecond)
+	if v := echo.lastView(); v.State != RingTimers || v.Night {
+		t.Fatalf("after the flash, by day: %+v", v)
+	}
+}
+
+func TestTheAppLeavingClearsTimersAndNight(t *testing.T) {
+	_, echo, _, a := connectApp(t)
+	event(a, "night", `{"on":true}`)
+	event(a, "timer_progress", twoTimers)
+	waitFor(t, "the timers", func() bool { return echo.lastView().State == RingTimers })
+	a.c.Close()
+	waitFor(t, "dark", func() bool { v := echo.lastView(); return v.State == RingOff && !v.Night })
 }
