@@ -42,6 +42,20 @@ func TestAChangeOnTheEchoStandsUntilTheControllerCarriesItBack(t *testing.T) {
 	}
 }
 
+func TestALocalSettingIsKeptAndNeverReported(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "settings.json")
+	s := Load(p)
+	if err := s.SetLocal("multiTap", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Pending()) != 0 {
+		t.Fatal("a local setting is pending")
+	}
+	if v, ok := Load(p).Value("multiTap"); !ok || !v {
+		t.Fatal("not kept")
+	}
+}
+
 func TestUnreadableIsEmpty(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "settings.json")
 	os.WriteFile(p, []byte("{not json"), 0o600)

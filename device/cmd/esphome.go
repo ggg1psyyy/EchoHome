@@ -214,6 +214,7 @@ func setupESPHome(cc *client.ControlClient, s *server.Server, spk *speaker.PcmSp
 	}
 	e.entries = append(e.entries, setupOwned(cc, s, ledbind.HasMuteButtonLED())...)
 	e.entries = append(e.entries, ledRingEntities()...)
+	e.entries = append(e.entries, multiTapEntity())
 	esphomeOnEcho = e
 	if _, err := os.Stat(esphomeOnPath); err == nil {
 		// Seeded into the config too: a controller that does not know the

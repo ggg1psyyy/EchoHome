@@ -403,7 +403,11 @@ func main() {
 		controlClient.StartPairing()
 	})
 
-	// Button events — forward to controller via control plane
+	// Button events — forward to controller via control plane. dispatchButton
+	// is the usual path; with multi-tap events on, the action button's
+	// events are counted first and come back through it (cmd/multitap.go).
+	var dispatchButton func(event pkgbuttons.ButtonClickEvent)
+	setMultiTapDispatch(func(e pkgbuttons.ButtonClickEvent) { dispatchButton(e) })
 	_, err = buttonController.SubscribeToButton(func(event pkgbuttons.ButtonClickEvent) {
 		log.Printf("Button event: clickType=%d down=%v", event.ClickType, event.Down)
 		// Ahead of the link-down gate: a device that cannot connect is the one
@@ -413,6 +417,12 @@ func main() {
 			log.Println("[cmd] action button release ended a pairing hold — not forwarded")
 			return
 		}
+		if multiTapTake(event) {
+			return
+		}
+		dispatchButton(event)
+	})
+	dispatchButton = func(event pkgbuttons.ButtonClickEvent) {
 		// The Echo's own ESPHome server (when on) has the hold, with or
 		// without a controller.
 		if event.ClickType == pkgbuttons.DotClick && !event.Down {
@@ -459,7 +469,7 @@ func main() {
 			s.CancelVolumeDisplay()
 		}
 		controlClient.SendButton(event)
-	})
+	}
 	if err != nil {
 		log.Fatalf("Button subscription failed: %v", err)
 	}

@@ -79,6 +79,15 @@ func (s *Store) Set(key string, v bool) error {
 	return s.saveLocked()
 }
 
+// SetLocal records a setting only the Echo has (no controller key): kept,
+// never pending, never reported.
+func (s *Store) SetLocal(key string, v bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rec.Values[key] = v
+	return s.saveLocked()
+}
+
 // Reconcile takes the value a controller pushed for key and returns the one
 // to put in force.
 func (s *Store) Reconcile(key string, pushed bool) bool {
