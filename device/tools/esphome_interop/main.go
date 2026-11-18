@@ -34,9 +34,19 @@ func main() {
 	btn := &esphome.Event{Desc: &api.ListEntitiesEventResponse{ObjectId: "action_button", Key: 2, Name: "Action Button",
 		DeviceClass: "button", EventTypes: []string{"long", "single", "double", "triple"}}}
 	mp := mediaPlayerEntity()
+	var light *esphome.Light
+	light = &esphome.Light{Desc: &api.ListEntitiesLightResponse{ObjectId: "led_ring", Key: 24, Name: "LED Ring",
+		SupportedColorModes: []api.ColorMode{api.ColorMode_COLOR_MODE_RGB}},
+		OnCommand: func(c *api.LightCommandRequest) {
+			log.Printf("light: %v", c)
+			light.Set(&api.LightStateResponse{State: c.State, Brightness: c.Brightness, ColorMode: api.ColorMode_COLOR_MODE_RGB,
+				ColorBrightness: 1, Red: c.Red, Green: c.Green, Blue: c.Blue})
+		}}
+	light.Set(&api.LightStateResponse{ColorMode: api.ColorMode_COLOR_MODE_RGB, Brightness: 1, ColorBrightness: 1, Red: 1, Green: 1, Blue: 1})
+	call := &esphome.Action{Name: "start_call", ID: 25, OnCall: func() { log.Printf("start_call called") }}
 	s := esphome.New(esphome.DeviceInfo{Name: "echohome-interop", FriendlyName: "EchoHome interop",
 		MAC: "02:EC:00:00:00:99", Manufacturer: "EchoHome", Model: "biscuit",
-		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted, mp)
+		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted, mp, light, call)
 	serveWav(port)
 	s.SetTimeSink(func(t time.Time, tz string) {
 		log.Printf("time from the client: %s (%s), %v off", t.UTC().Format(time.RFC3339), tz, time.Until(t).Round(time.Second))

@@ -547,6 +547,19 @@ func (c *conn) handle(m proto.Message) bool {
 		if mp, ok := s.byKey[m.Key].(*MediaPlayer); ok && mp.OnCommand != nil {
 			mp.OnCommand(m)
 		}
+	case *api.LightCommandRequest:
+		if l, ok := s.byKey[m.Key].(*Light); ok && l.OnCommand != nil {
+			l.OnCommand(m)
+		}
+	case *api.ExecuteServiceRequest:
+		a, ok := s.byKey[m.Key].(*Action)
+		if ok && a.OnCall != nil {
+			a.OnCall()
+		}
+		if m.CallId != 0 {
+			// A client that tracks the call hears how it went.
+			c.reply(&api.ExecuteServiceResponse{CallId: m.CallId, Success: ok})
+		}
 	case *api.SwitchCommandRequest:
 		if w, ok := s.byKey[m.Key].(*Switch); ok && w.OnCommand != nil {
 			w.OnCommand(m.State)

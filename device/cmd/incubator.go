@@ -123,6 +123,12 @@ func (e *echoParts) Show(v incubator.RingView) {
 		if len(raw) == 0 || json.Unmarshal(raw, &spec) != nil || spec.Pattern == "" {
 			spec = server.AnimSpec{Pattern: "off"}
 		}
+		// Dark between calls: the LED Ring light, if it is on (cmd/ledring.go).
+		if r == incubator.RingOff {
+			if idle, ok := ledRingIdle(); ok {
+				spec = idle
+			}
+		}
 		// At night dim and warm, a ringing timer as bright as ever.
 		if v.Night && r != incubator.RingTimer && spec.Pattern != "off" {
 			spec.Colors = nightColors(spec)

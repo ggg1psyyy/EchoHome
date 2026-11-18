@@ -196,3 +196,56 @@ func (m *MediaPlayer) Set(state api.MediaPlayerState, volume float32, muted bool
 		m.changed(m)
 	}
 }
+
+// Light is a light (ListEntitiesLightResponse): commands go to OnCommand;
+// HA sees the state Set reports.
+type Light struct {
+	base
+	Desc      *api.ListEntitiesLightResponse
+	OnCommand func(*api.LightCommandRequest)
+	mu        sync.Mutex
+	st        *api.LightStateResponse
+}
+
+func (l *Light) Key() uint32         { return l.Desc.Key }
+func (l *Light) Info() proto.Message { return l.Desc }
+
+func (l *Light) State() proto.Message {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.st == nil {
+		return &api.LightStateResponse{Key: l.Desc.Key}
+	}
+	st := proto.Clone(l.st).(*api.LightStateResponse)
+	st.Key = l.Desc.Key
+	return st
+}
+
+// Set records the light's state and sends it if it changed.
+func (l *Light) Set(st *api.LightStateResponse) {
+	st = proto.Clone(st).(*api.LightStateResponse)
+	st.Key = l.Desc.Key
+	l.mu.Lock()
+	same := l.st != nil && proto.Equal(l.st, st)
+	l.st = st
+	l.mu.Unlock()
+	if !same {
+		l.changed(l)
+	}
+}
+
+// Action is a user-defined action Home Assistant can call
+// (ListEntitiesServicesResponse; esphome.<device>_<name> in HA), with no
+// arguments. It has no state.
+type Action struct {
+	base
+	Name   string
+	ID     uint32
+	OnCall func()
+}
+
+func (a *Action) Key() uint32 { return a.ID }
+func (a *Action) Info() proto.Message {
+	return &api.ListEntitiesServicesResponse{Name: a.Name, Key: a.ID}
+}
+func (a *Action) State() proto.Message { return nil }

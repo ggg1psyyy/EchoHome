@@ -350,3 +350,50 @@ func TestAMediaPlayerCommandIsHandedOn(t *testing.T) {
 		t.Fatalf("%v", st)
 	}
 }
+
+func TestALightCommandAndAnActionAreHandedOn(t *testing.T) {
+	cmds := make(chan *api.LightCommandRequest, 1)
+	calls := make(chan struct{}, 1)
+	l := &Light{Desc: &api.ListEntitiesLightResponse{ObjectId: "led_ring", Key: 24, Name: "LED Ring",
+		SupportedColorModes: []api.ColorMode{api.ColorMode_COLOR_MODE_RGB}},
+		OnCommand: func(c *api.LightCommandRequest) { cmds <- c }}
+	a := &Action{Name: "start_call", ID: 25, OnCall: func() { calls <- struct{}{} }}
+	s := New(DeviceInfo{Name: "n"}, l, a)
+	c := dialServer(t, s)
+	c.send(&api.ListEntitiesRequest{})
+	var got []string
+	for {
+		m := c.recv()
+		if _, done := m.(*api.ListEntitiesDoneResponse); done {
+			break
+		}
+		got = append(got, string(m.ProtoReflect().Descriptor().Name()))
+	}
+	if len(got) != 2 || got[1] != "ListEntitiesServicesResponse" {
+		t.Fatalf("%v", got)
+	}
+	c.send(&api.SubscribeStatesRequest{})
+	c.recv() // the light's state
+	c.send(&api.LightCommandRequest{Key: 24, HasState: true, State: true, HasRgb: true, Red: 1})
+	select {
+	case cmd := <-cmds:
+		if !cmd.State || cmd.Red != 1 {
+			t.Fatalf("%v", cmd)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no light command")
+	}
+	l.Set(&api.LightStateResponse{State: true, Brightness: 1, ColorMode: api.ColorMode_COLOR_MODE_RGB, Red: 1})
+	if st, ok := c.recv().(*api.LightStateResponse); !ok || !st.State || st.Key != 24 {
+		t.Fatalf("%v", st)
+	}
+	c.send(&api.ExecuteServiceRequest{Key: 25, CallId: 7})
+	select {
+	case <-calls:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the action was not called")
+	}
+	if r, ok := c.recv().(*api.ExecuteServiceResponse); !ok || r.CallId != 7 || !r.Success {
+		t.Fatalf("%v", r)
+	}
+}

@@ -40,7 +40,7 @@ async def main(port: int, key) -> None:
     print("device info:", info.name, info.model, info.mac_address, info.project_name)
     entities, services = await cli.list_entities_services()
     by_id = {e.object_id: e for e in entities}
-    assert set(by_id) == {"action_button", "ambient_light", "mic_muted"}, by_id
+    assert set(by_id) == {"action_button", "ambient_light", "mic_muted", "media_player", "led_ring"}, by_id
     assert isinstance(by_id["action_button"], EventInfo)
     assert by_id["action_button"].event_types == ["long", "single", "double", "triple"]
     assert by_id["ambient_light"].unit_of_measurement == "lx"
