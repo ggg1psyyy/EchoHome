@@ -275,9 +275,11 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 		Announce: announceSatellite,
 	}
 	cc.OnIncubatorSatellite(func(m client.IncubatorSatellite) {
+		// Always standalone (EchoHome): the satellite is kept on the Echo
+		// and outlives the controller, whatever the controller's switch says.
 		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port,
-			Monitor: reconcileOwnedMonitor(m.Monitor), Standalone: m.Enabled && m.Standalone})
-		if m.Enabled && m.Standalone {
+			Monitor: reconcileOwnedMonitor(m.Monitor), Standalone: m.Enabled})
+		if m.Enabled {
 			incubatorSave()
 		} else if err := incubatorKeeper.Remove(); err != nil {
 			log.Printf("[incubator] removing the saved satellite: %v", err)
@@ -464,6 +466,14 @@ func incubatorStreamEnded() bool {
 	}
 	return true
 }
+
+// incubatorIsVoice: this Echo's voice is its own satellite (asked for by
+// the controller's incubator_satellite, or started from the saved one).
+// The Home Assistant voice path is then off on the Echo: no session opens
+// on its own wake word, the controller's mic_start is refused, and the
+// action button goes to the satellite here, never through the controller.
+// EchoHome's Echo is always so; the controller is only its setup tool.
+func incubatorIsVoice() bool { return incubatorMgr != nil && incubatorMgr.Want().Enabled }
 
 // incubatorInCall: a call holds the microphone.
 func incubatorInCall() bool { return incubatorMgr != nil && incubatorMgr.InCall() }

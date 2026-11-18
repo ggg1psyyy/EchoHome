@@ -236,6 +236,12 @@ func main() {
 				log.Println("[cmd] mic_start from controller rejected — device is muted")
 				return
 			}
+			if incubatorIsVoice() {
+				// The Echo's voice is its own satellite: nothing streams
+				// to the controller.
+				log.Println("[cmd] mic_start from controller rejected — the Echo's own satellite has the microphone")
+				return
+			}
 			// Under private listening the wake stream belongs to the device
 			// (see the mic_stop callback), so a button turn's lock_mic must
 			// REPLACE it rather than being refused as "already active".
@@ -440,8 +446,9 @@ func main() {
 			log.Println("[cmd] action button ignored — no controller session")
 			return
 		}
-		if !controllerUp.Load() {
-			// No controller, and the gate let it through: a standalone
+		if !controllerUp.Load() || incubatorIsVoice() {
+			// The satellite takes the tap here, with or without a
+			// controller (never through it). Or: no controller, and the gate let it through: a standalone
 			// satellite serves, and takes the tap as the controller would
 			// have passed it on (a hold does nothing: its HA event has no one
 			// to go to).
@@ -1644,7 +1651,7 @@ func onWakeCrossing(cc *client.ControlClient, dc *client.DataClient,
 		log.Printf("[shadow] wake %.3f suppressed — wake word off", score)
 		return
 	}
-	if incubatorInCall() || incubatorHearsWake() || !controllerUp.Load() {
+	if incubatorIsVoice() || incubatorInCall() || incubatorHearsWake() || !controllerUp.Load() {
 		// The call has the microphone: a crossing now is the user talking
 		// to the app, not a new wake (no session, no cut, no duck). Or the
 		// app has pushed the satellite its own wake words, which it
