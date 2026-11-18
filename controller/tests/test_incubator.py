@@ -823,14 +823,16 @@ def test_the_monitor_switch_reaches_the_echo_through_reconcile(on_echo):
     asyncio.run(run())
 
 
-def test_an_echo_that_announces_itself_is_not_announced_for(on_echo):
+def test_an_echo_that_announces_itself_is_still_announced_for(on_echo):
     """Firmware announcing incubator_mdns puts its own satellite on the
-    network; a second record from the controller would be a duplicate."""
+    network, but only on its own: where mDNS does not cross VLANs (the Echo
+    on one, the app on another; 00LQ, 2026-11-18) the app hears only the
+    controller's record, so the controller keeps announcing it."""
     echo = on_echo["echo"]
     echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.MDNS_CAPABILITY]
     async def run():
         await inc.device_connected(DEV)
         await _state(echo, listening=True, port=6055, appConnected=False)
-        assert on_echo["registered"] == []
-        assert inc.status_view(DEV)["listening"] is True
+        (info,) = on_echo["registered"]
+        assert info.parsed_addresses() == ["192.0.2.10"] and info.port == 6055
     asyncio.run(run())

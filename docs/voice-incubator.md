@@ -32,9 +32,10 @@ in the audio itself and runs its own timers, alarms and announcements.
   both apps on one host that stays on the host, so it works even where mDNS
   does not cross your VLANs. Running the app on another machine needs mDNS
   between the two, and for **on the Echo** the app must also be able to
-  reach the Echo itself (TCP port 6055) and hear its mDNS: the Echo announces
-  itself, so the app and the Echo need mDNS between them, not only the app
-  and the controller.
+  reach the Echo itself (TCP port 6055). The Echo announces itself over
+  mDNS, and the controller announces it too, on its own network, so where
+  mDNS does not cross your VLANs it is enough for the app and the controller
+  to share one.
 
 ## Switching an Echo over
 
