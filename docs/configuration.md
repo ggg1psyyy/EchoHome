@@ -7,8 +7,10 @@ whether the Echo applies it: [config-keys.md](config-keys.md).
 
 ## The Echo's own settings (Home Assistant)
 
-On the Echo's ESPHome device page. Each is kept **on the Echo** and survives
-reboots with no controller; the dashboard has no control for them.
+On the Echo's ESPHome device page. The device carries the Echo's name on the
+dashboard (renaming it there renames it in Home Assistant, unless you named
+it in Home Assistant yourself). Each setting is kept **on the Echo** and
+survives reboots with no controller; the dashboard has no control for them.
 
 | Entity | What it does |
 |---|---|

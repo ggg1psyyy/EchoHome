@@ -40,8 +40,9 @@ and keeps working with this add-on stopped.
 3. Use the dashboard's **Provision Device** wizard (USB, Chrome or Edge) to
    set up a rooted Echo. It finds this add-on by itself.
 4. Approve the Echo once it appears as pending.
-5. Add the Echo in Home Assistant (**ESPHome**, the Echo's address, port
-   6053) and in the Voice Incubator app as a satellite.
+5. Add the Echo in Home Assistant, where it appears under **Discovered** as
+   an ESPHome device named as on the dashboard, and in the Voice Incubator
+   app as a satellite.
 
 The add-on can be stopped afterwards; start it again for updates, a WiFi
 change or another Echo.

@@ -67,10 +67,13 @@ The Echo then finds the setup tool on its own. Approve it in the dashboard
 
 ## 4. Add it to Home Assistant and the app
 
-1. **Settings → Devices & Services → Add Integration → ESPHome**, the Echo's
-   address and port **6053**. Home Assistant sets the device's encryption
-   key itself. The device is named *EchoHome* and the last four characters
-   of its serial.
+1. **Settings → Devices & Services**: the Echo is under **Discovered** as an
+   ESPHome device, named as on the dashboard. Press **Add**; Home Assistant
+   sets its encryption key itself. The Echo announces itself on its own
+   network, and the setup tool announces it on its network too, so it is
+   found across VLANs as long as the setup tool runs and Home Assistant can
+   reach the Echo on port 6053. Not listed? Add **ESPHome** by hand with the
+   Echo's address and port 6053.
 2. In the **Voice Incubator app**, add the Echo as a satellite; it is
    announced on the network as `echomuse-<serial>`. Choose its wake words on
    the app's *Wake words* page.

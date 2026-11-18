@@ -25,7 +25,8 @@ EchoMuse project.
   words itself (Okay Nabu, Hey Jarvis, Hey Mycroft, or your own) and sends
   nothing until one is heard or the action button is pressed. Then the call
   goes straight to the app.
-- **An ESPHome device in Home Assistant**, added by its address: a media
+- **An ESPHome device in Home Assistant**, discovered by itself and named as
+  on the dashboard: a media
   player (Music Assistant, radio, announcements), the LED ring as a light,
   mute and Software Mute, the action button as an event, ambient light and
   temperatures, a passive Bluetooth proxy, and its settings as switches and a
@@ -60,9 +61,9 @@ described.
    [![Add the EchoHome repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fggg1psyyy%2FEchoHome)
 3. **Run the setup wizard** from its dashboard with the Echo on USB, in
    Chrome or Edge. It installs emOS and the firmware and joins your WiFi.
-4. **Add the Echo to Home Assistant** (Settings → Devices → Add integration →
-   ESPHome, the Echo's address, port 6053) and **to the Voice Incubator app**
-   as a satellite.
+4. **Add the Echo to Home Assistant**: it appears under Settings → Devices &
+   services → **Discovered** as an ESPHome device; press **Add**. Then add it
+   **to the Voice Incubator app** as a satellite.
 
 The [quickstart](docs/quickstart.md) walks through all four.
 

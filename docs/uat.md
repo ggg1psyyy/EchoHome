@@ -7,9 +7,9 @@ number.
 
 ## Before you start
 
-- One Echo provisioned and approved, added to Home Assistant (ESPHome, port
-  6053) and to the Voice Incubator app, with at least one wake word chosen
-  in the app.
+- One Echo provisioned and approved, added to Home Assistant (it is offered
+  under Discovered, named as on the dashboard) and to the Voice Incubator
+  app, with at least one wake word chosen in the app.
 - The firmware under test installed by OTA from the dashboard (Device →
   Update), and the device page showing that version.
 
