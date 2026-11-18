@@ -198,3 +198,11 @@ def test_a_retired_key_is_never_pushed():
     pushed = T.well_typed("dev1", {"muteRing": True, "bleProxyEnabled": False, "ledScene": "pride"})
     assert pushed == {"ledScene": "pride"}
     assert not (T.RETIRED & set(T.KINDS)), "a key cannot be both retired and listed"
+
+
+def test_the_connect_push_drops_a_retired_key_too():
+    """handle_control filters through drop_invalid, not well_typed."""
+    config, bad = T.drop_invalid({"bleProxyEnabled": True, "remoteVolumeArc": False, "ledScene": "pride"})
+    assert config == {"ledScene": "pride"} and bad == []
+    body = _sources.code_only(_sources.def_source("handle_control"))
+    assert "em_config_types.drop_invalid(config)" in body

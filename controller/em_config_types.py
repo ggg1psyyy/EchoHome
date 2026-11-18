@@ -142,7 +142,14 @@ def problems(body: dict, stored: dict) -> list[str]:
 
 
 def drop_invalid(config: dict) -> tuple[dict, list[str]]:
-    """`config` without the listed keys whose values do not fit, and those keys."""
+    """`config` without the listed keys whose values do not fit, and those
+    keys; never a RETIRED key. Both full-config pushes come through here
+    (the connect-time one in em_controller.handle_control, and well_typed):
+    on 2026-11-18 the connect push, which did not drop them, handed
+    pre-EchoHome firmware the fleet's values for the Echo's own settings,
+    which that firmware took as the controller's record."""
+    if RETIRED & config.keys():
+        config = {k: v for k, v in config.items() if k not in RETIRED}
     bad = invalid_keys(config)
     if not bad:
         return config, []
@@ -160,7 +167,6 @@ def well_typed(device_id: str, config: dict) -> dict:
     em_device_config.apply_live_config raise on it; a dropped key reads as absent at
     both ends. Every full-config push goes through here.
     """
-    config = {k: v for k, v in config.items() if k not in RETIRED}
     config, bad = drop_invalid(config)
     if bad:
         log.warning(f"[api] {device_id}: stored config has values of the wrong "
