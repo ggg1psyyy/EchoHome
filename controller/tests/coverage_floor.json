@@ -38,11 +38,6 @@
  "em_mbc.py": 99.0,
  "em_oidc.py": 91.0,
  "em_ota.py": 18.0,
- "em_oww_assets.py": 80.0,
- "em_oww_check.py": 92.0,
- "em_oww_metadata.py": 80.0,
- "em_oww_models.py": 95.0,
- "em_oww_sync.py": 31.0,
  "em_pacing.py": 99.0,
  "em_pairing.py": 96.0,
  "em_payloads.py": 33.0,
@@ -60,7 +55,6 @@
  "em_routes_devices.py": 23.0,
  "em_routes_events.py": 44.0,
  "em_routes_link.py": 51.0,
- "em_routes_oww.py": 50.0,
  "em_routes_provision.py": 52.0,
  "em_routes_shell.py": 26.0,
  "em_routes_static.py": 43.0,
@@ -68,7 +62,6 @@
  "em_routes_updates.py": 20.0,
  "em_rttlog.py": 99.0,
  "em_scenes.py": 95.0,
- "em_shadow.py": 97.0,
  "em_shell.py": 33.0,
  "em_start.py": 0.0,
  "em_state.py": 89.0,
@@ -77,7 +70,7 @@
  "em_tcp.py": 95.0,
  "em_volume.py": 99.0,
  "em_wake_samples.py": 85.0,
- "em_wakelevel.py": 99.0,
  "em_wifi.py": 99.0,
- "em_wsclose.py": 99.0
+ "em_wsclose.py": 99.0,
+ "em_df.py": 95.0
 }

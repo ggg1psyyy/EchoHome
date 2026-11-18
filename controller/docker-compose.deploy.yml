@@ -8,12 +8,9 @@
 #
 # Dashboard: http://<SERVER_IP>:8768
 #
-# network_mode: host is required — the controller advertises itself over
-# mDNS and opens one ESPHome TCP port per device (16001+), which doesn't
-# work behind Docker's port mapping.
-#
-# The image runs wake word inference on CPU (fine for a handful of devices).
-# For NVIDIA GPU inference, build locally instead: see docker-compose.yml.
+# network_mode: host is required — the controller advertises itself and each
+# Echo's Voice Incubator satellite over mDNS, which doesn't work behind
+# Docker's port mapping.
 
 services:
   echomuse-controller:

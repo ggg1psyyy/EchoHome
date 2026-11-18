@@ -16,7 +16,7 @@ import time
 
 import em_db as db
 import em_events
-import em_oww_assets
+import em_df
 import em_payloads
 import em_releases
 import em_shell
@@ -313,7 +313,7 @@ async def _run_update_locked(device_id: str, release: dict,
         free_mb = None
         for line in (free_out or "").splitlines():
             if line.startswith("FREE"):
-                free_mb = em_oww_assets.parse_free_mb(line[5:])
+                free_mb = em_df.parse_free_mb(line[5:])
                 break
         if free_mb is not None and free_mb < need_mb:
             await _update_failed(

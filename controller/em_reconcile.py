@@ -20,7 +20,6 @@ import em_db as db
 import em_dbwriter
 import em_emos_ota
 import em_events
-import em_oww_sync
 import em_payloads
 import em_shell
 import em_state
@@ -167,10 +166,11 @@ async def on_connect(device_id: str, live) -> None:
 
 async def _reconcile_payloads(device_id: str, live) -> bool:
     """The debounced steps. Returns whether every one of them finished."""
-    # Held as callables, not coroutines: building all three up front and
-    # abandoning two of them leaves un-awaited coroutines to warn about later.
+    # Held as callables, not coroutines: building them all up front and
+    # abandoning some leaves un-awaited coroutines to warn about later. (The
+    # wake word assets were a step here until EchoHome, whose wake word is
+    # built into the firmware.)
     steps = [
-        ("oww assets", lambda: em_oww_sync.reconcile(device_id, live)),
         ("start script", lambda: em_payloads.sync_start_script(live, device_id)),
         ("controller address", lambda: em_payloads.sync_endpoints(live, device_id)),
     ]

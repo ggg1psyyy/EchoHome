@@ -124,8 +124,6 @@ emOS only:
   Assistant, radio). Speaking over music lowers it under the answer rather
   than pausing it.
 - **Timers and announcements** from Home Assistant.
-- **Custom wake words** you train yourself with [`oww_forge`](oww_forge/README.md)
-  and install from the dashboard.
 - **Extras in Home Assistant:** a Bluetooth proxy per Dot (handy with
   [Bermuda](https://github.com/agittins/bermuda)), an ambient light sensor on
   Dots that have one, and the action button as an event you can automate.

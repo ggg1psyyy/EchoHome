@@ -36,14 +36,14 @@ def test_it_reads_every_controller_module():
 
 def test_config_go_was_parsed():
     fields = config_map.go_fields()
-    assert "owwThreshold" in fields and "listeningAnim" in fields
+    assert "micGainDb" in fields and "listeningAnim" in fields
 
 
 def test_each_column_finds_something():
     doc = config_map.render()
-    assert "| `owwThreshold` | Wake word | `0.5` | a number | yes |" in doc
-    # Read only by the controller, so the Echo ignores it.
-    assert "| `wakeArbitrationMs` | Wake word |" in doc
+    assert "| `micGainDb` | Microphones | `24` | an integer | yes |" in doc
+    # Pushed only for firmware from before EchoHome, so this Echo ignores it.
+    assert "| `owwOnDevice` | Advanced |" in doc
     assert "| no | em_controller" in doc
     assert "| via `listeningAnim` | em_scenes |" in doc
     assert "(fleet only)" in doc and "| state |" in doc

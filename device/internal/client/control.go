@@ -28,7 +28,6 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/discovery"
 	"github.com/wilbowes/EchoMuse/internal/platform"
 	"github.com/wilbowes/EchoMuse/pkg/board"
-	"github.com/wilbowes/EchoMuse/pkg/buttons"
 	"github.com/wilbowes/EchoMuse/pkg/led"
 )
 
@@ -100,15 +99,9 @@ type LEDCallback func(leds []led.Led, listening *bool)
 // LEDAnimCallback receives the raw led_anim spec JSON (the "anim" object);
 // the server package unmarshals it into its own AnimSpec type.
 type LEDAnimCallback func(spec json.RawMessage)
-type MicStartCallback func(lockMic bool)
-type MicStopCallback func()
 type StateCallback func()
 type ConfigAppliedCallback func(msg config.ConfigMessage)
 type VolumeSetCallback func(level int)
-type BeamLockCallback func(lock bool)
-
-// ListenCallback receives listen_ack / listen_close, by type.
-type ListenCallback func(kind string, session uint32)
 
 // WifiChangeCallback receives a wifi_change request, with the SSID as its exact
 // bytes (see internal/wifi/ssid.go). It must return
@@ -123,28 +116,22 @@ type ControlClient struct {
 
 	ledCallback            LEDCallback
 	ledAnimCallback        LEDAnimCallback
-	micStartCallback       MicStartCallback
-	micStopCallback        MicStopCallback
 	disconnectedCallback   StateCallback
 	connectedCallback      StateCallback
 	pendingCallback        StateCallback
 	refusedCallback        StateCallback
 	configAppliedCallback  ConfigAppliedCallback
-	playCueCallback        func(string)
 	identifyCallback       StateCallback
 	sendspinTokenCallback  func() map[string]any
 	esphomeKeyCallback     func() map[string]any
 	incubatorCallback      func(IncubatorSatellite)
 	incubatorPressCallback func()
 	volumeSetCallback      VolumeSetCallback
-	beamLockCallback       BeamLockCallback
 	speakerFlushCallback   StateCallback
 	musicFlushCallback     StateCallback
-	duckCallback           func(on bool)
 	wifiChangeCallback     WifiChangeCallback
 	wifiCommitCallback     StateCallback
 	wifiScanCallback       StateCallback
-	listenCallback         ListenCallback
 
 	conn    *websocket.Conn
 	connTLS bool // conn is over wss; guarded by connMu
@@ -185,32 +172,24 @@ func (c *ControlClient) ShellActive() bool { return c.shellsLive.Load() > 0 }
 func NewControlClient(
 	deviceID string,
 	ledCallback LEDCallback,
-	micStartCallback MicStartCallback,
-	micStopCallback MicStopCallback,
 ) *ControlClient {
 	return &ControlClient{
-		deviceID:         deviceID,
-		ledCallback:      ledCallback,
-		micStartCallback: micStartCallback,
-		micStopCallback:  micStopCallback,
-		pair:             newPairState(),
+		deviceID:    deviceID,
+		ledCallback: ledCallback,
+		pair:        newPairState(),
 	}
 }
 
 func (c *ControlClient) OnLEDAnim(cb LEDAnimCallback)             { c.ledAnimCallback = cb }
-func (c *ControlClient) OnListen(cb ListenCallback)               { c.listenCallback = cb }
 func (c *ControlClient) OnDisconnected(cb StateCallback)          { c.disconnectedCallback = cb }
 func (c *ControlClient) OnConnected(cb StateCallback)             { c.connectedCallback = cb }
 func (c *ControlClient) OnPending(cb StateCallback)               { c.pendingCallback = cb }
 func (c *ControlClient) OnRefused(cb StateCallback)               { c.refusedCallback = cb }
 func (c *ControlClient) OnConfigApplied(cb ConfigAppliedCallback) { c.configAppliedCallback = cb }
-func (c *ControlClient) OnPlayCue(cb func(string))                { c.playCueCallback = cb }
 func (c *ControlClient) OnIdentify(cb StateCallback)              { c.identifyCallback = cb }
 func (c *ControlClient) OnVolumeSet(cb VolumeSetCallback)         { c.volumeSetCallback = cb }
-func (c *ControlClient) OnBeamLock(cb BeamLockCallback)           { c.beamLockCallback = cb }
 func (c *ControlClient) OnSpeakerFlush(cb StateCallback)          { c.speakerFlushCallback = cb }
 func (c *ControlClient) OnMusicFlush(cb StateCallback)            { c.musicFlushCallback = cb }
-func (c *ControlClient) OnDuck(cb func(on bool))                  { c.duckCallback = cb }
 func (c *ControlClient) OnWifiChange(cb WifiChangeCallback)       { c.wifiChangeCallback = cb }
 func (c *ControlClient) OnWifiCommit(cb StateCallback)            { c.wifiCommitCallback = cb }
 func (c *ControlClient) OnWifiScan(cb StateCallback)              { c.wifiScanCallback = cb }
@@ -877,32 +856,6 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 				c.ledAnimCallback(msg.Anim)
 			}
 
-		case "mic_start":
-			if c.micStartCallback != nil {
-				var msg controlMessage
-				_ = json.Unmarshal(raw, &msg)
-				c.micStartCallback(msg.LockMic)
-			}
-
-		case "mic_stop":
-			if c.micStopCallback != nil {
-				c.micStopCallback()
-			}
-
-		// beam_lock/beam_unlock: controller-driven beamformer control for the
-		// continuous wake stream. Sent at wake detection (lock onto the
-		// speaker's perimeter mic mid-utterance, no stream restart) and at
-		// turn end (back to ch6 omni for wake listening).
-		case "beam_lock":
-			if c.beamLockCallback != nil {
-				c.beamLockCallback(true)
-			}
-
-		case "beam_unlock":
-			if c.beamLockCallback != nil {
-				c.beamLockCallback(false)
-			}
-
 		case "volume_set":
 			// Controller forwarding a volume command from HA (MediaPlayerCommandRequest).
 			// level is an integer in the device's native tinymix range, capped
@@ -957,9 +910,7 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 						}
 					}
 				}
-				snap := cfg.Snapshot() // read back under the config lock
-				log.Printf("[control] Config applied: vad_threshold=%.4f oww_threshold=%.2f",
-					snap.VadThreshold, snap.OwwThreshold)
+				log.Println("[control] Config applied")
 				if c.configAppliedCallback != nil {
 					c.configAppliedCallback(msg)
 				}
@@ -1041,26 +992,6 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 				c.wifiScanCallback()
 			}
 
-		// Private-listening sessions (docs/listening.md). A message about a
-		// session that is not the open one is ignored further down, by the
-		// gate: it is a late message about a session already gone.
-		case "listen_ack", "listen_close":
-			var msg controlMessage
-			if err := json.Unmarshal(raw, &msg); err == nil && msg.Session != 0 && c.listenCallback != nil {
-				c.listenCallback(peek.Type, msg.Session)
-			}
-
-		case "play_cue":
-			// A cue requested by the controller (#120): the wake sound for a
-			// wake outside a private-listening session, sent once it has won
-			// arbitration.
-			var cueMsg struct {
-				Cue string `json:"cue"`
-			}
-			if err := json.Unmarshal(raw, &cueMsg); err == nil && c.playCueCallback != nil {
-				c.playCueCallback(cueMsg.Cue)
-			}
-
 		case "identify":
 			// "Which Echo is this?" from the dashboard: the device takes the
 			// whole ring for a fixed time of its own (identify_ring). No payload
@@ -1123,17 +1054,6 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 			log.Printf("[control] music_flush received — discarding buffered music")
 			if c.musicFlushCallback != nil {
 				c.musicFlushCallback()
-			}
-
-		case "duck":
-			// Duck the music under a voice turn. Sent at turn start and
-			// released at turn end; the DEPTH is config (duckDb), so it can
-			// be tuned by ear in a real room without a firmware push.
-			var msg struct {
-				On bool `json:"on"`
-			}
-			if err := json.Unmarshal(raw, &msg); err == nil && c.duckCallback != nil {
-				c.duckCallback(msg.On)
 			}
 
 		case "ping":
@@ -1338,18 +1258,6 @@ func (c *ControlClient) runShellSession(ctx context.Context, baseURL string, pty
 // off the back of it, and an entity that can never produce a reading is worse
 // than no entity at all.
 func capabilities() []string {
-	// "audio_mix": this firmware holds music on its own plane and mixes it
-	// with voice at the ALSA write, so the controller can duck instead of
-	// pausing. Without it the controller must keep the pause/resume path —
-	// a device that cannot mix would simply never play the 0x04 stream.
-	//
-	// "oww_trigger": this firmware can act on its own wake detection, not
-	// just report it. It is separate from "oww_shadow" on purpose — shadow
-	// shipped first and there are devices in the field announcing it that
-	// cannot trigger, so offering them owwOnDevice="on" would produce a
-	// device that scores, stays silent, and looks broken. Announcing a
-	// capability the firmware has, rather than inferring one from a version
-	// string, is the rule the whole registration follows.
 	// "aec_hw_ref": this firmware can take the AEC far-end reference from a
 	// hardware playback loopback in the mic capture itself, and detects at
 	// runtime whether the board provides one — falling back to the software
@@ -1365,31 +1273,19 @@ func capabilities() []string {
 	// reason: proving ch8 is a loopback needs the speaker to have played,
 	// which has not happened at registration.
 	//
-	// "oww_local_only": this firmware can listen privately — score locally
-	// and send nothing until its own wake word fires (docs/listening.md).
-	// Whether it IS doing so is listen_state, for the aec_hw_ref reason: it
-	// depends on the scorer loading and on the controller's features, neither
-	// known at registration.
+	// "oww_local_only": this firmware listens privately: nothing of the room
+	// goes to the controller, ever (docs/listening.md). Since EchoHome its
+	// wake word is the Voice Incubator satellite's, on the Echo. What it is
+	// doing now is listen_state (reportListenState in cmd).
 	//
-	// "output_chain": this firmware can run the speaker output chain (EQ,
-	// bass guard, limiter) itself, at the ALSA write. It runs it only when
-	// the controller's ack carries the same feature, which is the controller
-	// saying it has stopped: either half alone keeps the old path, and both
-	// together must never process the same audio twice.
-	//
-	// "wake_cue": this firmware can play its own wake confirmation (#120).
-	// Without it the dashboard shows the toggle disabled, since a switch that
-	// saves and makes no sound fails the person it exists for.
+	// "output_chain": this firmware runs the speaker output chain (EQ, bass
+	// guard, limiter) itself, at the ALSA write. Since EchoHome always: every
+	// sound it plays is its own.
 	//
 	// "volume_cue": this firmware can play a physical-button volume preview
 	// at the new level, and suppress it while voice or music is audible.
 	// "wake_mic": this firmware reads `wakeMic` and can listen for the wake
 	// word on a perimeter mic when the centre one is dead (#705).
-	// "wake_word_off": this firmware honours wakeWordEnabled=false (#286),
-	// so a crossing opens no session. Without it the controller declines
-	// HA's "No wake word" for a privately listening Echo, which would
-	// otherwise keep sending audio on every wake until the close arrived.
-	//
 	// "remote_volume_arc": this firmware can show the existing cyan level arc
 	// for live remote volume changes when remoteVolumeArc is enabled. The
 	// setting is off by default, and boot-time volume restore stays silent.
@@ -1442,10 +1338,9 @@ func capabilities() []string {
 	// (MONITOR), off unless incubator_satellite's monitor allows it, and
 	// says so in incubator_state (monitored) while it streams.
 	caps := []string{"speaker", "leds", "led_anim", "buttons",
-		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
-		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
+		"aec_hw_ref", "oww_local_only", "output_chain", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
-		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "esphome_noise"}
+		"sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "esphome_noise"}
 	if MicUnavailable() == "" {
 		caps = append(caps, "mic", "incubator_calls", "incubator_wake", "incubator_ring", "incubator_monitor")
 	}
@@ -1465,30 +1360,6 @@ func capabilities() []string {
 		caps = append(caps, "thermal")
 	}
 	return caps
-}
-
-func (c *ControlClient) SendButton(event buttons.ButtonClickEvent) {
-	log.Printf("[control] SendButton: clickType=%d down=%v heldMs=%d muted=%v", event.ClickType, event.Down, event.HeldMs, event.Muted)
-	msg := map[string]interface{}{
-		"type":      "button",
-		"clickType": int(event.ClickType),
-		"down":      event.Down,
-		// Absent on a press and on firmware predating this, which the
-		// controller must read as "a tap" — an unknown hold time becoming a
-		// long press would silently stop the action button starting voice
-		// turns on older devices.
-		"heldMs": event.HeldMs,
-		// Always sent, never omitempty: absent must mean "this firmware does
-		// not report it" so the controller can fall back to mute_state, and
-		// omitempty would make an unmuted press indistinguishable from that.
-		"muted": event.Muted,
-		"button": map[string]string{
-			"type": string(event.Button.Type),
-		},
-	}
-	if err := c.writeJSON(msg); err != nil {
-		log.Printf("[control] SendButton failed: %v", err)
-	}
 }
 
 // SendMuteState notifies the controller of the current mute state.
@@ -1549,110 +1420,6 @@ func (c *ControlClient) SendWifiResult(ok bool, ssid, errMsg string) {
 	})
 }
 
-// SendPlaybackStats reports one completed speaker stream: periods played,
-// mid-stream underruns, and the delivery-margin fields (buffer low-water
-// mark, prime wait, arrival span and worst arrival gap) that say how close
-// the stream came to starving even when it did not.
-//
-// Sent once per TTS response/announcement — not per frame; the controller
-// attaches it to the voice turn it just persisted. stats is passed as an
-// opaque interface so the speaker package owns the field set and adding a
-// metric never has to touch this signature. Safe for concurrent use —
-// silently drops if not connected (the stat is diagnostic, not state).
-//
-// periods/underruns are ALSO sent flat at the top level, duplicating two
-// fields of stats. That is deliberate: device firmware and controller are
-// released independently, so this firmware must keep working against a
-// controller that predates the nested payload. Don't "tidy" the duplication
-// away until every controller in the fleet reads stats.
-//
-// barge, when non-nil, is the on-device scorer's view of the stream:
-// {peak, bar, frames} at the barge-in bar (shadow.TakeBargeWindow).
-func (c *ControlClient) SendPlaybackStats(periods, underruns uint64, stats interface{},
-	barge map[string]interface{}) {
-	msg := map[string]interface{}{
-		"type":      "playback_stats",
-		"periods":   periods,
-		"underruns": underruns,
-		"stats":     stats,
-	}
-	if barge != nil {
-		msg["barge"] = barge
-	}
-	_ = c.writeJSON(msg)
-}
-
-// SendOwwShadowCross reports that on-device shadow scoring reached the wake
-// threshold. It is a report, not a request: the controller correlates it
-// against its own detection for the same audio and stores the comparison, and
-// nothing on either side triggers a turn from it.
-//
-// Sent immediately rather than batched onto the 30s stats tick because the
-// whole value is in the TIMING — the controller matches it against its own wake
-// within a window, and a report that arrives up to 30s late cannot be matched
-// to anything. Crossings are rare (a refractory period collapses each utterance
-// to one), so this stays far inside the project's per-event cost class.
-// ageMs is how long ago the crossing happened, measured on the device's
-// monotonic clock: an Echo's wall clock is unreliable before NTP, so an
-// absolute device timestamp would be worse than useless.
-func (c *ControlClient) SendOwwShadowCross(score float32, ageMs int64) {
-	_ = c.writeJSON(map[string]interface{}{
-		"type":  "oww_shadow_cross",
-		"score": score,
-		"ageMs": ageMs,
-	})
-}
-
-// SendOwwWake asks the controller to start a voice turn, because on-device
-// scoring crossed the wake threshold and owwOnDevice is "on".
-//
-// The difference from SendOwwShadowCross is only what the controller does with
-// it, but the difference matters enough to be its own message type: a crossing
-// is a measurement and may be dropped freely, while this one starts a turn and
-// a receiver must be able to tell the two apart without consulting the config
-// it thinks the device has. The threshold rides along because the controller
-// records the bar a wake actually cleared, and during barge-in that is the
-// lower one.
-//
-// ageMs is how long ago the crossing happened on the device's monotonic clock,
-// for the same reason as shadow crossings: an Echo's wall clock is unreliable
-// before NTP. The controller needs it to compare claims across devices without
-// network delay deciding which room answers.
-//
-// Under private listening the wake also opened `session`, whose audio follows
-// on the data plane as frameTypeListen, and carries the room's noise floor
-// (the controller can no longer measure it from a stream it does not get) and
-// whether the speaker was playing, which is what makes it a barge-in. Session
-// 0 means no session: the device is streaming, and those fields are omitted.
-//
-// capturedMono is the same instant as ageMs on MonoMs's clock. ageMs is
-// measured when the message is built, so time the message then spends in
-// flight is invisible to it; capturedMono is not, once the controller has
-// mapped the clock from ping replies.
-//
-// level is how loud the wake word was here (wakelevel.go), nil if its frames
-// had already left the ring; the controller logs it with the capture time.
-func (c *ControlClient) SendOwwWake(score, threshold float32, capturedAt time.Time,
-	session uint32, floor float64, barge bool, level *WakeLevel) {
-	msg := map[string]interface{}{
-		"type":         "oww_wake",
-		"score":        score,
-		"threshold":    threshold,
-		"ageMs":        time.Since(capturedAt).Milliseconds(),
-		"capturedMono": MonoMs(capturedAt),
-	}
-	if session != 0 {
-		msg["session"] = session
-		msg["floor"] = floor
-		msg["barge"] = barge
-	}
-	if level != nil {
-		msg["level"] = level.Level
-		msg["peak"] = level.Peak
-	}
-	_ = c.writeJSON(msg)
-}
-
 // SendListenState reports what the device is actually doing with its wake
 // stream — the "is it" to oww_local_only's "could it". Sent on every change
 // and after every ack, since the controller keeps no memory of it across a
@@ -1663,15 +1430,6 @@ func (c *ControlClient) SendListenState(state, reason string) error {
 		msg["reason"] = reason
 	}
 	return c.writeJSON(msg)
-}
-
-// SendListenEnd reports a session the device closed without being told to.
-func (c *ControlClient) SendListenEnd(session uint32, reason string) {
-	_ = c.writeJSON(map[string]interface{}{
-		"type":    "listen_end",
-		"session": session,
-		"reason":  reason,
-	})
 }
 
 // setFeatures records the controller's capability list from the ack,

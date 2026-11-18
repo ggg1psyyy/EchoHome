@@ -433,7 +433,7 @@ def redact_stats(stats: Any) -> dict | None:
 # about its listening, whether the link was TLS or refused, and why an update
 # failed were all on screen and missing from the file.
 _VIEW_FIELDS = (
-    "wake_word", "aecRef", "androidUserspace", "linkTls", "linkTokenIssued",
+    "aecRef", "androidUserspace", "linkTls", "linkTokenIssued",
     "firmware_update", "update_in_progress", "update_queued",
     "emosLatest", "emosUpdateAvailable", "emos_update_in_progress",
     "emos_update_queued", "emos_update_stage",

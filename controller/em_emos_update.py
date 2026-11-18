@@ -39,7 +39,7 @@ import struct
 import zlib
 
 import em_emos_build as build
-from em_oww_assets import parse_free_mb
+from em_df import parse_free_mb
 
 BOOT_DEV = "/dev/block/mmcblk0p10"
 OS_RELEASE = "/etc/os-release"

@@ -14,7 +14,7 @@ import (
 	"github.com/wilbowes/EchoMuse/pkg/board"
 )
 
-// controllerSink is the controller's /data end: it counts mic frames.
+// controllerSink is the controller's /data end: it counts what arrives.
 type controllerSink struct{ frames atomic.Int64 }
 
 func callTestClient(t *testing.T, connected bool) (*DataClient, *controllerSink) {
@@ -22,7 +22,6 @@ func callTestClient(t *testing.T, connected bool) (*DataClient, *controllerSink)
 	mic := newFanoutMic()
 	t.Cleanup(mic.close)
 	d := NewDataClient("call-test", mic, nil, aec.New(board.BiscuitMics().NumMics()))
-	d.newSpeechStream = func() speechScorer { return nil }
 	sink := &controllerSink{}
 	if !connected {
 		return d, sink
@@ -38,8 +37,8 @@ func callTestClient(t *testing.T, connected bool) (*DataClient, *controllerSink)
 			if err != nil {
 				return
 			}
-			if len(msg) > 3 && msg[0] == frameTypeMic {
-				sink.frames.Add(1)
+			if len(msg) > 0 {
+				sink.frames.Add(1) // anything at all: nothing should come
 			}
 		}
 	}))
@@ -52,7 +51,7 @@ func callTestClient(t *testing.T, connected bool) (*DataClient, *controllerSink)
 	d.connMu.Lock()
 	d.conn = conn
 	d.connMu.Unlock()
-	t.Cleanup(d.StopMic)
+	t.Cleanup(d.CloseCallMic)
 	return d, sink
 }
 
@@ -78,7 +77,6 @@ func eventually(t *testing.T, what string, ok func() bool) {
 func active(d *DataClient) bool { d.micMu.Lock(); defer d.micMu.Unlock(); return d.micActive }
 
 func TestACallWithNoWakeStreamRunsItsOwnAndSendsNothing(t *testing.T) {
-	// The wake word off: the controller keeps the wake stream down.
 	d, sink := callTestClient(t, true)
 	var got callFrames
 	d.OpenCallMic(got.deliver)
@@ -106,60 +104,28 @@ func TestACallWithNoDataLinkStillHasAMicrophone(t *testing.T) {
 	d.CloseCallMic()
 }
 
-func TestACallRidesTheControllersWakeStreamAndLeavesItRunning(t *testing.T) {
+func TestTheMicrophoneSendsNothingWithALiveLink(t *testing.T) {
+	// EchoHome: the controller hears none of the room, however connected.
 	d, sink := callTestClient(t, true)
-	d.StartMic(false)
 	var got callFrames
 	d.OpenCallMic(got.deliver)
-	eventually(t, "frames to both", func() bool { return got.count() >= 3 && sink.frames.Load() >= 3 })
-	d.CloseCallMic()
-	before := sink.frames.Load()
-	eventually(t, "the wake stream still running", func() bool { return sink.frames.Load() > before+2 })
+	eventually(t, "the call's frames", func() bool { return got.count() >= 5 })
+	if n := sink.frames.Load(); n != 0 {
+		t.Fatalf("%d frames reached the controller", n)
+	}
 }
 
-func TestAMicStopDuringACallStopsOnlyWhatTheControllerGets(t *testing.T) {
-	d, sink := callTestClient(t, true)
-	d.StartMic(false)
-	var got callFrames
-	d.OpenCallMic(got.deliver)
-	eventually(t, "frames", func() bool { return got.count() >= 2 && sink.frames.Load() >= 2 })
-	d.StopMic()
-	time.Sleep(50 * time.Millisecond)
-	before, call := sink.frames.Load(), got.count()
-	time.Sleep(150 * time.Millisecond)
-	if sink.frames.Load() != before {
-		t.Fatal("the controller still receives the room after its mic_stop")
-	}
-	if got.count() <= call {
-		t.Fatal("the controller's mic_stop ended a call")
+func TestOpeningTwiceRunsOneStream(t *testing.T) {
+	d, _ := callTestClient(t, false)
+	var a, b callFrames
+	d.OpenCallMic(a.deliver)
+	d.OpenCallMic(b.deliver) // the satellite re-opens: the tap moves, the stream stays
+	eventually(t, "the second tap's frames", func() bool { return b.count() >= 3 })
+	n := a.count()
+	time.Sleep(100 * time.Millisecond)
+	if a.count() != n {
+		t.Fatal("the first tap still gets frames")
 	}
 	d.CloseCallMic()
 	eventually(t, "the stream to stop", func() bool { return !active(d) })
-	if want, _ := micIntent(d); want {
-		t.Fatal("the mic_stop's intent was lost")
-	}
-}
-
-func TestAMicStartDuringACallFeedsBoth(t *testing.T) {
-	d, sink := callTestClient(t, true)
-	var got callFrames
-	d.OpenCallMic(got.deliver)
-	eventually(t, "the call's frames", func() bool { return got.count() >= 2 })
-	d.StartMic(false)
-	call := got.count()
-	eventually(t, "frames to both", func() bool { return sink.frames.Load() >= 3 && got.count() > call+2 })
-	d.CloseCallMic()
-	before := sink.frames.Load()
-	eventually(t, "the controller's stream kept", func() bool { return sink.frames.Load() > before+2 })
-}
-
-func TestAMicStartWithNoConnectionLeavesTheCallItsMicrophone(t *testing.T) {
-	d, _ := callTestClient(t, false)
-	var got callFrames
-	d.OpenCallMic(got.deliver)
-	eventually(t, "the call's frames", func() bool { return got.count() >= 2 })
-	d.StartMic(false) // remembered for the connection, nothing to stream to yet
-	n := got.count()
-	eventually(t, "the call's frames to go on", func() bool { return got.count() > n+2 })
-	d.CloseCallMic()
 }

@@ -1,38 +1,3 @@
-# Silero VAD for the device's speech gate, rewritten so ONNX Runtime can load
-# it on armv7 (tools/silero_typed.py — as openwakeword ships it, ORT 1.19
-# takes SIGBUS in CreateSession on the Echo). A separate stage so `onnx` and
-# its dependencies never reach the controller image; only the model is copied.
-# Input and output are both pinned by sha256: the output is what devices run,
-# and it is the file measured on VVV. MIT licensed.
-#
-# numpy is pinned here too, to requirements.txt's 2.3.5 (#496): onnx pulls the
-# newest numpy, 2.4+ needs x86-64-v2, and this stage RUNS it — so a local
-# add-on build on a kvm64 host died here ("NumPy was built with baseline
-# optimizations: (X86_V2)"), while CI's v2-capable runners never saw it. The
-# output hash is unchanged with 2.3.5 (checked on linux/amd64).
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159 AS silero
-COPY tools/silero_typed.py /tmp/
-RUN pip install --no-cache-dir --root-user-action=ignore onnx==1.20.1 numpy==2.3.5 && \
-    python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/silero_vad.onnx', '/tmp/in.onnx')" && \
-    echo "a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28  /tmp/in.onnx" | sha256sum -c - && \
-    python /tmp/silero_typed.py /tmp/in.onnx /silero_vad.onnx && \
-    echo "da5e8a9c9c07981b907e8affe5497fe604958c51b67bff07231778d701d164d0  /silero_vad.onnx" | sha256sum -c -
-
-# openWakeWord's embedding model rewritten to take only the 8 mel frames that
-# are new per call (tools/oww_stream.py, #893): identical embeddings for about
-# a third of the CPU on an Echo. Same shape as the stage above: `onnx` stays
-# out of the controller image, and input and output are pinned by sha256. The
-# input is the file the openwakeword package ships, and the final stage checks
-# the package's copy against the same hash, so the two models a device is
-# given cannot come from different embedding models without the build failing.
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159 AS oww_stream
-COPY tools/oww_stream.py /tmp/
-RUN pip install --no-cache-dir --root-user-action=ignore onnx==1.20.1 numpy==2.3.5 && \
-    python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/embedding_model.onnx', '/tmp/in.onnx')" && \
-    echo "70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f  /tmp/in.onnx" | sha256sum -c - && \
-    python /tmp/oww_stream.py /tmp/in.onnx /embedding_stream.onnx && \
-    echo "7a867551d8e96935336ad38a83b24f443c0ac133e3c7a770bc584b394a5725b1  /embedding_stream.onnx" | sha256sum -c -
-
 # Base pinned by the multi-arch index digest, so every build of a given commit
 # starts from the same bytes; Dependabot moves the digest weekly with the tag.
 FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
@@ -74,26 +39,6 @@ RUN echo "apt snapshot: ${APT_SNAPSHOT}" && apt-get update && apt-get upgrade -y
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-# GPU=1 swaps the CPU onnxruntime from requirements.txt for the CUDA build
-# (both provide the same `onnxruntime` import, so they can't coexist).
-# Local docker-compose.yml sets it; the published GHCR image is CPU-only.
-#
-# The two packages DO NOT share a version line, so this pin cannot be kept
-# in lockstep with requirements.txt by matching the string. onnxruntime
-# publishes 1.20.1 and no 1.20.2; onnxruntime-gpu publishes 1.20.0 and
-# 1.20.2 and no longer publishes 1.20.1 — it was there when this was
-# written and has since gone. The failure only ever surfaces on a fresh
-# local GPU build (the published image is CPU-only and never runs this
-# line), which is why it sat here unnoticed until 2026-08-10.
-ARG GPU=0
-RUN if [ "$GPU" = "1" ]; then \
-      pip uninstall -y onnxruntime && \
-      pip install --no-cache-dir onnxruntime-gpu==1.20.2; \
-    fi
-# Install openwakeword without deps — tflite-runtime has no Python 3.12
-# x86_64 build; onnxruntime handles inference instead
-RUN pip install --no-cache-dir --no-deps openwakeword==0.6.0 && \
-    python3 -c "import openwakeword; openwakeword.utils.download_models()"
 # Vendor JS dependencies — served locally, no CDN needed at runtime
 RUN mkdir -p /app/static/vendor/fonts && \
     curl -sfL -o /app/static/vendor/react.min.js \
@@ -131,7 +76,6 @@ COPY em_limiter.py .
 COPY em_mbc.py .
 COPY em_scenes.py .
 COPY em_support.py .
-COPY em_shadow.py .
 COPY em_wake_samples.py .
 COPY em_pki.py .
 COPY em_hostip.py .
@@ -142,7 +86,6 @@ COPY em_routes_config.py .
 COPY em_routes_devices.py .
 COPY em_routes_events.py .
 COPY em_routes_link.py .
-COPY em_routes_oww.py .
 COPY em_routes_provision.py .
 COPY em_routes_shell.py .
 COPY em_routes_static.py .
@@ -164,11 +107,7 @@ COPY em_config_types.py .
 COPY em_dbwriter.py .
 COPY em_tasks.py .
 COPY em_broadcast.py .
-COPY em_oww_assets.py  ./
-COPY em_oww_check.py   ./
-COPY em_oww_models.py .
 COPY em_pairing.py .
-COPY em_oww_metadata.py .
 COPY em_state.py .
 COPY em_http.py .
 COPY em_events.py .
@@ -177,11 +116,9 @@ COPY em_releases.py .
 COPY em_release_sig.py .
 COPY em_payloads.py .
 COPY em_ota.py .
-COPY em_oww_sync.py .
 COPY em_emos_ota.py .
 COPY em_reconcile.py .
 COPY em_listen.py .
-COPY em_wakelevel.py .
 COPY em_endpoints.py .
 COPY em_health.py .
 COPY em_config_sections.py .
@@ -199,34 +136,11 @@ COPY em_loglevel.py .
 COPY em_incubator.py .
 COPY em_incubator_proto.py .
 COPY em_resample.py .
+COPY em_df.py .
 COPY version.py .
 # Device payloads (start_server.sh etc.) — canonical copies served to devices
 COPY device_payloads/ ./device_payloads/
 
-# ONNX Runtime for the DEVICE (armeabi-v7a) — on-device wake word assets.
-#
-# NOT a controller dependency: it is a 12.3MB ARM shared library the
-# controller only ever *distributes*, because it is deliberately absent from
-# the firmware (12.3MB would double the OTA payload and both A/B slots).
-# Vendored so devices never need internet, and pinned by AAR sha256 so a
-# rebuild cannot silently change what gets installed on a device — a
-# byte-for-byte match against what is already fielded is how the provenance
-# of the hand-installed copy was confirmed. MIT licensed.
-#
-# Extracted with Python's zipfile because unzip is not in the slim base.
-RUN mkdir -p /app/models/oww_runtime && \
-    curl -sfL -o /tmp/ort.aar \
-      https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.19.2/onnxruntime-android-1.19.2.aar && \
-    echo "84737dd1fdb715f0ee695c0a9864f6949b66ecb4c46ca733bc9211bf0c2a7b5f  /tmp/ort.aar" | sha256sum -c - && \
-    python -c "import zipfile, shutil; z = zipfile.ZipFile('/tmp/ort.aar'); shutil.copyfileobj(z.open('jni/armeabi-v7a/libonnxruntime.so'), open('/app/models/oww_runtime/libonnxruntime.so', 'wb'))" && \
-    rm /tmp/ort.aar
-COPY --from=silero /silero_vad.onnx /app/models/oww_runtime/silero_vad.onnx
-# The streaming embedding model, and a check that the stock model beside it in
-# the openwakeword package is the one it was made from. A device verifies the
-# pair itself and falls back to the stock model if they disagree, so a
-# mismatch would cost every Echo the saving with nothing failing: fail here.
-COPY --from=oww_stream /embedding_stream.onnx /app/models/oww_runtime/embedding_stream.onnx
-RUN echo "70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f  $(python3 -c 'import openwakeword, os; print(os.path.join(os.path.dirname(openwakeword.__file__), "resources", "models", "embedding_model.onnx"))')" | sha256sum -c -
 # Dashboard SPA — placeholder is index.html, full dashboard is dashboard.html
 COPY static/ ./static/
 # Compile JSX dashboard with esbuild

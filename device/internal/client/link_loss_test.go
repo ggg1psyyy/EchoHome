@@ -42,20 +42,21 @@ func (r *recordingSpeaker) AbandonStreams(at time.Time) {
 	r.mu.Unlock()
 }
 
-// 2026-10-23: a Dot's data link dropped mid-song and the music stream's EOS
-// went with it. The stream stayed active for four days. When the link that
-// carried a stream closes, connect must tell the speaker to abandon it, at a
-// time no earlier than the last period it delivered.
-func TestALinkLostMidSongAbandonsTheStream(t *testing.T) {
+// Since EchoHome nothing the speaker plays rides the data link: the
+// satellite's replies, Home Assistant's media and Sendspin are the Echo's
+// own. A lost link must therefore leave every stream alone; it once
+// abandoned them (2026-10-23, when the controller sent the music), which
+// would now cut a reply whenever the controller restarted. Anything the old
+// controller sends is ignored.
+func TestALostLinkLeavesTheSpeakerAlone(t *testing.T) {
 	up := websocket.Upgrader{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := up.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-		c.ReadMessage() // identify
-		c.WriteMessage(websocket.BinaryMessage, []byte{frameTypeMusic, 1, 2, 3, 4})
-		// No music EOS: the link goes down mid-song.
+		c.ReadMessage()                                                   // identify
+		c.WriteMessage(websocket.BinaryMessage, []byte{0x04, 1, 2, 3, 4}) // an old controller's music
 		c.UnderlyingConn().Close()
 	}))
 	defer srv.Close()
@@ -66,7 +67,6 @@ func TestALinkLostMidSongAbandonsTheStream(t *testing.T) {
 	spk := &recordingSpeaker{}
 	d := NewDataClient("link-loss-test", mic, spk, aec.New(board.BiscuitMics().NumMics()))
 
-	start := time.Now()
 	done := make(chan error, 1)
 	go func() { done <- d.connect(context.Background(), addr) }()
 	select {
@@ -77,13 +77,10 @@ func TestALinkLostMidSongAbandonsTheStream(t *testing.T) {
 
 	spk.mu.Lock()
 	defer spk.mu.Unlock()
-	if spk.music != 1 {
-		t.Fatalf("precondition: one music period delivered, got %d", spk.music)
+	if spk.music != 0 {
+		t.Fatalf("an old controller's frame reached the speaker (%d)", spk.music)
 	}
-	if len(spk.abandoned) != 1 {
-		t.Fatalf("AbandonStreams called %d times when the link closed, want 1", len(spk.abandoned))
-	}
-	if spk.abandoned[0].Before(start) {
-		t.Fatal("linkLost must not predate the period the link delivered")
+	if len(spk.abandoned) != 0 {
+		t.Fatal("a lost link abandoned the speaker's streams")
 	}
 }

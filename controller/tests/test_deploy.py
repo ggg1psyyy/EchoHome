@@ -130,35 +130,6 @@ def test_dashboard_paths_are_ingress_safe():
         "config.yaml must set the env var that gates ingress-only mode"
 
 
-def test_addon_default_threshold_matches_the_controller():
-    """
-    A fresh add-on install is the ONLY case where a shipped default is
-    visible — an existing deployment stores every key already, so
-    DEFAULT_DEVICE_CONFIG never gets consulted. That makes config.yaml's
-    copy of the wake threshold the one users actually meet, and a stale
-    one silently ships the value the default was changed away from.
-
-    Shipped as 0.3 while em_db said 0.5 (#144), which is exactly the drift
-    this pins. Parsed rather than imported: CI installs pytest/numpy/scipy
-    only, so there is no yaml module here.
-    """
-    import sys
-    sys.path.insert(0, str(CONTROLLER))
-    from em_db import DEFAULT_DEVICE_CONFIG
-
-    config = (CONTROLLER / "config.yaml").read_text()
-    match = re.search(r"^\s*oww_threshold:\s*([0-9.]+)", config, re.M)
-    assert match, "config.yaml has no oww_threshold option"
-    assert float(match.group(1)) == DEFAULT_DEVICE_CONFIG["owwThreshold"], (
-        f"config.yaml ships oww_threshold {match.group(1)} but "
-        f"em_db.DEFAULT_DEVICE_CONFIG says "
-        f"{DEFAULT_DEVICE_CONFIG['owwThreshold']} — a fresh add-on install "
-        f"would get the stale value"
-    )
-
-
-
-
 def test_addon_image_is_published_not_built_on_the_user_machine():
     """
     Without an `image:` key Supervisor builds the Dockerfile on whatever
@@ -320,14 +291,6 @@ def test_release_change_is_pushed_to_open_dashboards():
         "the Updates tab must refresh while open, not fetch once on entry"
 
 
-
-
-
-
-
-
-
-
 def test_controller_update_is_advisory_only():
     """
     The dashboard may TELL you a newer controller exists; it must never offer
@@ -414,58 +377,6 @@ def test_every_db_call_exists():
     assert not missing, f"db.{{{', '.join(missing)}}} is called but em_db.py does not define it"
 
 
-def test_wake_word_assets_reach_every_new_echo():
-    """
-    Every provisioned Echo carries the wake word runtime and models (Wil,
-    2026-07-31): without them it advertises on-device wake word and cannot
-    use it, the "I enabled it and nothing happened" the feature exists to
-    remove.
-
-    The emOS flow delivers them over WiFi, not through TWRP (Wil, 2026-11-15):
-    em_reconcile.on_connect runs em_oww_sync.reconcile the first time the Echo
-    connects, and until the files land it reports `degraded` with the reason.
-    So the emOS wizard has no asset step, and the reconcile must keep one.
-
-    The FireOS flow, reachable only by ?flow=fireos until it is removed, still
-    pushes them itself and must auto-run that step: a button someone can leave
-    unpressed is not mandatory.
-    """
-    from pathlib import Path
-    root = Path(__file__).resolve().parent.parent
-    jsx = (root / "static" / "dashboard.jsx").read_text()
-
-    emos = jsx[jsx.index("const _EMOS_STEPS = ["):]
-    emos = emos[:emos.index("\n];")]
-    assert "'install_oww'" not in emos, (
-        "the emOS wizard pushes no wake word assets; the on-connect reconcile does")
-
-    rec = (root / "em_reconcile.py").read_text()
-    assert "em_oww_sync.reconcile(device_id, live)" in rec, (
-        "with no wizard step, the on-connect reconcile is what delivers the "
-        "wake word assets to a new Echo")
-
-    if "const _WIZARD_STEPS = [" in jsx:
-        auto_line = jsx[jsx.index("const autoSteps ="):]
-        auto_line = auto_line[:auto_line.index("\n")]
-        sets = re.findall(r"new Set\(\[([^\]]*)\]\)", auto_line)
-        fireos_auto = {int(n) for n in re.findall(r"\b\d+\b", sets[-1])}
-        steps = jsx[jsx.index("const _WIZARD_STEPS = ["):]
-        steps = steps[:steps.index("\n];")]
-        assert "'install_oww'" in steps, \
-            "the wake word asset step is missing from the FireOS wizard"
-        idx = steps.count("{ id:", 0, steps.index("'install_oww'")) - 1
-        assert idx in fireos_auto, (
-            f"FireOS step {idx} (install_oww) must auto-run — a step that "
-            f"needs a click is one a user can skip")
-
-    runner = jsx[jsx.index("async function runInstallOwwAssets"):]
-    runner = runner[:runner.index("\n  async function ", 1)]
-    assert "a.md5" in runner and "throw new Error" in runner, \
-        "the push must verify md5 and fail loudly — a truncated file fails later at dlopen"
-
-
-
-
 def test_no_unjustified_hardcoded_media_state():
     """
     Forbid the SHAPE, not just the instances.
@@ -520,8 +431,6 @@ def test_no_unjustified_hardcoded_media_state():
         f"hardcoded media state(s) {offenders} — use _media_state_msg() so the "
         f"entity reflects what em_player is actually doing"
     )
-
-
 
 
 def test_supervisor_log_path_matches_between_script_and_controller():
@@ -671,8 +580,6 @@ def test_support_bundle_redacts_account_names():
         "accounts must carry the role: a name is replaced by <admin>, and a "
         "positional alias would be one-to-one with a real person"
     )
-
-
 
 
 def _fn_body(src: str, name: str) -> str:
@@ -1058,7 +965,6 @@ def test_role_changes_refuse_to_strand_the_install():
     assert "last_admin" in body, "must refuse to remove the final admin"
 
 
-
 def test_addon_options_are_wired_end_to_end():
     """
     An add-on option needs four separate things to work: a default in
@@ -1229,115 +1135,6 @@ def test_debug_env_var_is_not_truthy_for_zero():
         "REQUIRE_DEVICE_TLS already uses")
 
 
-
-
-
-
-
-
-def test_asset_sync_does_not_shadow_its_accumulator():
-    """
-    em_oww_sync._sync_locked keeps a `pushed` list of installed asset names. Assigning
-    the per-file transfer result to that same name shadowed the list on the
-    FIRST file, so the append at the end of the loop raised
-    AttributeError: 'TransferResult' object has no attribute 'append'
-    and on-device wake word assets could not be installed at all.
-
-    It reached a release because TransferResult is deliberately truthy-
-    compatible so existing `if not …` call sites keep working — which is
-    exactly why the one call site that treated the result as a list was the
-    only thing that broke, and nothing else complained.
-
-    Found on hardware 2026-08-16: a device reporting "classifier model not
-    installed" while the dashboard offered to send it and returned 500.
-    """
-    body = _sources.def_source("em_oww_sync._sync_locked")
-
-    assert "pushed = []" in body, "the accumulator is gone"
-    assert "pushed.append(" in body, "nothing accumulates installed names"
-    assert not re.search(r"pushed\s*=\s*await\s+(em_shell\.)?stream_file", body), (
-        "the transfer result must not be assigned to `pushed` — that shadows "
-        "the accumulator and the append raises AttributeError")
-
-
-def test_a_new_wake_word_is_installed_before_the_device_is_told_about_it():
-    """
-    A device cannot score a wake word whose classifier it does not have, and
-    under owwOnDevice=on the controller has stood down — so telling it to use
-    a model it lacks produced a device with NO wake word: nothing fired,
-    nothing warned, the dashboard reported it healthy (#191).
-
-    The first fix stood the device down to controller-side scoring while the
-    model installed. That works, and it silently overrides a setting the user
-    chose — a posture change they did not ask for and cannot see. Holding the
-    key back instead means the device keeps listening for its CURRENT wake
-    word, on-device, throughout, and simply stays there if the install fails.
-
-    The hold-back is invisible at the call site: the config push looks
-    ordinary, and the whole guard is that one key was swapped out first.
-    """
-    body = _sources.def_source("apply_live_config")
-
-    hold = body.find("em_oww_sync.hold_back_model(live, effective)")
-    push = body.find('send_control({"type": "config"')
-    assert hold != -1, "the new model is no longer held back"
-    assert push != -1, "the config push is gone"
-    assert hold < push, (
-        "the model must be held back BEFORE the config is pushed, or the "
-        "device is told to use a model it does not have"
-    )
-    assert "em_oww_sync.install_then_switch" in body, "nothing installs the pending model"
-
-
-def test_only_devices_that_score_locally_are_held_back():
-    """
-    With owwOnDevice=off the controller does the scoring and the file on the
-    device is irrelevant — holding the change back would delay it for no
-    reason. That is the common case and it stays instant.
-
-    Both the old and the new mode are consulted: enabling on-device scoring in
-    the same save that changes the wake word must not slip through on the
-    strength of the old mode being "off".
-    """
-    body = _sources.def_source("hold_back_model")
-
-    assert "oww_shadow_capable" in body, (
-        "a device that cannot score locally must not be held back"
-    )
-    assert body.count("MODE_OFF") >= 2, (
-        "both the current and the incoming mode must be consulted"
-    )
-    assert 'effective.get("owwOnDevice"' in body, (
-        "the incoming mode is not read — a save that turns on-device scoring "
-        "on while changing the wake word would slip through"
-    )
-
-
-def test_a_failed_install_leaves_the_device_on_its_old_wake_word():
-    """
-    The failure direction that matters. Switching anyway is what produced the
-    deaf device; standing the device down instead overrides the user's choice.
-    Staying put means the device keeps answering, on a wake word it can hear.
-    """
-    body = _sources.def_source("install_then_switch") + "\n"
-
-    # The failure BRANCH itself, not the span up to the switch — that span
-    # contains other returns, which is how the first version of this test
-    # passed against a branch that fell straight through.
-    branch = re.search(r'\n    if not result\.get\("ok"\):\n(.*?)\n    (?=\S)',
-                       body, re.S)
-    assert branch, "the failure branch is gone"
-    assert re.search(r"^        return\s*$", branch.group(1), re.M), (
-        "a failed install must return, not fall through into switching the "
-        "device onto a model it does not have"
-    )
-
-
-
-
-
-
-
 def test_the_speaking_flag_and_its_dashboard_push_cannot_drift():
     """
     The dashboard renders `speaking` above `thinking` and _push_device_state
@@ -1367,8 +1164,6 @@ def test_the_speaking_flag_and_its_dashboard_push_cannot_drift():
         f"the setter), found {len(writes)} — a streaming path is setting the "
         f"flag without pushing it"
     )
-
-
 
 
 def test_speaking_and_thinking_are_mutually_exclusive():
@@ -1417,13 +1212,6 @@ def test_the_speaking_push_cannot_fail_a_speaker_stream():
 # healthy from every side.
 
 
-
-
-
-
-
-
-
 def test_deleting_a_device_bounces_its_link():
     """
     Link auth is decided ONCE, at register time, so deleting a device's row
@@ -1452,8 +1240,6 @@ def test_deleting_a_device_bounces_its_link():
     )
 
 
-
-
 # ── The ring must say something when there is nothing to talk to ──────────────
 #
 # Source-shape, because the suite cannot import em_controller. A turn with no
@@ -1462,15 +1248,6 @@ def test_deleting_a_device_bounces_its_link():
 # moment it is working — the same failure ack_anim was added for, and the one
 # the ESPHome port-collision incident presented as ("the wake word stopped
 # working", while every part of it worked).
-
-
-
-
-
-
-
-
-
 
 
 def test_every_outcome_cue_names_a_scene_key_that_exists():
@@ -1615,13 +1392,6 @@ def test_ble_adverts_leave_the_control_plane_only_when_negotiated():
     )
 
 
-
-
-
-
-
-
-
 # ─── Connect-time reconcile ───────────────────────────────────────────────────
 #
 # Three payloads reach a device: the wake word assets, start_server.sh and the
@@ -1649,24 +1419,25 @@ def test_the_connect_handler_reconciles_all_three_payloads():
     )
 
 
-def test_the_reconcile_runs_the_three_payloads_sequentially():
+def test_the_reconcile_runs_the_payloads_sequentially():
     """
-    All three talk to one device over one shell plane. Gathering them contends
-    for a single session for no gain — nothing is on a critical path here.
+    All of them talk to one device over one shell plane. Gathering them
+    contends for a single session for no gain — nothing is on a critical path
+    here. (The wake word assets were a step until EchoHome.)
     """
     fn = _strip_prose(_sources.def_source("em_reconcile._reconcile_payloads"))
 
-    for step in ("em_oww_sync.reconcile", "em_payloads.sync_start_script", "em_payloads.sync_debloat"):
+    for step in ("em_payloads.sync_start_script", "em_payloads.sync_endpoints", "em_payloads.sync_debloat"):
         assert step in fn, f"{step} must run on connect"
     assert "asyncio.gather" not in fn, (
-        "the three payloads share one shell plane — run them in order"
+        "the payloads share one shell plane — run them in order"
     )
 
 
 def test_one_failing_payload_does_not_skip_the_others():
     """
     Unrelated payloads. A device with a stale debloat list must still get its
-    wake word models, so each step is caught individually rather than the loop
+    start script, so each step is caught individually rather than the loop
     being wrapped in one try.
     """
     fn = _strip_prose(_sources.def_source("em_reconcile._reconcile_payloads"))
@@ -2548,27 +2319,6 @@ def test_the_fireos_flow_refuses_an_emos_boot_image_before_it_writes():
         "runPatchBoot must check whose image is in the slot before patching it")
     assert fn.index("isOurBootImage(") < fn.index("of=/tmp/work/boot.img"), (
         "the emOS check must precede the pull, or the refusal comes too late")
-
-
-def test_asset_installs_queue_behind_the_ota_lock():
-    """
-    An upgrade that adds an asset has every device reconnect and push at once
-    — ~14MB each for a device that never had the runtime — over the transport
-    where three concurrent OTAs stalled the event loop 11.1s. So asset installs
-    take the same global lock, and only the wrapper may reach the unlocked body.
-    """
-    import ast
-    # Every module: a caller of the unlocked body is a caller wherever it is.
-    _, wrapper = _sources.find_def("em_oww_sync.sync")
-    _sources.find_def("em_oww_sync._sync_locked")   # the body exists to be guarded
-    assert any(isinstance(n, ast.AsyncWith) and "em_ota.queue" in ast.unparse(n.items[0].context_expr)
-               for n in ast.walk(wrapper)), "em_oww_sync.sync does not take em_ota.queue"
-    callers = [f"{path.name}:{fn.name}" for path in _sources.MODULES
-               for fn in ast.walk(_sources.tree(path))
-               if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))
-               and fn is not wrapper and fn.name != "_sync_locked"
-               and "_sync_locked(" in ast.unparse(fn)]
-    assert not callers, f"unlocked asset sync called from {callers}"
 
 
 def test_the_image_keeps_its_data_on_the_mounted_directory():

@@ -1650,14 +1650,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
   const [identifying, setIdentifying] = useState(false);
   const [identifyNote, setIdentifyNote] = useState('');
   const [debloating, setDebloating] = useState(false);
-  const [assets, setAssets] = useState(null);
-  const [installing, setInstalling] = useState(false);
-  // Wake word asset install progress: bytes confirmed sent, the file in
-  // flight, the controller's own narration, and the final outcome.
-  const [assetSent, setAssetSent]     = useState(0);
-  const [assetNow, setAssetNow]       = useState(null);
-  const [assetLog, setAssetLog]       = useState([]);
-  const [assetResult, setAssetResult] = useState(null);
   const fileInputRef = useRef(null);
   const [turns, setTurns] = useState([]);
   const state = deviceState(device);
@@ -1676,16 +1668,11 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
     }
     if (tab === 'updates') {
       API.get('/api/releases/latest').then(setRelease).catch(() => {});
-      // Same tab-entry pattern as the asset state below: this changes only
-      // when someone edits system config, so polling it would be waste.
+      // Fetched on tab entry: this changes only when someone edits system
+      // config, so polling it would be waste.
       API.get('/api/system/status')
         .then(s => setAutoChecks(s.update_checks_enabled !== false))
         .catch(() => {});
-      // Asset state costs a device shell round trip, so it is fetched on tab
-      // entry rather than polled — unlike a release, it only changes when
-      // someone acts on it here.
-      API.get(`/api/devices/${device.device_id}/oww_assets`)
-        .then(setAssets).catch(() => setAssets(null));
     }
   }, [tab, device.device_id]);
 
@@ -1803,65 +1790,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
             + 'watch the device log for details.');
     } catch(e) { alert(e.error || 'Debloat failed'); }
     setTimeout(() => setDebloating(false), 8000);
-  }
-
-  async function doInstallAssets() {
-    // Up to ~15MB over the shell plane, which is minutes on a marginal link —
-    // far too long to sit behind a spinner and then a browser alert().
-    //
-    // The POST does not return until the whole sync is done, so its own
-    // response cannot drive a bar. The controller narrates each file to the
-    // device log as it goes (`_sync_oww_assets.say`), and those lines arrive
-    // on the events socket — so progress is derived by watching for its
-    // "sending <name> (<n>MB)…" line and charging that file's bytes to the
-    // total as it completes. Byte-weighted, not file-count: the runtime is
-    // 12.3MB of a ~15MB job, so counting files would jump 0→50% for the
-    // trivial half and then appear frozen for the long one.
-    const sizes = Object.fromEntries((assets?.required || []).map(a => [a.name, a.size]));
-    const queue = (assets?.missing || []).slice();
-    const total = queue.reduce((n, name) => n + (sizes[name] || 0), 0);
-
-    setInstalling(true);
-    setAssetResult(null);
-    setAssetLog([]);
-    setAssetSent(0);
-    setAssetNow(queue.length ? null : 'Checking what the device needs…');
-
-    let sent = 0, current = null;
-    const unsub = subscribeDeviceLog((id, entry) => {
-      if (id !== device.device_id) return;
-      const m = /^Wake word assets: (.*)$/.exec(entry.message || '');
-      if (!m) return;
-      const text = m[1];
-      setAssetLog(l => [...l.slice(-40), { level: entry.level, text }]);
-      const sending = /^sending (\S+)/.exec(text);
-      if (sending) {
-        // The previously-announced file is done once the next one starts.
-        if (current) { sent += sizes[current] || 0; setAssetSent(sent); }
-        current = sending[1];
-        setAssetNow(current);
-      }
-    });
-
-    try {
-      const res = await API.post(`/api/devices/${device.device_id}/oww_assets`, {});
-      const n = (res.pushed || []).length;
-      setAssetSent(total);
-      setAssetNow(null);
-      setAssetResult({ ok: true, text: n === 0
-        ? 'Already up to date — nothing needed installing.'
-        : `Installed ${n} file${n === 1 ? '' : 's'}.` });
-      setAssets(await API.get(`/api/devices/${device.device_id}/oww_assets`));
-    } catch(e) {
-      setAssetNow(null);
-      // Partial progress is left on screen deliberately: which file it died on
-      // is the useful part, and md5-then-rename means nothing half-written was
-      // left behind to worry about.
-      setAssetResult({ ok: false, text: e.error || 'Install failed.' });
-    } finally {
-      unsub();
-      setInstalling(false);
-    }
   }
 
   async function doUpdate() {
@@ -2278,7 +2206,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
             const stoText  = s?.storageTotalMb != null
               ? `${(s.storageUsedMb/1024).toFixed(1)} / ${(s.storageTotalMb/1024).toFixed(1)} GB` : null;
             const cfgEff = effectiveConfig(globalConfig, device);
-            const wwLabel = wwModelLabel(cfgEff.owwModel);
             return (
               <div style={{ minHeight:'100%', display:'flex', flexDirection:'column', gap:'var(--space-8)' }}>
                 <div className="em-grid2" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'var(--space-8)' }}>
@@ -2321,6 +2248,13 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                       if (vi) return vi.appConnected ? 'var(--ok)' : 'var(--warn)';
                       return 'var(--warn)';
                     })())}
+                    {/* What the Echo says its microphone is doing: the privacy
+                        line, from its own report (listen_state, and
+                        incubator_state's monitored), never from settings. */}
+                    {device.connected && deviceListen(device) && row('Microphone',
+                      listenStatusText(deviceListen(device)).replace(/^Now: /, ''),
+                      deviceListen(device).streams === true ? 'var(--warn)'
+                        : deviceListen(device).streams === false ? 'var(--ok)' : 'var(--muted)')}
                     {/* One row, not two. "Connected: Yes" plus "Last seen"
                         was redundant in both directions — while connected the
                         last-seen time says nothing, and while offline the
@@ -2531,15 +2465,10 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 onChange={(k, v) => setConf(k, v)}
                 disabled={!isAdmin}
                 sections={sections}
-                shadowCapable={!device.connected || !!device.owwShadowCapable}
-                triggerCapable={!device.connected || !!device.owwTriggerCapable}
-                localCapable={!device.connected || !!device.owwLocalCapable}
                 esphomeServerCapable={!device.connected || !!device.esphomeServerCapable}
                 esphomePanel={device.connected && device.esphomeNoiseCapable
                   ? <ESPHomeServerKey deviceId={device.device_id} isAdmin={isAdmin}/>
                   : null}
-                listen={device.connected ? deviceListen(device) : null}
-                wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
                 responseLevelCapable={!device.connected || !!device.responseLevelCapable}
                 stockSoundCapable={device.connected && !!device.stockSoundCapable}
@@ -2548,8 +2477,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 sendspinPanel={device.connected && device.sendspinCapable
                   ? <SendspinPairing deviceId={device.device_id} status={device.sendspin} isAdmin={isAdmin}/>
                   : null}
-                mixCapable={!device.connected || !!device.audioMixCapable}
-                holdCapable={!device.connected || !!device.buttonHoldCapable}
                 hwEchoRef={device.connected && device.aecRef === 'hw'}
                 hwRefCapable={!device.connected || !!device.aecHwRefCapable}
                 onScopeChange={(id, local) => {
@@ -2818,127 +2745,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
               )}
 
 
-              {/* On-device wake word assets.
-
-                  Separate from firmware on purpose: the runtime is 12.3MB and
-                  changes far less often than the binary, so it is not in the
-                  OTA payload. That makes it invisible unless something says
-                  so — a device can be configured for on-device scoring and
-                  silently not be doing it, which is the failure this panel
-                  exists to make legible. */}
-              {isAdmin && device.owwShadowCapable && (
-                <Panel label="On-device wake word">
-                  <div style={{ display:'flex', alignItems:'center', gap:'var(--space-6)', flexWrap:'wrap', marginBottom:'var(--space-6)' }}>
-                    <span style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-md)',
-                      color: !assets ? 'var(--muted)'
-                           : assets.status === 'installed' ? 'var(--ok)'
-                           : assets.status === 'blocked' ? 'var(--error)'
-                           : assets.status === 'unknown' ? 'var(--muted)'
-                           : 'var(--warn)' }}>
-                      {!assets ? 'checking…'
-                        : assets.status === 'installed' ? 'Installed'
-                        : assets.status === 'outdated' ? 'Out of date'
-                        : assets.status === 'blocked' ? 'Not enough space'
-                        : assets.status === 'unknown' ? 'Device offline — state unknown'
-                        : 'Not installed'}
-                    </span>
-                    {assets?.free_mb != null && (
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-xs)', color:'var(--muted)' }}>
-                        {assets.free_mb}MB free
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-sm)', color:'var(--muted)', lineHeight:1.6, marginBottom:'var(--space-7)' }}>
-                    The ONNX runtime and wake models the device needs to score
-                    locally (~15MB). They are not part of the firmware, so they
-                    install separately and survive updates. Scoring only starts
-                    after a device restart.
-                  </div>
-                  {assets?.blocked && (
-                    <div style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-sm)', color:'var(--error)', marginBottom:'var(--space-6)' }}>
-                      {assets.blocked}
-                    </div>
-                  )}
-                  {(assets?.problems || []).map((p, i) => (
-                    <div key={i} style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-sm)', color:'var(--warn)', marginBottom:'var(--space-4)' }}>
-                      {p}
-                    </div>
-                  ))}
-                  <Pill small
-                        disabled={!device.connected || installing || assets?.status === 'installed'}
-                        onClick={doInstallAssets}>
-                    {installing ? 'Installing…'
-                      : assets?.status === 'installed' ? 'Installed'
-                      : assets?.status === 'outdated' ? 'Update assets'
-                      : 'Install assets'}
-                  </Pill>
-                  {!installing && assets?.missing?.length > 0 && (
-                    <span style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-xs)', color:'var(--muted)', marginLeft:'var(--space-5)' }}>
-                      {assets.missing.length} file(s) to send
-                    </span>
-                  )}
-
-                  {/* Progress. Determinate whenever the GET told us what is
-                      missing; indeterminate only in the brief window before
-                      the first file is announced. */}
-                  {installing && (() => {
-                    const sizes = Object.fromEntries((assets?.required || []).map(a => [a.name, a.size]));
-                    const total = (assets?.missing || []).reduce((n, nm) => n + (sizes[nm] || 0), 0);
-                    const pct   = total > 0 ? Math.min(100, Math.round(assetSent / total * 100)) : 0;
-                    return (
-                      <div style={{ marginTop: 'var(--space-7)' }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:'var(--space-3)' }}>
-                          <span style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-sm)', color:'var(--text2)' }}>
-                            {assetNow ? `Sending ${assetNow}…` : 'Working…'}
-                          </span>
-                          {total > 0 && (
-                            <span style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-sm)', color:'var(--muted)' }}>
-                              {(assetSent/1024/1024).toFixed(1)} / {(total/1024/1024).toFixed(1)} MB
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ height:6, borderRadius:3, background:'var(--lcd-bg)', border:'1px solid var(--lcd-line)', overflow:'hidden', boxShadow:'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
-                          {/* No size known yet — fill it dimly rather than
-                              animate, which would need a keyframe this
-                              stylesheet does not have and would overstate
-                              how much the bar knows. */}
-                          <div style={{ height:'100%', width:`${total > 0 ? pct : 100}%`,
-                                        background: total > 0 ? 'linear-gradient(90deg,var(--accent-hi),var(--accent-lit))' : 'var(--accent-deep)',
-                                        transition:'width 0.3s ease' }}/>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* The controller's own narration, in place of an alert().
-                      Kept after the run so a failure can be read, not just
-                      acknowledged and lost. */}
-                  {assetLog.length > 0 && (
-                    <div style={{ marginTop:'var(--space-6)', maxHeight:120, overflowY:'auto', background:'var(--lcd-bg)', border:'1px solid var(--lcd-line)', borderRadius:'var(--radius-md)', padding:'var(--space-4) var(--space-5)', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)' }}>
-                      {assetLog.map((l, i) => (
-                        <div key={i} style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-sm)', lineHeight:1.6,
-                          color: l.level === 'error' ? 'var(--error)' : l.level === 'warn' ? 'var(--warn)' : 'var(--lcd-green)' }}>
-                          {l.text}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {assetResult && (
-                    <div style={{ marginTop:'var(--space-6)', display:'flex', gap:'var(--space-4)', alignItems:'flex-start',
-                                  border:`1px solid ${assetResult.ok ? 'var(--ok)' : 'var(--error)'}`,
-                                  background: assetResult.ok ? 'rgba(40,96,64,0.10)' : 'rgba(154,48,32,0.10)',
-                                  borderRadius:'var(--radius-md)', padding:'var(--space-5) var(--space-6)' }}>
-                      <span style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-base)', color: assetResult.ok ? 'var(--ok)' : 'var(--error)' }}>
-                        {assetResult.ok ? '●' : '✕'}
-                      </span>
-                      <span style={{ fontFamily:"var(--font-sans)", fontSize:'var(--fs-base)', color:'var(--text2)', lineHeight:1.5 }}>
-                        {assetResult.text}
-                      </span>
-                    </div>
-                  )}
-                </Panel>
-              )}
 
               {/* Activity console — always present so the layout never jumps
                   when a deploy starts */}
@@ -3914,7 +3720,7 @@ const _WIZARD_STEPS = [
   // happened" — the assets are not in the firmware, so without this step the
   // capability is advertised by a device that cannot actually use it. USB is
   // also much better suited to 15MB than the shell plane.
-  { id: 'install_oww',     label: 'Wake Word Assets',  desc: 'Push the ONNX runtime and wake models (~15MB) used for on-device wake word detection.' },
+  { id: 'install_oww',     label: 'Finish and Reboot', desc: 'Reboot into the installed firmware. (Was the wake word assets; since EchoHome the wake word is the Voice Incubator satellite\'s, built into the firmware.)' },
 ];
 
 // Transcript styling only — copy uses e.msg verbatim.
@@ -7269,8 +7075,8 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     // belongs to whichever step is genuinely last; it now lives in
     // runInstallOwwAssets. Anything added after that must move it again.
     addLog(isEmos
-      ? 'Staying in recovery — the wake word assets install next, then emOS is built and flashed.'
-      : 'Staying connected — the wake word assets install next, then the device reboots.');
+      ? 'Staying in recovery — emOS is built and flashed next.'
+      : 'Staying connected — the device reboots in the next step.');
   }
 
   // ── emOS flow ─────────────────────────────────────────────────────────────
@@ -8616,59 +8422,11 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
 
   // ── Step executor ──
   async function runInstallOwwAssets(c) {
-    // Pushed over USB rather than through the shell plane: a freshly-flashed
-    // device is not connected to the controller yet, and 15MB of base64
-    // heredoc would be slow. Same bytes and same destination as the field
-    // path — only the transport differs.
-    const assetTools = await deviceTools(c);
-    addLog('Fetching wake word assets from controller…');
-    const manifest = await API.get('/api/provision/oww_assets');
-    (manifest.problems || []).forEach(p => addLog(`  ⚠ ${p}`, 'error'));
-    if (!manifest.assets || manifest.assets.length === 0) {
-      throw new Error('Controller has no wake word assets to install. '
-        + 'Its image may predate them — rebuild or update the controller.');
-    }
-
-    await c.shell(`su -c "mkdir -p ${manifest.dir}"`);
-    for (const a of manifest.assets) {
-      addLog(`Pushing ${a.name} (${(a.size/1024/1024).toFixed(1)} MB)…`);
-      const resp = await fetch(ingressPath(`/api/provision/oww_asset/${encodeURIComponent(a.name)}`),
-                               { headers: { Authorization: `Bearer ${token}` } });
-      if (!resp.ok) throw new Error(`Controller returned ${resp.status} fetching ${a.name}.`);
-      const buf = await resp.arrayBuffer();
-      // Staged in /sdcard because adb cannot write under /data directly, then
-      // moved with su — the same two-step the binary install uses.
-      await c.push('/sdcard/em_oww_asset', new Uint8Array(buf),
-        pct => setProgress({ label: `Uploading ${a.name}`, pct }));
-      setProgress(null);
-
-      // md5 is the only definition of success: a truncated push produces a
-      // file of plausible size that fails later at dlopen, with an error that
-      // names nothing useful.
-      const got = (await c.shell(`su -c "${assetTools.md5sum} /sdcard/em_oww_asset" 2>/dev/null`)).trim().split(/\s+/)[0];
-      if (got !== a.md5) {
-        await c.shell('su -c "rm -f /sdcard/em_oww_asset"');
-        throw new Error(`${a.name} arrived corrupted (md5 ${got || 'unreadable'}, expected ${a.md5}).`);
-      }
-      // The md5 above proves the bytes reached /sdcard, which is NOT where they
-      // have to end up. The move was unchecked and the tick was printed either
-      // way, so a full /data or a broken su logged fifteen megabytes of
-      // successful pushes and installed nothing — the failure then surfaces at
-      // dlopen on the device, naming nothing useful. Hash the destination.
-      const moveOut = (await c.shell(
-        `su -c "mv /sdcard/em_oww_asset ${manifest.dir}/${a.name} && chmod 644 ${manifest.dir}/${a.name}" 2>&1`)).trim();
-      if (moveOut) addLog(`  → ${moveOut}`);
-      const landed = (await c.shell(
-        `su -c "${assetTools.md5sum} ${manifest.dir}/${a.name}" 2>/dev/null`)).trim().split(/\s+/)[0];
-      if (landed !== a.md5) {
-        throw new Error(`${a.name} did not land in ${manifest.dir} `
-          + `(md5 ${landed || 'unreadable'}, expected ${a.md5}). Check free space on /data.`);
-      }
-      addLog(`  ✓ ${a.name}`);
-    }
-    addLog('Wake word assets installed. Where the wake word runs is set per '
-         + 'device under Config → Wake word.', 'ok');
-
+    // Once the wake word assets' step: since EchoHome the wake word is the
+    // Voice Incubator satellite's, built into the firmware, and nothing is
+    // pushed. It keeps its place, its id and the finishing reboot below,
+    // because the steps are addressed by position and the reboot must be
+    // the last step's.
     // The finishing reboot lives in the LAST step, deliberately — it closes
     // the ADB connection, so any step after it can never run. Keeping it on
     // the success path (not in a finally) means a failure above leaves the
@@ -8842,9 +8600,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   // Step 8 (disable_alexa) is now before WiFi so Alexa can't phone home.
   // Step 9 (debloat) rides the same connected-and-rooted state.
   useEffect(() => {
-    // Step 12 (wake word assets) auto-runs: it needs no input, and making it
-    // a button people can leave unpressed defeats the point of it being
-    // mandatory.
+    // Step 12 (finish and reboot) auto-runs: it needs no input.
     //
     // emOS: escrow and build auto-run. The build writes
     // nothing to the device — it is the controller repacking the escrowed
@@ -9587,33 +9343,6 @@ function DeviceDiagram({ activeMics, patternType }) {
   );
 }
 
-// Mini version for preset cards
-function DeviceDiagramMini({ activeMics, patternType }) {
-  const MIC_POS = {
-    mk1: [-45,-78], mk2: [45,-78], mk3: [90,0],
-    mk4: [45,78],   mk5: [-45,78], mk6: [-90,0],
-  };
-  return (
-    <svg width="52" height="52" viewBox="-110 -110 220 220">
-      <circle cx="0" cy="0" r="108" fill="#0a0a0a"/>
-      <circle cx="0" cy="0" r="104" fill="#222"/>
-      <circle cx="0" cy="0" r="96" fill="none" stroke="#0d0d0d" strokeWidth="11"/>
-      <circle cx="0" cy="0" r="96" fill="none"
-        stroke={patternType === 'omni' ? '#40906a' : '#40906a'}
-        strokeWidth="7" strokeDasharray="36.3 14" transform="rotate(-90)"/>
-      <circle cx="0" cy="0" r="96" fill="none" stroke="#161616" strokeWidth="11"
-        strokeDasharray="1.5 49" transform="rotate(-90)"/>
-      <circle cx="0" cy="0" r="82" fill="#1a1a1a"/>
-      {patternType === 'omni' && <circle cx="0" cy="0" r="68" fill="rgba(64,88,120,0.18)" stroke="#405878" strokeWidth="2"/>}
-      {patternType === 'front' && <path d="M-68,0 A68,68 0 0,0 68,0 Z" fill="rgba(64,88,120,0.18)" stroke="#405878" strokeWidth="2"/>}
-      {patternType === 'rear'  && <path d="M-68,0 A68,68 0 0,1 68,0 Z" fill="rgba(64,88,120,0.18)" stroke="#405878" strokeWidth="2"/>}
-      {Object.entries(MIC_POS).map(([id,[cx,cy]]) => (
-        <circle key={id} cx={cx} cy={cy} r="4"
-          fill={activeMics.includes(id) ? '#4a7ab8' : '#2a2a2a'}/>
-      ))}
-    </svg>
-  );
-}
 
 
 // ─── DeviceConfigForm ─────────────────────────────────────────────────────────
@@ -9683,11 +9412,10 @@ const STAGE_MONO = "var(--font-mono)";
 // control sitting under a toggle that does not govern it would look fine and
 // be silently wrong.
 const CONFIG_SECTIONS = {
-  "playback": ["eqBands", "eqLoudness", "duckDb", "responseLevel", "limiterEnabled", "limiterThreshold", "limiterRelease", "bassGuardEnabled", "bassGuardDb", "streamReply", "volumeButtonSound"],
-  "wakeword": ["owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs", "owwOnDevice", "wakeSound", "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore"],
-  "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "beamformingEnabled", "beamAngle", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr", "saveUtterances"],
+  "playback": ["eqBands", "eqLoudness", "duckDb", "responseLevel", "limiterEnabled", "limiterThreshold", "limiterRelease", "bassGuardEnabled", "bassGuardDb", "volumeButtonSound"],
+  "microphones": ["adcMicpga", "adcDigitalGain", "micGainDb", "wakeMic", "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource"],
   "ring": ["ledScene", "ledListenColor", "ledThinkColor", "meterAttack", "meterDecay", "meterFloor", "meterGamma", "meterRef", "meterCurve"],
-  "advanced": ["agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs", "buttonSingleTapEvent", "buttonMultiTapMs", "consolePassword", "consoleTimeoutMin", "controllerEndpoints"],
+  "advanced": ["consolePassword", "consoleTimeoutMin", "controllerEndpoints", "owwOnDevice"],
   "sendspin": ["sendspinEnabled", "sendspinUnpaired"]
 };
 
@@ -9805,13 +9533,6 @@ function StageAdvanced({ open, onToggle, disabledStyle, children }) {
   );
 }
 
-// Mirrors em_shadow.normalise_mode: an unrecognised stored value renders as
-// "Controller" rather than leaving every segment unselected, which would look
-// like a control that had lost its value.
-function onDeviceMode(config) {
-  const v = String(config.owwOnDevice ?? 'off').toLowerCase();
-  return ['off', 'shadow', 'on'].includes(v) ? v : 'off';
-}
 
 // What an Echo is actually doing with its microphone, from its own report
 // (em_listen.resolve via /api/devices `listen`). One line, and it never says
@@ -9856,11 +9577,8 @@ function listenFleetText(devices) {
 }
 
 function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
-                            shadowCapable = true, mixCapable = true,
-                            holdCapable = true, triggerCapable = true,
-                            localCapable = true, listen = null,
                             hwEchoRef = false, hwRefCapable = true,
-                            emosFleet = true, wakeCueCapable = true,
+                            emosFleet = true,
                             volumeCueCapable = true,
                             esphomeServerCapable = true, esphomePanel = null,
                             responseLevelCapable = true,
@@ -9878,8 +9596,8 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
   // fleet view has no single device to ask, so it keeps the AEC delay
   // slider live — which is right either way: the value is still pushed, and
   // still used by any device that falls back to the software tap.
-  // shadowCapable defaults TRUE because this form is also the fleet-config
-  // view, where there is no single device whose capability could gate a
+  // The capability props default TRUE because this form is also the
+  // fleet-config view, where there is no single device whose capability could gate a
   // control. Referencing a `device` here is what blank-screened the Config
   // tab: the prop does not exist, so `device.connected` threw during render.
   // sections == null means the fleet-config view: nothing to inherit from, so
@@ -9906,105 +9624,6 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
   const secStyle = id => (disabled || !isLocal(id))
     ? { opacity: 0.45, pointerEvents: 'none' }
     : {};
-
-  // Derive current mic preset from beamAngle
-  const angle = config.beamAngle ?? -1;
-  const currentPreset = angle === -1 ? 'omni' : (angle === 90 ? 'front' : angle === 270 ? 'rear' : 'omni');
-
-  const PRESETS = {
-    // omni = centre mic (ch6) for everything, beamforming genuinely off.
-    // beamformingEnabled:true with beamAngle -1 is AUTO mode (onset-ratio
-    // perimeter mic selection at turn start), which is not what this
-    // preset's label or polar plot promise.
-    omni:  { beamAngle: -1,  beamformingEnabled: false, activeMics: ['mk1','mk2','mk3','mk4','mk5','mk6'], patternType: 'omni'  },
-    front: { beamAngle: 90,  beamformingEnabled: true,  activeMics: ['mk3','mk4','mk5','mk6'],             patternType: 'front' },
-    rear:  { beamAngle: 270, beamformingEnabled: true,  activeMics: ['mk1','mk2','mk3','mk6'],             patternType: 'rear'  },
-  };
-
-  function selectPreset(key) {
-    if (disabled) return;
-    const p = PRESETS[key];
-    onChange('beamAngle', p.beamAngle);
-    onChange('beamformingEnabled', p.beamformingEnabled);
-  }
-
-  const WW_MODELS = [
-    { value: 'hey_jarvis_v0.1',   label: 'Hey Jarvis'   },
-    { value: 'alexa_v0.1',        label: 'Alexa'         },
-    { value: 'hey_mycroft_v0.1',  label: 'Hey Mycroft'   },
-    { value: 'hey_rhasspy_v0.1',  label: 'Hey Rhasspy'   },
-  ];
-
-  // Custom models discovered in the controller's data volume (oww_forge
-  // output). Tile value = absolute file path — openwakeword accepts paths
-  // in place of stock names, so no other plumbing is needed.
-  const [customModels, setCustomModels] = useState([]);
-  const wwFileRef = useRef(null);
-  const loadCustomModels = useCallback(async () => {
-    try { setCustomModels((await API.get('/api/oww_models')).models || []); }
-    catch (e) { /* endpoint requires auth; list just stays empty */ }
-  }, []);
-  useEffect(() => { loadCustomModels(); }, [loadCustomModels]);
-
-  async function uploadWakeModel(file) {
-    if (!file) return;
-    try {
-      const resp = await API.upload('/api/oww_models/upload', file, 'model');
-      await loadCustomModels();
-      if (resp.model?.path) set('owwModel', resp.model.path);
-    } catch (e) { alert(e.error || 'Model upload failed'); }
-  }
-
-  async function deleteWakeModel(m) {
-    if (!confirm(`Delete wake model "${m.name}"?`)) return;
-    try {
-      await API.del(`/api/oww_models/${encodeURIComponent(m.file)}`);
-      await loadCustomModels();
-    } catch (e) { alert(e.error || 'Delete failed'); }
-  }
-
-  // A selected custom model that no longer exists on disk (or a bare-metal
-  // path from before a Docker move) still needs a visible, selected tile.
-  const orphanModel = (config.owwModel || '').endsWith('.onnx')
-    && !customModels.some(m => m.path === config.owwModel)
-    ? { name: wwModelLabel(config.owwModel), file: config.owwModel.split('/').pop(), path: config.owwModel, missing: true }
-    : null;
-
-  // Sensitivity runs Precise -> Eager left to right, which is the reverse of
-  // the threshold it sets, so the track carries the threshold reflected about
-  // the midpoint of its range. reflectT is its own inverse — the same call
-  // converts both ways.
-  //
-  // The precise end stops at 0.975, not 1.0. openwakeword's score is a sigmoid
-  // that saturates below 1.0 and both scorers test `score >= threshold`
-  // (em_controller.py's ctrl_hit, and shadow.go's crossed on-device), so a
-  // threshold of 1.0 is a bar nothing can clear: the most precise notch used to
-  // be a setting that could never wake. 18,021 scored frames across three Gen 2
-  // Dots peaked at 0.999, with 178 at or above 0.98 — so 0.975 is strict but
-  // reachable.
-  //
-  // 0.025 per step rather than 0.1, because the precision/recall tradeoff lives
-  // in the range above 0.9 and 0.1 steps jumped straight over it.
-  const WAKE_T_MIN = 0.1, WAKE_T_MAX = 0.975, WAKE_T_STEP = 0.025;
-  const reflectT = t => Number((WAKE_T_MIN + WAKE_T_MAX - t).toFixed(3));
-
-  // A threshold stored before this range existed sits off the track: the old
-  // slider could write exactly 1.0, and a range input clamps an out-of-range
-  // value to min WITHOUT saying so, which would park the handle at the precise
-  // end and read back 0.975 — a plausible number for a device that cannot wake
-  // at all. Pin the handle deliberately, and keep the readout on the STORED
-  // value so the number stays true until a drag writes one on the track.
-  const wakeTrackFor = t => Math.min(WAKE_T_MAX, Math.max(WAKE_T_MIN, reflectT(t)));
-
-  // Barge threshold runs the same way, Precise -> Eager, so every threshold
-  // slider on this form reads alike (Wil, 2026-09-19). Same reflection; the
-  // readout shows the stored value, and the handle is pinned for a value
-  // stored off this track.
-  const BARGE_T_MIN = 0.05, BARGE_T_MAX = 0.9, BARGE_T_STEP = 0.05;
-  const reflectBarge = t => Number((BARGE_T_MIN + BARGE_T_MAX - t).toFixed(3));
-  const bargeT = config.bargeInThreshold ?? 0.25;
-  const bargeTrack = Math.min(BARGE_T_MAX, Math.max(BARGE_T_MIN, reflectBarge(bargeT)));
-  const wakeT = config.owwThreshold ?? 0.5;
 
   const bands = config.eqBands ?? [0,0,0,0,0,0,0,0];
   const RING_SCENES = [
@@ -10074,11 +9693,6 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
           </div>
           <div>
             <div style={inputStyle}>
-              <Toggle label="Speak while the reply is written"
-                sub="faster with a quick model; a slow one may pause"
-                value={config.streamReply ?? false} onChange={v => set('streamReply', v)}/>
-            </div>
-            <div style={{ marginTop: 'var(--space-4)', ...inputStyle }}>
               <Select label="Response level"
                 sub={responseLevelCapable
                   ? "voice responses relative to device volume; boost tapers near maximum"
@@ -10112,10 +9726,8 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                 and that is not a preference. Every key still exists and is
                 settable through the API. */}
             <div style={inputStyle}>
-              <Slider label="Duck depth" disabled={!mixCapable}
-                sub={mixCapable
-                  ? "how far music drops under a voice response — it keeps playing instead of pausing"
-                  : "needs firmware that mixes music and voice (v2.10.0+)"}
+              <Slider label="Duck depth"
+                sub="how far music drops under a voice response — it keeps playing instead of pausing"
                 value={config.duckDb ?? -18} min={-40} max={0} step={1} unit="dB"
                 onChange={v => set('duckDb', v)}/>
             </div>
@@ -10164,182 +9776,17 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         )}
       </Stage>
 
-      {/* 02 WAKE WORD */}
-      <Stage n="02" title="Wake word"
-        chips={<ScopeChip tone="controller">Controller</ScopeChip>}
-        desc="openwakeword scores the continuous mic stream on the controller. Sensitivity sets the detection threshold — attempts that score close but miss are counted as near-misses (Status tab)."
-        scope={scopeEl('wakeword')} dim={secStyle('wakeword')}>
-        <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-12)', alignItems: 'start' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', ...inputStyle }}>
-            {WW_MODELS.map(m => (
-              <div key={m.value} {...asButton(() => set('owwModel', m.value), { pressed: config.owwModel === m.value })} style={{
-                background: config.owwModel === m.value
-                  ? 'linear-gradient(160deg,var(--accent-tint),var(--accent-line))'
-                  : 'linear-gradient(160deg,var(--raised),var(--surface))',
-                border: `1px solid ${config.owwModel === m.value ? 'var(--accent)' : 'var(--border-soft)'}`,
-                borderRadius: 'var(--radius-lg)', padding: 'var(--space-4) var(--space-5)',
-                cursor: disabled ? 'default' : 'pointer',
-                transition: 'border-color 0.15s, background 0.15s',
-              }}>
-                <div title={m.label} style={{ fontFamily: "var(--font-sans)", fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', ..._ROW_TEXT, display: 'block' }}>{m.label}</div>
-                <div title={m.value} style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--text2)', marginTop: 'var(--space-1)', ..._ROW_TEXT, display: 'block' }}>{m.value}</div>
-              </div>
-            ))}
-            {[...customModels, ...(orphanModel ? [orphanModel] : [])].map(m => (
-              <div key={m.path} {...asButton(() => set('owwModel', m.path), { pressed: config.owwModel === m.path })} style={{
-                background: config.owwModel === m.path
-                  ? 'linear-gradient(160deg,var(--accent-tint),var(--accent-line))'
-                  : 'linear-gradient(160deg,var(--raised),var(--surface))',
-                border: `1px solid ${config.owwModel === m.path ? 'var(--accent)' : 'var(--border-soft)'}`,
-                borderRadius: 'var(--radius-lg)', padding: 'var(--space-4) 22px var(--space-4) var(--space-5)', position: 'relative', minWidth: 0,
-                cursor: disabled ? 'default' : 'pointer',
-                transition: 'border-color 0.15s, background 0.15s',
-              }}>
-                <div title={wwModelLabel(m.path)} style={{ fontFamily: "var(--font-sans)", fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text)', ..._ROW_TEXT, display: 'block' }}>{wwModelLabel(m.path)}</div>
-                <div title={m.file} style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: m.missing ? 'var(--error)' : 'var(--muted)', marginTop: 'var(--space-1)', ..._ROW_TEXT, display: 'block' }}>
-                  {m.missing ? 'missing file' : `custom · ${m.file}`}
-                </div>
-                {!disabled && !m.missing && config.owwModel !== m.path && (
-                  <div {...asButton(e => { e.stopPropagation(); deleteWakeModel(m); })}
-                    title="Delete model" aria-label="Delete model"
-                    style={{ position: 'absolute', top: 4, right: 7, fontFamily: mono, fontSize: 'var(--fs-md)',
-                      color: 'var(--muted)', cursor: 'pointer' }}>×</div>
-                )}
-              </div>
-            ))}
-            <div {...asButton(() => { if (!disabled) wwFileRef.current?.click(); }, { disabled })} style={{
-              background: 'linear-gradient(160deg,var(--raised),var(--surface))',
-              border: '1px dashed var(--border-hard)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-4) var(--space-5)',
-              cursor: disabled ? 'default' : 'pointer', opacity: 0.85,
-            }}>
-              <div style={{ fontFamily: "var(--font-sans)", fontSize: 'var(--fs-base)', fontWeight: 600, color: 'var(--text2)' }}>+ Custom model</div>
-              <div style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--muted)', marginTop: 'var(--space-1)' }}>upload .onnx (oww_forge)</div>
-              <input ref={wwFileRef} type="file" accept=".onnx" style={{ display: 'none' }}
-                onChange={e => { uploadWakeModel(e.target.files[0]); e.target.value = ''; }}/>
-            </div>
-          </div>
-          <div>
-            <div style={inputStyle}>
-              <Slider label="Sensitivity" sub="wake confidence needed — raise it if ordinary speech wakes the Echo"
-                value={wakeTrackFor(wakeT)}
-                min={WAKE_T_MIN} max={WAKE_T_MAX} step={WAKE_T_STEP}
-                formatValue={() => wakeT.toFixed(3)}
-                onChange={v => set('owwThreshold', reflectT(v))}/>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: -12 }}>
-                <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--muted)' }}>Precise</span>
-                <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--muted)' }}>Eager</span>
-              </div>
-            </div>
-            <div style={{ marginTop: 'var(--space-8)', ...inputStyle }}>
-              <Toggle label="Speex denoise" sub="cleans audio before scoring — try in noisy rooms" value={config.owwSpeexNs ?? false} onChange={v => set('owwSpeexNs', v)}/>
-              <Toggle label="Barge-in" sub="wake word interrupts playback — enable AEC first" value={config.bargeInEnabled ?? false} onChange={v => set('bargeInEnabled', v)}/>
-              <Slider label="Barge threshold" sub="wake confidence needed during playback — raise it if a response cuts itself short"
-                value={bargeTrack} min={BARGE_T_MIN} max={BARGE_T_MAX} step={BARGE_T_STEP}
-                formatValue={() => bargeT.toFixed(2)}
-                onChange={v => set('bargeInThreshold', reflectBarge(v))}/>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: -12 }}>
-                <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--muted)' }}>Precise</span>
-                <span style={{ fontFamily: mono, fontSize: 'var(--fs-xs)', color: 'var(--muted)' }}>Eager</span>
-              </div>
-              <Slider label="Arbitration window" sub="ms within which Echoes that hear you count as one request, and one answers; 0 disables" value={config.wakeArbitrationMs ?? 700} min={0} max={2000} step={50} unit="ms" onChange={v => set('wakeArbitrationMs', v)}/>
-              <Toggle label="Save wake-word samples"
-                sub={onDeviceMode(config) === 'off'
-                  ? 'saves clips for review in Activity'
-                  : "only works with wake word detection On the controller"}
-                disabled={onDeviceMode(config) !== 'off'}
-                value={config.wakeClipCapture ?? false} onChange={v => set('wakeClipCapture', v)}/>
-              <Slider label="Minimum sample score" sub="lower catches more near-misses, but more ordinary speech too"
-                disabled={onDeviceMode(config) !== 'off'}
-                value={config.wakeClipMinScore ?? 0.20} min={0.05} max={0.95} step={0.01} formatValue={v => v.toFixed(2)} onChange={v => set('wakeClipMinScore', v)}/>
-              {/* Accessibility first: the ring is the only other sign the Echo
-                  is listening. Disabled with the reason on firmware that cannot
-                  play it, never a switch that saves and stays silent. */}
-              <Toggle label="Wake sound"
-                sub={wakeCueCapable ? 'a short rising tone when the Echo hears the wake word' : 'needs newer firmware on this Echo'}
-                disabled={!wakeCueCapable}
-                value={config.wakeSound ?? false}
-                onChange={v => set('wakeSound', v)}/>
-              {wakeCueCapable && (config.wakeSound ?? false) && (
-                <Select label="Wake sound level"
-                  value={config.wakeSoundLevel ?? 'medium'}
-                  options={[
-                    { value: 'quiet',  label: 'Quiet' },
-                    { value: 'medium', label: 'Medium' },
-                    { value: 'loud',   label: 'Loud' },
-                  ]}
-                  onChange={v => set('wakeSoundLevel', v)}/>
-              )}
-              {/* Where the wake word is detected (docs/listening.md). Two
-                  choices; "shadow" is a developer diagnostic, set through the
-                  API and shown here only on an Echo already in it, labelled as
-                  the streaming mode it is. "On this Echo" needs oww_trigger —
-                  shadow shipped first and there is firmware in the field that
-                  scores and reports without being able to act on it. */}
-              <Select
-                label="Wake word detection"
-                sub={!shadowCapable
-                  ? 'needs newer firmware on this Echo — the controller listens for now'
-                  : onDeviceMode(config) === 'on'
-                    ? (localCapable
-                        ? 'the Echo listens for the wake word itself and sends nothing until it hears it — then only what you say, until you stop'
-                        : "this Echo's firmware still streams all the time in this mode — update it for private listening")
-                    : onDeviceMode(config) === 'shadow'
-                      ? 'diagnostic: streams all the time, and both the Echo and the controller score it so Activity can compare them'
-                      : 'streams the microphone to the controller all the time, on your network, and the controller listens for the wake word'}
-                value={onDeviceMode(config)}
-                options={[
-                  // Needs the runtime + models installed as well as the
-                  // capability, which the Updates tab does — an Echo without
-                  // them reports itself degraded (button only) below.
-                  { value: 'on',  label: 'On this Echo',      disabled: !triggerCapable },
-                  { value: 'off', label: 'On the controller' },
-                  ...(onDeviceMode(config) === 'shadow'
-                    ? [{ value: 'shadow', label: 'Diagnostic (streams)' }] : []),
-                ]}
-                onChange={v => set('owwOnDevice', v)}/>
-              {listen && (
-                <div className="em-label" style={{ marginTop: 'var(--space-3)',
-                  color: listen.state === 'degraded' ? 'var(--warn)' : 'var(--muted)' }}>
-                  {listenStatusText(listen)}
-                </div>
-              )}
-              {onDeviceMode(config) !== 'off' && shadowCapable && (
-                <div className="em-label" style={{ marginTop: 'var(--space-3)', color: 'var(--muted)' }}>
-                  Needs the wake word runtime installed on this Echo (Updates tab) — costs ~0.4 of a core while it runs.
-                </div>              )}
-            </div>
-          </div>
-        </div>
-      </Stage>
-
-      {/* 03 MICROPHONES */}
-      <Stage n="03" title="Microphones"
+      {/* 02 MICROPHONES */}
+      <Stage n="02" title="Microphones"
         chips={<ScopeChip tone="device">Device</ScopeChip>}
-        desc="Capture from the 7-mic array. Presets steer which perimeter mic is used during voice turns — wake-word listening always uses the centre mic. Gain here is the only gain in the wake path: it sets the level everything downstream hears."
+        desc="Capture from the mic array. The Echo listens on one microphone, the wake word mic (centre unless that one has failed), with the speaker's own playback cancelled. Gain here is the only gain in the path: it sets the level everything downstream hears."
         scope={scopeEl('microphones')} dim={secStyle('microphones')}>
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 'var(--space-10)', alignItems: 'center' }}>
-          <DeviceDiagram
-            activeMics={PRESETS[currentPreset].activeMics}
-            patternType={PRESETS[currentPreset].patternType}
-          />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)', ...inputStyle }}>
-            {Object.entries(PRESETS).map(([key, p]) => (
-              <div key={key} {...asButton(() => selectPreset(key), { pressed: currentPreset === key })} style={{
-                background: currentPreset === key
-                  ? 'linear-gradient(160deg,var(--accent-tint),var(--accent-line))'
-                  : 'linear-gradient(160deg,var(--raised),var(--surface))',
-                border: `1px solid ${currentPreset === key ? 'var(--accent)' : 'var(--border-soft)'}`,
-                borderRadius: 'var(--radius-xl)', padding: 'var(--space-4) var(--space-3)',
-                cursor: disabled ? 'default' : 'pointer',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)',
-                transition: 'border-color 0.15s, background 0.15s',
-              }}>
-                <DeviceDiagramMini activeMics={p.activeMics} patternType={p.patternType}/>
-                <div style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
-                  {key.charAt(0).toUpperCase() + key.slice(1)}
-                </div>
-              </div>
-            ))}
+          <DeviceDiagram activeMics={['mk1','mk2','mk3','mk4','mk5','mk6']} patternType="omni"/>
+          <div style={{ fontFamily: mono, fontSize: 'var(--fs-sm)', color: 'var(--muted)', lineHeight: 1.6 }}>
+            The microphones around the edge are used only to cancel the
+            speaker's echo. There is no steering: the Voice Incubator
+            satellite hears the wake word mic (EchoHome).
           </div>
         </div>
         <StageAdvanced open={advMics} onToggle={() => setAdvMics(o => !o)} disabledStyle={inputStyle}>
@@ -10347,10 +9794,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
             <Slider label="MICPGA" sub="analog gain, before the ADC" value={config.adcMicpga ?? 40} min={0} max={59} onChange={v => set('adcMicpga', v)}/>
             <Slider label="Digital gain" sub="ADC digital gain — affects wake + turns" value={config.adcDigitalGain ?? 88} min={0} max={100} onChange={v => set('adcDigitalGain', v)}/>
             <Slider label="Mic gain" sub="fixed gain on the 24-bit capture, pre-16-bit stream" value={config.micGainDb ?? 24} min={0} max={42} unit="dB" onChange={v => set('micGainDb', v)}/>
-            <Slider label="Beam angle" sub="-1 = auto (onset-ratio selection)" value={config.beamAngle ?? -1} min={-1} max={359} step={1} onChange={v => set('beamAngle', v)}/>
-            <Toggle label="Beamforming" sub="perimeter mic lock during turns" value={config.beamformingEnabled ?? false} onChange={v => set('beamformingEnabled', v)}/>
             <Toggle label="Echo cancel (AEC)" sub="subtracts the device's own playback — wake + turns" value={config.aecEnabled ?? false} onChange={v => set('aecEnabled', v)}/>
-            <Toggle label="Noise suppression" sub="DTLN denoise on speech-to-text audio only — helps fans/hum, not TV speech" value={config.nsAsr ?? false} onChange={v => set('nsAsr', v)}/>
             <Slider label="AEC delay"
               sub={hwEchoRef
                 ? 'not used — this device has a hardware echo reference'
@@ -10385,7 +9829,6 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                 { value: 'sw',   label: 'Software tap' },
               ]}
               onChange={v => set('aecRefSource', v)}/>
-            <Toggle label="Save utterances" sub="keeps the last 10 turns' mic audio on the server — play or download from Activity" value={config.saveUtterances ?? false} onChange={v => set('saveUtterances', v)}/>
           </div>
           {/* An escape hatch for a dead centre mic (#705). Disabled with the
               reason on firmware that ignores the key. */}
@@ -10405,8 +9848,8 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         </StageAdvanced>
       </Stage>
 
-      {/* 04 RING */}
-      <Stage n="04" title="Ring"
+      {/* 03 RING */}
+      <Stage n="03" title="Ring"
         chips={<ScopeChip tone="controller">Controller</ScopeChip>}
         desc="Colours for the LED ring during conversations — the solid listening ring and the thinking spinner. The red mute ring and cyan volume arc never change; red always means the mics are off."
         scope={scopeEl('ring')} dim={secStyle('ring')}>
@@ -10488,26 +9931,12 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         </StageAdvanced>
       </Stage>
 
-      {/* 05 ADVANCED — button-turn internals: processing + speech gate */}
-      <Stage n="05" title="Advanced"
-        chips={<><ScopeChip tone="device">Device</ScopeChip><ScopeChip>Button turns only</ScopeChip></>}
-        desc="Everything here affects only bounded button-press turns — except the action button setting, which decides whether a tap starts one at all, and the USB console and controller address, which are not about turns. Wake-word turns stream continuously — Home Assistant's VAD endpoints them, and the controller closes accidental wakes after 5s of silence relative to the room's measured noise floor — so none of these settings touch the wake path."
+      {/* 04 ADVANCED */}
+      <Stage n="04" title="Advanced"
+        chips={<ScopeChip tone="device">Device</ScopeChip>}
+        desc="The USB console, the controller's address, and the Echo's own ESPHome device. The action button, the wake word and the listening are the Voice Incubator satellite's and Home Assistant's now (EchoHome)."
         scope={scopeEl('advanced')} dim={secStyle('advanced')}>
-        {subHeader('Action button', true)}
-        <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
-          {/* Offered only when the device says it can measure a hold. The
-              value still reads through holdCapable so an incapable device
-              shows the switch off rather than showing a stored true it
-              cannot honour. */}
-          <Toggle label="Tap sends an event" disabled={!holdCapable}
-            sub={holdCapable
-              ? "tap fires the HA action-button event instead of starting a turn — hold still fires 'long'; the button can no longer cancel a response. A tap is easy to trigger by accident and the button is unauthenticated — bind destructive automations to 'long' instead"
-              : 'needs newer firmware on this Echo — it has no action-button event for a tap to fire'}
-            value={holdCapable && (config.buttonSingleTapEvent ?? false)}
-            onChange={v => set('buttonSingleTapEvent', v)}/>
-          <Slider label="Multi-tap window" sub="0 = off. Coalesces quick taps into double/triple, at the cost of delaying every tap by this much. Needs 'Tap sends an event'" value={config.buttonMultiTapMs ?? 0} min={0} max={600} step={50} unit="ms" disabled={!(holdCapable && (config.buttonSingleTapEvent ?? false))} onChange={v => set('buttonMultiTapMs', v)}/>
-        </div>
-        {subHeader('USB console')}
+        {subHeader('USB console', true)}
         <div style={{ ...inputStyle }}>
           <PasswordField
             label="Console password"
@@ -10546,20 +9975,10 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
               shows its key, set by Home Assistant when it adds the Echo. */}
           {esphomeServerCapable && esphomePanel}
         </div>
-        {subHeader('Turn processing')}
-        <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
-          <Toggle label="Auto gain (AGC)" sub="levels button-turn speech; never the wake stream" value={config.agcEnabled ?? true} onChange={v => set('agcEnabled', v)}/>
-        </div>
-        {subHeader('Speech gate')}
-        <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-2) var(--space-10)', ...inputStyle }}>
-          <Slider label="Threshold" sub="RMS above this = speech (pre-gain units)" value={config.vadThreshold ?? 0.001} min={0.0001} max={0.02} step={0.0001} onChange={v => set('vadThreshold', v)}/>
-          <Slider label="Speech gate" sub="speech needed to open" value={config.vadSpeechMs ?? 160} min={32} max={320} step={32} unit="ms" onChange={v => set('vadSpeechMs', v)}/>
-          <Slider label="Silence gate" sub="silence needed to close" value={config.vadSilenceMs ?? 800} min={200} max={2000} step={100} unit="ms" onChange={v => set('vadSilenceMs', v)}/>
-        </div>
       </Stage>
 
-      {/* 06 SENDSPIN */}
-      <Stage n="06" title="Sendspin"
+      {/* 05 SENDSPIN */}
+      <Stage n="05" title="Sendspin"
         chips={<ScopeChip tone="device">Device</ScopeChip>}
         desc="Makes the Echo a Sendspin player, so Music Assistant can group it with other speakers and play to all of them in sync. Music Assistant connects to the Echo directly. Music from Home Assistant still takes priority and leaves the group. Early Access."
         scope={scopeEl('sendspin')} dim={secStyle('sendspin')}

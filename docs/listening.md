@@ -2,11 +2,36 @@
 
 This is the specification for how an Echo listens for its wake word and when
 its microphone audio leaves the device. It is the reference for the firmware
-(`device/internal/listen/`), the controller (`controller/em_listen.py`), the
+(`device/cmd/server.go`, `reportListenState`; `device/internal/listen/` before
+EchoHome), the controller (`controller/em_listen.py`), the
 wire protocol (`docs/device-controller-interface.md`) and every user-facing
 privacy statement. If code and this document disagree, one of them is a bug.
 
-## Two modes, chosen per Echo
+## EchoHome firmware: one way to listen
+
+An Echo on EchoHome firmware has no mode to choose. Its wake word is the
+Voice Incubator satellite's, running on the Echo; the controller has no voice
+path and hears nothing of the room, ever.
+
+- **Nothing goes to the controller.** The Echo sends no microphone audio on
+  `/data` at all, in any state.
+- **The Voice Incubator app** hears the room only in a call (after the Echo's
+  own wake word, or a press of the action button) and, if Home Assistant's
+  "Voice Incubator live listening" switch on the Echo's own ESPHome device is
+  on, while the app's Test page listens. The Echo reports that as
+  `incubator_state` `monitored`, and the privacy line says it streams.
+- **What the Echo reports** as `listen_state`: `local`, or `degraded` with no
+  microphone it can read. The controller takes that report over any stored
+  `owwOnDevice` (`em_listen.resolve`): a stored `off` or `shadow` from before
+  never makes it read as streaming. Before its first report it reads unknown.
+- **Mute** is the Echo's own: the satellite closes its microphone, and nothing
+  remote can lift it.
+
+The rest of this document describes firmware from before EchoHome, which still
+exists in the field until it is updated; its `stream` report keeps the labels
+below.
+
+## Two modes, chosen per Echo (firmware from before EchoHome)
 
 | Mode | Stored value (`owwOnDevice`) | Wake word runs on | Audio leaves the Echo |
 |------|------------------------------|-------------------|-----------------------|

@@ -22,35 +22,12 @@ type Device struct {
 	mu sync.RWMutex
 
 	// Microphone / VAD
-	VadChannel   int
-	VadThreshold float64
-	VadSpeechMs  int
-	VadSilenceMs int
 
 	// Speaker
 	StartupVolume     int
 	VolumeButtonSound bool
 
 	// Wake word
-	OwwThreshold float64
-	OwwModel     string
-	// OwwMinFrames is how many consecutive 80ms frames must clear the wake bar
-	// before on-device scoring reports a wake. 1 is the single-frame rule.
-	OwwMinFrames int
-	// BargeInEnabled / BargeInThreshold mirror the controller's barge-in
-	// settings. The device needs them for on-device scoring: while the speaker
-	// is streaming, the controller lowers its wake bar to BargeInThreshold
-	// (echo at the mic is ~25dB louder than the person, so speech-over-TTS
-	// scores are depressed). A device scoring against the normal threshold
-	// during playback is not answering the same question, which made every
-	// barge-in look like an on-device miss.
-	BargeInEnabled   bool
-	BargeInThreshold float64
-	// WakeWordEnabled is Home Assistant's wake word picker (#286): false is
-	// "No wake word". A crossing then never opens a session or starts a
-	// turn, so a privately listening Echo sends nothing; the button still
-	// works. Not stored: the controller pushes it on every connect.
-	WakeWordEnabled bool
 	// DuckDb is how far MUSIC is attenuated while a voice turn plays over
 	// it, in dB (negative = quieter). Config rather than a constant because
 	// it is a taste parameter that needs iterating in a real room, the same
@@ -62,45 +39,16 @@ type Device struct {
 	// volume so their combined gain never exceeds unity.
 	ResponseLevel string
 
-	// WakeSound plays a short rising two-tone when the wake word is
-	// recognised (#120). Off by default: it interrupts "<wakeword>, do this".
-	// An accessibility option first — the ring is the only other sign the
-	// device is listening, and no use to someone who cannot see it.
-	WakeSound bool
-	// WakeSoundLevel is "quiet", "medium" or "loud" (internal/cue).
-	WakeSoundLevel string
-
 	// RemoteVolumeArc shows the cyan volume arc when a live remote command
 	// changes the volume. Physical buttons always show it; the boot-time
 	// volume restore never does. Off by default because an unprompted ring was
 	// found distracting, but useful as an opt-in accessibility setting (#634).
 	RemoteVolumeArc bool
 
-	// ESPHomeServer runs the Echo's own ESPHome API server (internal/esphome),
-	// so Home Assistant can connect to the Echo itself. Off by default while
-	// the controller still presents the Echo to HA.
-	ESPHomeServer bool
-
 	// MuteRing shows the red ring while muted. Off, the ring stays dark and
 	// the lit mute button alone says it: honoured only on an Echo whose
 	// button lights itself (capability mute_ring_off).
 	MuteRing bool
-
-	// OwwOnDevice selects on-device wake word scoring: "off", "shadow" or
-	// "on".
-	//
-	// Shadow scores the wake stream locally and reports what it would have
-	// detected, without acting on it, so device and controller can be
-	// compared on the same audio. "on" additionally lets the device TRIGGER
-	// the turn: the crossing is sent as an oww_wake message and the
-	// controller starts the turn on the device's word rather than its own.
-	//
-	// The controller keeps scoring in "on" mode — its detections no longer
-	// trigger, but they still record whether it agreed, so the comparison
-	// that justified shipping this keeps running with the roles inverted.
-	// It is also what keeps barge-in working unchanged, since that is
-	// scored controller-side over the turn's own audio.
-	OwwOnDevice string
 
 	// ADC gain — applied via tinymix when config is pushed
 	AdcDigitalGain int
@@ -116,11 +64,6 @@ type Device struct {
 	// adaptation lives controller-side as measurement. 0 = unity.
 	MicGainDb int
 
-	// BeamAngle fixes the beamformer steering direction in degrees
-	// (0–360, clockwise from 12 o'clock). -1 = auto (track loudest source).
-	BeamAngle          float64
-	BeamformingEnabled bool
-
 	// WakeMic picks the mic the unlocked path (wake word listening, and
 	// turns with beamforming off) reads. 0 = the centre mic, the default and
 	// right for nearly every unit; 1-6 = perimeter mic MK1-MK6. An escape
@@ -131,7 +74,6 @@ type Device struct {
 	// Defaults true; applies to bounded lockMic turn streams only (forced
 	// off on the always-on wake stream). RNNoise NS was removed 2026-07-12 —
 	// noise suppression lives controller-side (em_ns.py) on the ASR path.
-	AgcEnabled *bool
 
 	// Acoustic echo cancellation (speexdsp, internal/aec). Applies to the
 	// whole mic path (wake stream included) — defaults off until validated
@@ -228,32 +170,16 @@ func Get() *Device {
 // loadDefaults populates from environment variables, falling back to
 // hard-coded defaults. Must be called with mu held.
 func (d *Device) loadDefaults() {
-	d.VadChannel = envInt("VAD_CHANNEL", 0)
-	d.VadThreshold = envFloat("VAD_THRESHOLD", 0.004)
-	d.VadSpeechMs = envInt("VAD_SPEECH_MS", 80)
-	d.VadSilenceMs = envInt("VAD_SILENCE_MS", 600)
 	d.StartupVolume = envInt("STARTUP_VOLUME", 85)
 	d.VolumeButtonSound = envBool("VOLUME_BUTTON_SOUND", true)
-	d.OwwThreshold = envFloat("OWW_THRESHOLD", 0.5)
-	d.OwwMinFrames = envInt("OWW_MIN_FRAMES", 1)
-	d.OwwModel = envStr("OWW_MODEL", "hey_jarvis_v0.1")
-	d.OwwOnDevice = normaliseOnDevice(envStr("OWW_ON_DEVICE", OnDeviceOff))
-	d.BargeInThreshold = envFloat("BARGE_IN_THRESHOLD", 0.05)
-	d.WakeWordEnabled = true
 	d.DuckDb = envFloat("DUCK_DB", -18)
 	d.ResponseLevel = normaliseResponseLevel(envStr("RESPONSE_LEVEL", ResponseLevelLow))
-	d.WakeSound = envBool("WAKE_SOUND", false)
-	d.WakeSoundLevel = envStr("WAKE_SOUND_LEVEL", "medium")
 	d.RemoteVolumeArc = envBool("REMOTE_VOLUME_ARC", false)
 	d.MuteRing = envBool("MUTE_RING", true)
 	d.AdcDigitalGain = envInt("ADC_DIGITAL_GAIN", 88)
 	d.AdcMicpga = envInt("ADC_MICPGA", 40)
 	d.MicGainDb = clampMicGainDb(envInt("MIC_GAIN_DB", 24))
-	d.BeamAngle = envFloat("BEAM_ANGLE", -1)
-	d.BeamformingEnabled = envBool("BEAMFORMING_ENABLED", true)
 	d.WakeMic = clampWakeMic(envInt("WAKE_MIC", 0))
-	agcEnabled := envBool("AGC_ENABLED", true)
-	d.AgcEnabled = &agcEnabled
 	// true to match em_db.DEFAULT_DEVICE_CONFIG, which now defaults AEC on
 	// because barge-in does. The controller's value reaches us on the first
 	// config push either way; this only governs the window before it.
@@ -283,36 +209,6 @@ func (d *Device) Apply(msg ConfigMessage) {
 		d.initialised = true
 	}
 
-	if msg.VadThreshold > 0 {
-		d.VadThreshold = msg.VadThreshold
-	}
-	if msg.VadSpeechMs > 0 {
-		d.VadSpeechMs = msg.VadSpeechMs
-	}
-	if msg.VadSilenceMs > 0 {
-		d.VadSilenceMs = msg.VadSilenceMs
-	}
-	if msg.OwwThreshold > 0 {
-		d.OwwThreshold = msg.OwwThreshold
-	}
-	if msg.OwwMinFrames > 0 {
-		d.OwwMinFrames = msg.OwwMinFrames
-	}
-	if msg.OwwModel != "" {
-		d.OwwModel = msg.OwwModel
-	}
-	if msg.OwwOnDevice != "" {
-		d.OwwOnDevice = normaliseOnDevice(msg.OwwOnDevice)
-	}
-	if msg.BargeInEnabled != nil {
-		d.BargeInEnabled = *msg.BargeInEnabled
-	}
-	if msg.WakeWordEnabled != nil {
-		d.WakeWordEnabled = *msg.WakeWordEnabled
-	}
-	if msg.BargeInThreshold > 0 {
-		d.BargeInThreshold = msg.BargeInThreshold
-	}
 	// Negative-going, so the usual "non-zero means set" rule is inverted:
 	// a duck of 0dB is a legitimate setting ("do not duck at all") and must
 	// be distinguishable from an absent field, hence the pointer.
@@ -322,12 +218,6 @@ func (d *Device) Apply(msg ConfigMessage) {
 	if msg.ResponseLevel != "" {
 		d.ResponseLevel = normaliseResponseLevel(msg.ResponseLevel)
 	}
-	if msg.WakeSound != nil {
-		d.WakeSound = *msg.WakeSound
-	}
-	if msg.WakeSoundLevel != "" {
-		d.WakeSoundLevel = msg.WakeSoundLevel
-	}
 	if msg.VolumeButtonSound != nil {
 		d.VolumeButtonSound = *msg.VolumeButtonSound
 	}
@@ -336,9 +226,6 @@ func (d *Device) Apply(msg ConfigMessage) {
 	}
 	if msg.MuteRing != nil {
 		d.MuteRing = *msg.MuteRing
-	}
-	if msg.ESPHomeServer != nil {
-		d.ESPHomeServer = *msg.ESPHomeServer
 	}
 	if msg.StartupVolume > 0 {
 		d.StartupVolume = msg.StartupVolume
@@ -352,17 +239,8 @@ func (d *Device) Apply(msg ConfigMessage) {
 	if msg.MicGainDb != nil {
 		d.MicGainDb = clampMicGainDb(*msg.MicGainDb)
 	}
-	if msg.BeamAngle != nil {
-		d.BeamAngle = *msg.BeamAngle
-	}
-	if msg.BeamformingEnabled != nil {
-		d.BeamformingEnabled = *msg.BeamformingEnabled
-	}
 	if msg.WakeMic != nil {
 		d.WakeMic = clampWakeMic(*msg.WakeMic)
-	}
-	if msg.AgcEnabled != nil {
-		d.AgcEnabled = msg.AgcEnabled
 	}
 	if msg.AecEnabled != nil {
 		d.AecEnabled = msg.AecEnabled
@@ -400,20 +278,6 @@ func (d *Device) Apply(msg ConfigMessage) {
 	applyOutput(&d.Output, msg)
 }
 
-// WakeWordOn reports whether a wake word crossing may start a turn (#286).
-func (d *Device) WakeWordOn() bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.WakeWordEnabled
-}
-
-// WakeSoundSetting reports whether the wake sound is on, and at what level.
-func (d *Device) WakeSoundSetting() (on bool, level string) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.WakeSound, d.WakeSoundLevel
-}
-
 // VolumeButtonSoundEnabled reports whether physical volume changes should
 // play their audible preview. The caller still decides whether playback is
 // idle; config owns only the preference.
@@ -421,13 +285,6 @@ func (d *Device) VolumeButtonSoundEnabled() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.VolumeButtonSound
-}
-
-// ESPHomeServerOn reports whether the Echo serves the ESPHome API itself.
-func (d *Device) ESPHomeServerOn() bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.ESPHomeServer
 }
 
 // MuteRingOn reports whether the red ring shows while muted.
@@ -518,22 +375,10 @@ func (d *Device) OutputChain() outchain.Params {
 func (d *Device) Snapshot() ConfigMessage {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	beamAngle := d.BeamAngle
 	wakeMic := d.WakeMic
-	// C4 fix (2026-07-05 review): previously &d.BeamformingEnabled leaked a
-	// pointer into the live mutex-guarded struct — the caller (streamMic,
-	// every period) dereferences it after RUnlock, racing with Apply()
-	// writing the same bool on a config push. Copy to a local like
-	// beamAngle/agcEnabled above.
-	beamformingEnabled := d.BeamformingEnabled
-	// Same reason as beamformingEnabled above: copy, never point into the
-	// mutex-guarded struct.
-	bargeInEnabled := d.BargeInEnabled
-	wakeWordEnabled := d.WakeWordEnabled
-	agcEnabled := true
-	if d.AgcEnabled != nil {
-		agcEnabled = *d.AgcEnabled
-	}
+	// Copied to locals, never pointed into the mutex-guarded struct: a caller
+	// dereferences after RUnlock, racing with Apply() on a config push (C4,
+	// 2026-07-05 review).
 	micGainDb := d.MicGainDb
 	adcDigitalGain := d.AdcDigitalGain
 	adcMicpga := d.AdcMicpga
@@ -552,28 +397,14 @@ func (d *Device) Snapshot() ConfigMessage {
 	sendspinUnpaired := d.SendspinUnpaired != nil && *d.SendspinUnpaired
 	remoteVolumeArc := d.RemoteVolumeArc
 	muteRing := d.MuteRing
-	esphomeServer := d.ESPHomeServer
 	return ConfigMessage{
-		VadThreshold:        d.VadThreshold,
-		VadSpeechMs:         d.VadSpeechMs,
-		VadSilenceMs:        d.VadSilenceMs,
-		OwwThreshold:        d.OwwThreshold,
-		OwwMinFrames:        d.OwwMinFrames,
-		OwwModel:            d.OwwModel,
-		OwwOnDevice:         d.OwwOnDevice,
-		BargeInEnabled:      &bargeInEnabled,
-		BargeInThreshold:    d.BargeInThreshold,
 		ResponseLevel:       d.ResponseLevel,
-		WakeWordEnabled:     &wakeWordEnabled,
 		StartupVolume:       d.StartupVolume,
 		VolumeButtonSound:   &volumeButtonSound,
 		AdcDigitalGain:      &adcDigitalGain,
 		AdcMicpga:           &adcMicpga,
 		MicGainDb:           &micGainDb,
-		BeamAngle:           &beamAngle,
 		WakeMic:             &wakeMic,
-		BeamformingEnabled:  &beamformingEnabled,
-		AgcEnabled:          &agcEnabled,
 		AecEnabled:          &aecEnabled,
 		AecDelayMs:          &aecDelayMs,
 		AecTailMs:           d.AecTailMs,
@@ -585,7 +416,6 @@ func (d *Device) Snapshot() ConfigMessage {
 		SendspinName:        d.SendspinName,
 		RemoteVolumeArc:     &remoteVolumeArc,
 		MuteRing:            &muteRing,
-		ESPHomeServer:       &esphomeServer,
 		ListeningAnim:       d.ListeningAnim,
 		IncubatorRing:       d.IncubatorRing,
 	}
@@ -601,17 +431,10 @@ type ConfigMessage struct {
 	// "non-zero means set" rule they were silently ignored: the dashboard
 	// slider offers 0, the config stored 0, and the device carried on at
 	// whatever gain it already had.
-	AdcDigitalGain *int    `json:"adcDigitalGain,omitempty"`
-	AdcMicpga      *int    `json:"adcMicpga,omitempty"`
-	MicGainDb      *int    `json:"micGainDb,omitempty"`
-	StartupVolume  int     `json:"startupVolume,omitempty"`
-	VadThreshold   float64 `json:"vadThreshold,omitempty"`
-	VadSpeechMs    int     `json:"vadSpeechMs,omitempty"`
-	VadSilenceMs   int     `json:"vadSilenceMs,omitempty"`
-	OwwThreshold   float64 `json:"owwThreshold,omitempty"`
-	OwwMinFrames   int     `json:"owwMinFrames,omitempty"`
-	OwwModel       string  `json:"owwModel,omitempty"`
-	OwwOnDevice    string  `json:"owwOnDevice,omitempty"`
+	AdcDigitalGain *int `json:"adcDigitalGain,omitempty"`
+	AdcMicpga      *int `json:"adcMicpga,omitempty"`
+	MicGainDb      *int `json:"micGainDb,omitempty"`
+	StartupVolume  int  `json:"startupVolume,omitempty"`
 	// ConsolePassword is the hashed record emOS's init checks before handing
 	// over a shell on the USB serial console. A POINTER, and it has to be: an
 	// EMPTY record is the legitimate "no password" setting, so with a plain
@@ -635,18 +458,12 @@ type ConfigMessage struct {
 	//
 	// Written to disk for init like the password above, and ignored on
 	// FireOS, which uses adbd.
-	ConsoleTimeoutMin *int  `json:"consoleTimeoutMin,omitempty"`
-	BargeInEnabled    *bool `json:"bargeInEnabled,omitempty"`
+	ConsoleTimeoutMin *int `json:"consoleTimeoutMin,omitempty"`
 	// A pointer because false ("No wake word") is the value that matters.
-	WakeWordEnabled     *bool    `json:"wakeWordEnabled,omitempty"`
-	BargeInThreshold    float64  `json:"bargeInThreshold,omitempty"`
 	DuckDb              *float64 `json:"duckDb,omitempty"`
 	ResponseLevel       string   `json:"responseLevel,omitempty"`
-	BeamAngle           *float64 `json:"beamAngle,omitempty"`
-	BeamformingEnabled  *bool    `json:"beamformingEnabled,omitempty"`
 	HasBeamforming      bool     `json:"hasBeamforming,omitempty"`
 	WakeMic             *int     `json:"wakeMic,omitempty"`
-	AgcEnabled          *bool    `json:"agcEnabled,omitempty"`
 	AecEnabled          *bool    `json:"aecEnabled,omitempty"`
 	AecDelayMs          *int     `json:"aecDelayMs,omitempty"`
 	AecTailMs           int      `json:"aecTailMs,omitempty"`
@@ -656,17 +473,12 @@ type ConfigMessage struct {
 	SendspinEnabled     *bool    `json:"sendspinEnabled,omitempty"`
 	SendspinUnpaired    *bool    `json:"sendspinUnpaired,omitempty"`
 	SendspinName        string   `json:"sendspinName,omitempty"`
-	// WakeSound: a pointer so "off" is distinguishable from absent.
-	WakeSound      *bool  `json:"wakeSound,omitempty"`
-	WakeSoundLevel string `json:"wakeSoundLevel,omitempty"`
 	// VolumeButtonSound: a pointer so "off" is distinguishable from absent.
 	VolumeButtonSound *bool `json:"volumeButtonSound,omitempty"`
 	// RemoteVolumeArc: a pointer so "off" is distinguishable from absent.
 	RemoteVolumeArc *bool `json:"remoteVolumeArc,omitempty"`
 	// MuteRing: a pointer, as false is meaningful (the ring off while muted).
 	MuteRing *bool `json:"muteRing,omitempty"`
-	// ESPHomeServer: a pointer, as false (off) is meaningful.
-	ESPHomeServer *bool `json:"esphomeServer,omitempty"`
 
 	// Output chain (internal/outchain). Pointers because zero is a real
 	// setting for every one of them; see applyOutput.
@@ -701,42 +513,13 @@ func clampMicGainDb(db int) int {
 	return db
 }
 
-// On-device wake word modes.
+// AecRefSource values. "auto" detects the hardware loopback and falls back
+// to the software tap; the other two pin it for an A/B.
 const (
-	OnDeviceOff    = "off"
-	OnDeviceShadow = "shadow"
-	OnDeviceOn     = "on"
-
-	// AecRefSource values. "auto" detects the hardware loopback and falls
-	// back to the software tap; the other two pin it for an A/B.
 	AecRefAuto = "auto"
 	AecRefHW   = "hw"
 	AecRefSW   = "sw"
 )
-
-// normaliseOnDevice maps a pushed value onto a known mode. Anything
-// unrecognised becomes "off": a device receiving a mode it cannot honour must
-// not guess, because the two plausible guesses are "score but do nothing" and
-// "start triggering turns", and one of those is a live behaviour change on a
-// device that cannot deliver it.
-//
-// That rule is why firmware predating "on" is safe to leave in the field: it
-// normalises the value away and keeps scoring in shadow. The controller does
-// not rely on that — it gates the setting on the oww_trigger capability — but
-// the device must not depend on the controller being careful.
-func normaliseOnDevice(v string) string {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case OnDeviceShadow:
-		return OnDeviceShadow
-	case OnDeviceOn:
-		return OnDeviceOn
-	case "", OnDeviceOff:
-		return OnDeviceOff
-	default:
-		log.Printf("[config] unknown owwOnDevice %q — treating as %q", v, OnDeviceOff)
-		return OnDeviceOff
-	}
-}
 
 // normaliseAecRef keeps an unknown value on the DETECTING path rather than
 // pinning one. A typo that pinned "sw" would silently disable the hardware

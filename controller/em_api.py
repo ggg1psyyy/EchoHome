@@ -57,7 +57,6 @@ import em_routes_config
 import em_routes_devices
 import em_routes_events
 import em_routes_link
-import em_routes_oww
 import em_routes_provision
 import em_routes_shell
 import em_routes_static
@@ -114,7 +113,6 @@ async def create_app() -> web.Application:
     em_routes_devices.register(app)
     em_routes_activity.register(app)
 
-    em_routes_oww.register(app)
     em_routes_shell.register(app)
 
     # Updates: firmware, emOS, releases, the controller release notice

@@ -42,29 +42,17 @@ KINDS: dict[str, str] = {
     "adcMicpga": INT,
     "micGainDb": INT,
     "startupVolume": INT,
-    "vadThreshold": FLOAT,
-    "vadSpeechMs": INT,
-    "vadSilenceMs": INT,
-    "owwThreshold": FLOAT,
-    "owwModel": STR,
     "owwOnDevice": STR,
     "owwMinFrames": INT,
-    "bargeInEnabled": BOOL,
-    "bargeInThreshold": FLOAT,
     "duckDb": FLOAT,
     "responseLevel": STR,
-    "beamAngle": FLOAT,
     "wakeMic": INT,
-    "beamformingEnabled": BOOL,
-    "agcEnabled": BOOL,
     "aecEnabled": BOOL,
     "aecDelayMs": INT,
     "aecTailMs": INT,
     "aecRefSource": STR,
     "sendspinEnabled": BOOL,
     "sendspinUnpaired": BOOL,
-    "wakeSound": BOOL,
-    "wakeSoundLevel": STR,
     "volumeButtonSound": BOOL,
     "eqBands": FLOAT_LIST,
     "eqLoudness": BOOL,
@@ -74,15 +62,6 @@ KINDS: dict[str, str] = {
     "limiterThreshold": FLOAT,
     "limiterRelease": FLOAT,
     # Consumed only by the controller.
-    "buttonSingleTapEvent": BOOL,
-    "buttonMultiTapMs": INT,
-    "wakeArbitrationMs": INT,
-    "streamReply": BOOL,
-    "owwSpeexNs": BOOL,
-    "nsAsr": BOOL,
-    "saveUtterances": BOOL,
-    "wakeClipCapture": BOOL,
-    "wakeClipMinScore": FLOAT,
 }
 
 
@@ -117,7 +96,19 @@ def fits(kind: str, value) -> bool:
 # firmware can be, and serves its ESPHome device always.
 RETIRED = frozenset({"muteRing", "remoteVolumeArc", "incubatorMonitor",
                      "bleProxyEnabled", "bleProxyConnections",
-                     "voiceBackend", "incubatorStandalone", "esphomeServer"})
+                     "voiceBackend", "incubatorStandalone", "esphomeServer",
+                     # The controller's and the old firmware's voice: wake word
+                     # model, threshold, denoise, barge-in, arbitration, wake
+                     # sound, wake samples, beamforming, speech gate, AGC,
+                     # recordings, the button's tap events (the Echo's own now),
+                     # streamed replies and the wake word picker.
+                     "owwModel", "owwThreshold", "owwSpeexNs", "bargeInEnabled",
+                     "bargeInThreshold", "wakeArbitrationMs", "wakeSound",
+                     "wakeSoundLevel", "wakeClipCapture", "wakeClipMinScore",
+                     "beamformingEnabled", "beamAngle", "nsAsr", "saveUtterances",
+                     "agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs",
+                     "buttonSingleTapEvent", "buttonMultiTapMs", "streamReply",
+                     "wakeWordEnabled"})
 
 
 def invalid_keys(config: dict) -> list[str]:

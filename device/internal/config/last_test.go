@@ -15,7 +15,7 @@ func TestTheLastConfigComesBackWhole(t *testing.T) {
 	on, off := true, false
 	pw := "1000:abcd:ef01"
 	duck := 12.0
-	d.Apply(ConfigMessage{Type: "config", MuteRing: &off, RemoteVolumeArc: &on, ESPHomeServer: &on,
+	d.Apply(ConfigMessage{Type: "config", MuteRing: &off, RemoteVolumeArc: &on,
 		BleProxyEnabled: &on, ConsolePassword: &pw, DuckDb: &duck,
 		ListeningAnim: json.RawMessage(`{"pattern":"spin","colors":[[0,0,255]]}`)})
 	if wrote, err := d.SaveLast(p); err != nil || !wrote {

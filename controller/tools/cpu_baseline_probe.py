@@ -13,11 +13,11 @@ Three parts, and the order matters:
    so that is a failure, not a warning.
 2. Import every controller module, the same set CI's import job uses, so
    a dependency added tomorrow is covered on the day it lands.
-3. Actually run the code paths whose wheels carry compiled kernels: a
-   wake word prediction (onnxruntime + openwakeword's numpy features), the
-   output chain (scipy), the noise suppressor. Importing a module does
-   not execute its SIMD kernels, so a clean import proves less than it
-   looks like it does.
+3. Actually run the code path whose wheels carry compiled kernels: the
+   output chain's filters (scipy). Importing a module does not execute its
+   SIMD kernels, so a clean import proves less than it looks like it does.
+   (A wake word prediction and the noise suppressor ran here too, until
+   EchoHome removed the controller's voice path.)
 """
 import importlib
 import pathlib
@@ -59,14 +59,6 @@ if failed:
     sys.exit("FAILED to import: " + ", ".join(failed))
 print(f"imported {len(mods)} controller modules")
 
-from openwakeword.model import Model  # noqa: E402
-
-model = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
-pcm = (np.random.default_rng(0).standard_normal(16000 * 3) * 3000).astype(np.int16)
-for i in range(0, len(pcm) - 1280, 1280):
-    model.predict(pcm[i:i + 1280])
-print("wake word prediction ran")
-
 import em_eq  # noqa: E402
 import scipy.signal as ss  # noqa: E402
 
@@ -74,9 +66,4 @@ sos = ss.butter(4, [100, 8000], "bandpass", fs=48000, output="sos")
 ss.sosfilt(sos, np.random.default_rng(0).standard_normal(48000))
 print(f"scipy filter ran; em_eq loaded from {em_eq.__file__}")
 
-from speexdsp_ns import NoiseSuppression  # noqa: E402
-
-ns = NoiseSuppression.create(160, 16000)
-ns.process(bytes(320))
-print("speexdsp noise suppression ran")
 print("OK")

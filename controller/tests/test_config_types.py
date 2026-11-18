@@ -108,11 +108,11 @@ def test_fits_from_the_edges(kind, good, bad):
 
 
 def test_problems_names_each_bad_changed_key():
-    msgs = T.problems({"owwThreshold": "0.5", "saveUtterances": "false",
+    msgs = T.problems({"duckDb": "-18", "aecEnabled": "false",
                        "micGainDb": 24, "ledScene": 7}, stored={})
     assert len(msgs) == 2
-    assert any(m.startswith("owwThreshold must be a number") for m in msgs)
-    assert any(m.startswith("saveUtterances must be true or false") for m in msgs)
+    assert any(m.startswith("duckDb must be a number") for m in msgs)
+    assert any(m.startswith("aecEnabled must be true or false") for m in msgs)
 
 
 def test_problems_lets_an_unchanged_stored_value_through():
@@ -122,15 +122,15 @@ def test_problems_lets_an_unchanged_stored_value_through():
     assert T.problems({"micGainDb": 30.0}, stored) == []
     assert T.problems({"micGainDb": 31.0}, stored) != []
     # Same value, different type is a change: 1 == True in Python.
-    assert T.problems({"saveUtterances": 1}, {"saveUtterances": True}) != []
+    assert T.problems({"aecEnabled": 1}, {"aecEnabled": True}) != []
 
 
 def test_drop_invalid_removes_only_bad_listed_keys():
-    cfg = {"owwThreshold": "abc", "micGainDb": 24, "ledScene": 7, "x": None}
+    cfg = {"duckDb": "abc", "micGainDb": 24, "ledScene": 7, "x": None}
     out, bad = T.drop_invalid(cfg)
-    assert bad == ["owwThreshold"]
+    assert bad == ["duckDb"]
     assert out == {"micGainDb": 24, "ledScene": 7, "x": None}
-    assert cfg["owwThreshold"] == "abc"   # input not mutated
+    assert cfg["duckDb"] == "abc"   # input not mutated
 
 
 def test_drop_invalid_returns_a_clean_config_unchanged():
@@ -172,7 +172,7 @@ def test_every_config_push_outside_registration_is_filtered():
     # (handle_control) filters with drop_invalid, pinned below.
     pushes = [(fn, v) for path in _sources.MODULES if path.name != "em_controller.py"
               for fn, v in _config_pushes(_sources.tree(path)) if fn.name != "push_config"]
-    assert len(pushes) >= 3
+    assert len(pushes) >= 1
     for fn, v in pushes:
         direct = isinstance(v, ast.Call) and getattr(v.func, "attr", None) == "well_typed"
         assert direct or _calls(fn, "well_typed"), (

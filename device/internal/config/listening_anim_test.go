@@ -39,7 +39,7 @@ func TestListeningAnimSurvivesASparseConfigPush(t *testing.T) {
 	d := Get()
 	d.Apply(ConfigMessage{Type: "config",
 		ListeningAnim: json.RawMessage(`{"pattern":"pulse"}`)})
-	d.Apply(ConfigMessage{Type: "config", OwwThreshold: 0.5})
+	d.Apply(ConfigMessage{Type: "config", ResponseLevel: "medium"})
 
 	if len(d.Snapshot().ListeningAnim) == 0 {
 		t.Fatal("a push without listeningAnim cleared the cached spec")

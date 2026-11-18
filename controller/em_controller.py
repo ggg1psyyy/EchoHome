@@ -98,7 +98,6 @@ import em_wsclose
 import em_rttlog
 import em_mbc
 import em_scenes
-import em_shadow
 import em_health
 import em_wake_samples
 import em_listen
@@ -430,7 +429,6 @@ class Device:
         self.speaking  = False
         self.muted     = False
         # HA's wake word picker (#286); seeded from the DB at connect.
-        self.wake_word_enabled = True
         self.listening = False
         self.thinking  = False
 
@@ -442,12 +440,6 @@ class Device:
 
         self.data_ready = asyncio.Event()
 
-        # Tunable at runtime — updated when a config push arrives.
-        # wake_word_listener reads this each detection cycle rather than
-        # caching a snapshot at startup, so config changes take effect
-        # without requiring a device reconnect.
-        self.oww_threshold: float = OWW_THRESHOLD
-        self.oww_model:     str   = f"{OWW_MODEL}_v0.1"
         # Wake-word training clips use the already-streamed wake audio. The
         # default is off because these clips may contain private speech.
         self.wake_clip_capture: bool = False
@@ -461,36 +453,13 @@ class Device:
         # pending/result state lives in em_device_view._wifi_states instead — this
         # Device object dies with the connection when the network switches.
         self.wifi_scan_future: asyncio.Future | None = None
-        # Q4 fix (2026-07-05 review): dashboard-visible near-miss counter —
-        # incremented in wake_word_listener whenever a score exceeds 0.05
-        # but doesn't clear device.oww_threshold. Separate field from
-        # self.stats deliberately: self.stats is entirely overwritten every
-        # ~30s by the device's own hardware-stats report (msg_type=="stats"
-        # in handle_control), so anything stashed inside it would get wiped
-        # on the next report. This field is controller-owned and persists
-        # independently, reset only on device reconnect (see Device.__init__
-        # semantics generally — a fresh Device is created per connection).
-        self.oww_near_misses: int = 0
-
-        # On-device wake word shadow mode (schema v13). The device scores the
-        # same wake stream locally and reports threshold crossings as they
-        # happen; these are correlated against THIS controller's own detections
-        # at turn-persist time. Monotonic timestamps throughout: an Echo's wall
-        # clock is unreliable before NTP, so the device reports the AGE of a
-        # crossing and the controller converts it against its own clock — the
-        # same reasoning as the control-plane RTT instrumentation.
-        #
-        # maxlen bounds this without a sweeper: crossings are rare (the device
-        # applies a refractory period, so one per utterance) and only the most
-        # recent few can ever be within a match window.
-        self.shadow: em_shadow.ShadowTracker = em_shadow.ShadowTracker()
 
         # owwOnDevice, normalised. "on" hands the wake DECISION to the device:
         # its crossing lands in pending_wake and the wake listener acts on it
         # instead of on its own score. Default off, and set from config on
         # every push, so a device whose config has never arrived behaves
         # exactly as it always did.
-        self.oww_on_device: str = em_shadow.MODE_OFF
+        self.oww_on_device: str = em_listen.MODE_OFF
 
         # Private listening (docs/listening.md). What the device last said it
         # is doing with its wake stream — "local", "stream" or "degraded" —
@@ -707,24 +676,6 @@ class Device:
     def led_anim_capable(self) -> bool:
         return "led_anim" in (self.capabilities or [])
 
-    @property
-    def audio_mix_capable(self) -> bool:
-        """
-        Whether this firmware holds music on its own plane and mixes it with
-        voice at the ALSA write.
-
-        When it does, a voice turn DUCKS the music instead of pausing it —
-        which is the only place ducking can happen. The music feed runs
-        LEAD_S=4s ahead of realtime, so the next four seconds are already on
-        the device when a wake word fires, and audio that has left here
-        cannot be ducked from here. Without the capability the controller
-        keeps the pause/resume path: a device that cannot mix would never
-        play the 0x04 stream at all, which is silence rather than degraded
-        behaviour.
-        """
-        return "audio_mix" in (self.capabilities or [])
-
-
 
     @property
     def mic_capable(self) -> bool:
@@ -732,25 +683,6 @@ class Device:
         capture). Capabilities not yet known are not read as no mic."""
         return not self.capabilities or "mic" in self.capabilities
 
-    @property
-    def button_hold_capable(self) -> bool:
-        """Measures hold time — and so was offered the HA event entity."""
-        return "button_hold" in (self.capabilities or [])
-
-    @property
-    def oww_shadow_capable(self) -> bool:
-        """
-        Whether this firmware can score the wake word on-device at all.
-
-        Capability, not version comparison: the device states what it
-        implements, so the controller needs no knowledge of our release history
-        and a dev build is not mistaken for an old one. This answers "could it"
-        — `shadow.active` answers "is it, right now", which is a different
-        question and comes from whether its stats reports carry a summary.
-        Both are needed: capability drives what the dashboard offers, activity
-        drives whether a missing per-turn score is a real miss.
-        """
-        return "oww_shadow" in (self.capabilities or [])
 
     @property
     def pairing_capable(self) -> bool:
@@ -769,23 +701,6 @@ class Device:
         """
         return "sendspin" in (self.capabilities or [])
 
-    @property
-    def wake_cue_capable(self) -> bool:
-        """
-        Whether this firmware can play its own wake sound (#120). The
-        toggle is disabled without it: a switch that saves and stays silent
-        fails the person this accessibility setting exists for.
-        """
-        return "wake_cue" in (self.capabilities or [])
-
-    @property
-    def wake_word_off_capable(self) -> bool:
-        """
-        Whether this firmware honours wakeWordEnabled=false (#286): a
-        crossing opens no session, so a privately listening Echo sends
-        nothing while HA's picker says "No wake word".
-        """
-        return "wake_word_off" in (self.capabilities or [])
 
     @property
     def wake_mic_capable(self) -> bool:
@@ -818,9 +733,9 @@ class Device:
         """
         Whether this firmware can ACT on its own wake detection.
 
-        Separate from oww_shadow_capable because shadow shipped first: there
-        are devices in the field that score the wake word and report it, and
-        cannot start a turn from it. Offering those owwOnDevice="on" produces a
+        Firmware from before EchoHome only (EchoHome announces no on-device
+        modes): some of it scores the wake word and reports it, and cannot
+        start a turn from it. Offering those owwOnDevice="on" produces a
         device that scores perfectly, never answers, and looks broken — the
         exact "I enabled it and nothing happened" the capability rule exists to
         prevent, so "on" is gated on this and shown disabled with the reason
@@ -838,7 +753,7 @@ class Device:
     def listen_view(self) -> "em_listen.ListenView":
         """What this Echo is actually doing with its microphone."""
         return em_listen.resolve(
-            em_shadow.normalise_mode(self.oww_on_device),
+            em_listen.normalise_mode(self.oww_on_device),
             self.capabilities, self.listen_reported, self.listen_reason,
         )
 
@@ -855,7 +770,7 @@ class Device:
         software tap at the ALSA write when the board has none.
 
         This answers "could it" — `aec_ref` below answers "is it, right
-        now", the same split as oww_shadow_capable against shadow.active.
+        now", the usual "could it" against "is it" split.
         Both are needed and neither substitutes for the other: proving a
         channel is a loopback requires the speaker to have played, which has
         not happened at registration, so a capability alone can never say
@@ -924,20 +839,6 @@ class Device:
     async def ping(self):
         await self.send_control({"type": "ping"})
 
-    async def mic_start(self):
-        # One gate for every call site that restarts the wake stream (#286).
-        # mic_start_turn is not gated: an HA-initiated turn is HA's decision.
-        if not self.wake_word_enabled:
-            log.debug(f"[{self.device_id}] mic_start skipped — wake word off")
-            return
-        await self.send_control({"type": "mic_start"})
-
-    async def mic_start_turn(self):
-        """Start mic for a voice turn — signals device to lock the best directional mic."""
-        await self.send_control({"type": "mic_start", "lock_mic": True})
-
-    async def mic_stop(self):
-        await self.send_control({"type": "mic_stop"})
 
     async def listen_ack(self, session: int):
         await self.send_control({"type": "listen_ack", "session": session})
@@ -974,8 +875,6 @@ class Device:
         """Ask the Echo to take its whole ring for 30s (identify_ring, #860)."""
         await self.send_control({"type": "identify"})
 
-    async def push_config(self, **kwargs):
-        await self.send_control({"type": "config", **kwargs})
 
     async def _set_speaking(self, value: bool) -> None:
         """
@@ -1210,7 +1109,6 @@ async def _push_device_state(device: Device) -> None:
             "connected": True,
             "speaking":  device.speaking,
             "muted":     device.muted,
-            "wake_word_enabled": device.wake_word_enabled,
             "listening": device.listening,
             "thinking":  device.thinking,
         },
@@ -1955,35 +1853,12 @@ async def handle_control(ws: WebSocketServerProtocol, secure: bool = False):
         if device.sendspin_capable and row["label"]:
             config = {**config, "sendspinName": row["label"]}
         await device.send_control({"type": "config", **config})
-        device.oww_threshold = float(config.get("owwThreshold", OWW_THRESHOLD))
-        device.oww_model     = config.get("owwModel", f"{OWW_MODEL}_v0.1")
-        device.adc_gains     = (int(config.get("adcMicpga", 40)),
-                                int(config.get("adcDigitalGain", 88)))
-        # Seeded before the wake listener starts, so its mic_start is skipped.
-        device.wake_word_enabled = await loop.run_in_executor(
-            None, db.get_wake_word_enabled, device_id
-        )
-        # Not a config key (em_db keeps it apart from the dashboard's copy),
-        # so it is sent on its own. The device boots with it on.
-        if device.wake_word_off_capable:
-            await device.push_config(wakeWordEnabled=device.wake_word_enabled)
-        device.wake_clip_capture = bool(config.get("wakeClipCapture", False))
-        # See em_device_config.apply_live_config: consumed only on the controller-detected
-        # wake path, mirrored in both places because that is the rule
-        # test_config_mirrors.py enforces and the reason it exists.
-        device.wake_sound = bool(config.get("wakeSound", False))
-        # Resolved against the capability — see em_shadow.effective_mode for
-        # why "on" against firmware that cannot trigger must become shadow
-        # rather than being honoured.
-        new_oww_on_device = em_shadow.effective_mode(
+        # Only firmware from before EchoHome acts on it; the privacy line
+        # reads it against that firmware's "stream" report (em_listen).
+        device.oww_on_device = em_listen.effective_mode(
             config.get("owwOnDevice"), device.oww_trigger_capable,
         )
-        if new_oww_on_device != device.oww_on_device:
-            # #696 review: a buffered pre-roll from the old mode must not
-            # carry into the new one.
-            device.wake_capture.reset()
-        device.oww_on_device = new_oww_on_device
-        # Wake word assets, start script and debloat, reconciled against what
+        # Start script, controller address and debloat, reconciled against what
         # the device actually has — see em_reconcile.on_connect for why the
         # arrival is the trigger. Background: shell round trips and possibly a
         # multi-megabyte push, none of which the handshake should wait on.

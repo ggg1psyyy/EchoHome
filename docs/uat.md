@@ -165,20 +165,6 @@ Light** sensor in HA.
 **Expect:** Zero or one spurious wakes.
 **Flag:** More than that. Note what was playing.
 
-### C3 · Sensitivity moves the needle
-**Do:** Config → Wake word → move Sensitivity toward Eager. Repeat C1.
-**Expect:** More wakes, and more false wakes. The change takes effect without
-restarting anything.
-**Flag:** A setting that saves but changes nothing.
-
-### C4 · A custom model installs and works
-**Do:** Train one with [oww_forge](../oww_forge/README.md), then Config → Wake
-word → **+ Custom model** → upload.
-**Expect:** It appears in the list, can be selected, and the device wakes on
-it.
-**Flag:** A model that uploads and is selectable but never triggers — that is
-a specific known class of bug and worth a report.
-
 ### C5 · Private listening
 **Do:** Config → Wake word detection → **On this Echo**. Wait for the line
 under it to say *listening privately*.

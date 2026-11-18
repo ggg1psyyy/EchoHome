@@ -36,15 +36,12 @@ SUGGESTS = "suggests"
 # EQ and the limiter are applied by the controller instead when a device
 # lacks output_chain, so they are not listed.
 NEEDS_CAPABILITY: dict[str, str] = {
-    "wakeSound": "wake_cue",
-    "wakeSoundLevel": "wake_cue",
     "volumeButtonSound": "volume_cue",
     "wakeMic": "wake_mic",
     "responseLevel": "response_level",
     "sendspinEnabled": "sendspin",
     "sendspinUnpaired": "sendspin",
     "aecRefSource": "aec_hw_ref",
-    "buttonSingleTapEvent": "button_hold",
 }
 
 # Turn outcomes that mean the person got no answer.

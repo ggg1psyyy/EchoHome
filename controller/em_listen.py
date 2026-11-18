@@ -91,6 +91,78 @@ class ListenView:
         return self.state in (STATE_LOCAL, STATE_DEGRADED)
 
 
+# The stored owwOnDevice and what it means against a device's capability,
+# moved here from em_shadow (removed with the controller's wake word): it
+# still reads a "stream" report from firmware from before EchoHome.
+MODE_OFF = "off"
+MODE_SHADOW = "shadow"
+MODE_ON = "on"
+MODES = (MODE_OFF, MODE_SHADOW, MODE_ON)
+
+
+def normalise_mode(v) -> str:
+    """
+    Map a stored or pushed owwOnDevice value onto a known mode.
+
+    Unknown values become "off" rather than being guessed at, for the reason
+    the device gives: the two plausible readings of an unrecognised mode are
+    "score silently" and "start triggering turns", and one of those is a live
+    behaviour change nobody asked for.
+    """
+    s = str(v or "").strip().lower()
+    return s if s in MODES else MODE_OFF
+
+# How far apart the device's crossing and the controller's detection may be and
+# still be considered the same utterance.
+#
+# 2s is deliberately loose. Both detectors see the same frames, but not in the
+# same detector STATE: the controller drops wake frames while a turn or TTS is
+# in flight, so its feature ring can lag the device's by more than a frame or
+# two. Too tight and real agreements are recorded as misses — the more
+# misleading of the two possible errors, because a false "miss" argues against
+# a feature that is actually working.
+MATCH_WINDOW_S = 2.0
+
+# Ceiling on a reported crossing age, so a stale or malformed report cannot be
+# projected backwards onto an unrelated wake.
+MAX_AGE_S = 10.0
+
+# Crossings are rare — the device applies a refractory period, so one per
+# utterance — and only the most recent few can ever fall inside a match window.
+# A bounded deque therefore needs no sweeper.
+RING = 32
+
+
+def effective_mode(configured, trigger_capable: bool) -> str:
+    """
+    The mode actually in force, given what the device can do.
+
+    "on" against firmware that cannot trigger degrades to "shadow", never to
+    "on": the controller would otherwise stop acting on its own detections
+    while waiting for device wakes that the firmware has no code to send, and
+    the device would be deaf. That is the wrong answer rather than the old
+    behaviour, and the whole point of gating on capability is to not produce
+    one. Shadow keeps the device scoring, which is what the user asked for as
+    far as this firmware can deliver it.
+
+    The dashboard refuses to offer "on" to such a device in the first place, so
+    reaching this normally means firmware was rolled back under a config that
+    was valid when it was set.
+
+    **A missing wake word MODEL never changes the mode** (Wil, 2026-09-22). It
+    used to drop "on" to "off" so the controller would trigger instead; for
+    private-listening firmware that was already forbidden (docs/listening.md —
+    it would score a stream the operator chose not to send), and for older
+    firmware it was a fallback nobody chose. A device missing its model keeps
+    its mode, answers the button, and the connect reconcile installs the model
+    straight away — every device carries the full asset set.
+    """
+    mode = normalise_mode(configured)
+    if mode == MODE_ON and not trigger_capable:
+        return MODE_SHADOW
+    return mode
+
+
 def resolve(configured: str, capabilities, reported: str | None,
             reported_reason: str = "") -> ListenView:
     """
@@ -99,6 +171,14 @@ def resolve(configured: str, capabilities, reported: str | None,
     `configured` is the stored owwOnDevice ("on"/"off"/"shadow", already
     normalised). `reported` is the device's last listen_state, None if it has
     not sent one on this connection.
+
+    For firmware that can listen privately (CAPABILITY), its REPORT decides
+    and the stored mode only reads a "stream" report: EchoHome firmware has
+    no mode to configure (its wake word is the Voice Incubator satellite's,
+    on the Echo, and nothing of the room ever goes to the controller), so a
+    stored "off" or "shadow" from before must not make it read as streaming.
+    Firmware from before it reports "stream" in its streaming modes, which
+    keep their labels.
     """
     caps = set(capabilities or ())
     if caps and "mic" not in caps:
@@ -108,28 +188,30 @@ def resolve(configured: str, capabilities, reported: str | None,
         # streams because the mode is "off" would be untrue.
         return ListenView(STATE_DEGRADED, False,
                           reported_reason or "no microphone it can read — speaker only")
+    if CAPABILITY in caps:
+        if reported == "local":
+            return ListenView(STATE_LOCAL, False)
+        if reported == "degraded":
+            return ListenView(STATE_DEGRADED, False,
+                              reported_reason or "cannot run its wake word — button only")
+        if reported == "stream":
+            if configured == "off":
+                return ListenView(STATE_CONTROLLER, True)
+            if configured == "shadow":
+                return ListenView(STATE_DIAGNOSTIC, True,
+                                  "diagnostic: both detectors score a continuous stream")
+            # The device has not switched yet (a config push in flight). It
+            # is streaming now, and saying otherwise would be the one lie
+            # this module exists to prevent.
+            return ListenView(STATE_UNKNOWN, True, "switching to private listening")
+        return ListenView(STATE_UNKNOWN, None, "waiting for the Echo to report")
+    # Firmware from before private listening streams in every mode.
     if configured == "off":
         return ListenView(STATE_CONTROLLER, True)
     if configured == "shadow":
         return ListenView(STATE_DIAGNOSTIC, True,
                           "diagnostic: both detectors score a continuous stream")
-    # configured == "on"
-    if CAPABILITY not in caps:
-        # Firmware from before private listening streams in every mode. It is
-        # shown streaming, because it is, with the fix named.
-        return ListenView(STATE_LEGACY, True,
-                          "update the firmware for private listening")
-    if reported == "local":
-        return ListenView(STATE_LOCAL, False)
-    if reported == "degraded":
-        return ListenView(STATE_DEGRADED, False,
-                          reported_reason or "cannot run its wake word — button only")
-    if reported == "stream":
-        # The device has not switched yet (a config push in flight). It is
-        # streaming now, and saying otherwise would be the one lie this
-        # module exists to prevent.
-        return ListenView(STATE_UNKNOWN, True, "switching to private listening")
-    return ListenView(STATE_UNKNOWN, None, "waiting for the Echo to report")
+    return ListenView(STATE_LEGACY, True, "update the firmware for private listening")
 
 
 def detector(view: ListenView, trigger_capable: bool) -> str | None:

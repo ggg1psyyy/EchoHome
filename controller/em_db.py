@@ -51,17 +51,10 @@ DEFAULT_DEVICE_CONFIG = {
     # UNDER stored config and changing this line alone would silently switch
     # every existing fleet.
     "owwOnDevice":      "on",
-    # wakeSound: a rising two-tone on the wake word (#120). Off by default,
-    # since it interrupts "<wakeword>, do this"; an accessibility option
-    # first, because the ring is the only other sign the Echo is listening.
-    "wakeSound":        False,
-    "wakeSoundLevel":   "medium",   # quiet / medium / loud, played by the Echo
     # Physical-button volume preview (#637). On by default, matching Alexa's
     # familiar feedback and giving a useful level reference while idle.
     "volumeButtonSound": True,
     # Wake training samples are opt-in; candidates and triggers are saved for admin review.
-    "wakeClipCapture":  False,
-    "wakeClipMinScore": 0.20,
     "adcDigitalGain":   88,
     "adcMicpga":        40,
     # micGainDb: fixed digital gain (dB) the device applies to the full
@@ -109,44 +102,12 @@ DEFAULT_DEVICE_CONFIG = {
     # so an unknown key costs an old device nothing.
     "aecRefSource":     "auto",
     "startupVolume":    85,
-    # vadThreshold: 0.001 (normalised RMS pre-AGC).
-    # Q2 fix (2026-07-05 review, tracked as B6): this was drifted to 0.003 in
-    # a previous "reconciliation" that got it backwards — 0.003 sits *above*
-    # the measured conversational speech range (0.0004–0.0010 at 1.3m per
-    # SETUP.md's handoff table), meaning a fresh device or a config reset
-    # would fail to gate speech at all at normal distance. 0.001 is the
-    # value actually validated during the v2.6.3 speech-quality session and
-    # confirmed working in both quiet-office and TV-on-lounge testing — it's
-    # also what the dashboard slider's own fallback already defaulted to
-    # (config.vadThreshold ?? 0.001 in dashboard.jsx), so this closes a
-    # three-way mismatch between the DB default, this comment, and the UI
-    # rather than resolving it in favour of the wrong side. Raise to
-    # 0.003–0.005 only in genuinely noisy rooms (TV, music) via the
-    # dashboard, not as the shipped default.
-    "vadThreshold":     0.001,
-    "vadSpeechMs":      32,
-    # vadSilenceMs: 900ms — up from 600. Prevents premature endpoint on
-    # natural mid-sentence pauses. Dashboard UI already defaults to 800;
-    # this closes the DB/UI mismatch. Tune up to 1200 if sentences still
-    # get clipped; 600 caused the "must finish quickly" behaviour.
-    "vadSilenceMs":     900,
     # True: a tap fires "single" on the HA event entity instead of starting a
     # turn. Gives up cancel-by-tap; mute still cancels. Hold is unaffected.
-    "buttonSingleTapEvent": False,
     # Window (ms) for coalescing taps into double/triple; 0 disables. Delays
     # every tap by this much, which is why it needs buttonSingleTapEvent — the
     # delay is only acceptable once a tap is an event rather than speech.
     # 300ms is a reasonable starting point.
-    "buttonMultiTapMs": 0,
-    # owwThreshold: 0.5 — openwakeword's own recommended default, and what
-    # this fleet independently converged on. It was 0.3, which is measurably
-    # too sensitive: of 519 fleet-hours that recorded a near miss while
-    # running 0.5, 212 peaked at >= 0.3, clustered hard against the ceiling
-    # (0.4992, 0.4987, 0.4971, ...). Every one of those would have fired a
-    # spurious turn on a default install — ring up, HA pipeline run, most
-    # likely ending no_speech. Lower it per device if a custom wake model
-    # trades recall for false positives (see oww_forge/README.md).
-    "owwThreshold":     0.5,
     # The ceiling is OWW_THRESHOLD_MAX below, enforced on every write.
     # Barge-in (§3.2, controller-side): wake word spoken during TTS playback
     # cancels it and starts a fresh turn. Requires device AEC (aecEnabled)
@@ -175,8 +136,6 @@ DEFAULT_DEVICE_CONFIG = {
     # state rather than creeping back down. em_barge's two-consecutive-frame
     # rule is the other half — it is what makes a low bar survivable at all,
     # and the two are meant to move together.
-    "bargeInEnabled":   True,
-    "bargeInThreshold": 0.25,
     # How far music is attenuated while a voice turn plays OVER it, on
     # firmware that can mix the two planes (the "audio_mix" capability).
     # Ducking replaces pausing there: the music feed runs 4s ahead of
@@ -188,14 +147,6 @@ DEFAULT_DEVICE_CONFIG = {
     # low / medium / high to 0 / +6 / +12dB before mixing with music, then
     # tapers the boost near maximum so combined gain never exceeds unity.
     "responseLevel":   "low",
-    # streamReply: start speaking when Home Assistant says the reply's first
-    # text has arrived (its tts_start_streaming signal) instead of when the whole
-    # reply is done. Default OFF: it is faster when the model and the TTS engine
-    # are quicker than speech, and pauses between sentences when either is
-    # slower, which the controller cannot tell in advance. See em_earlytts.
-    # Controller-side only, read per turn; the device ignores the key.
-    "streamReply":      False,
-    "owwModel":         "hey_jarvis_v0.1",
     # Multi-device wake SUPPRESSION window (ms), not a wait. The first
     # device to detect answers immediately; any other device detecting
     # within this window stands down. 0 disables. Costs no latency to
@@ -203,42 +154,6 @@ DEFAULT_DEVICE_CONFIG = {
     # 700ms: the observed spread between devices hearing one utterance is
     # ~200ms (device mic batching is 160ms), and the window also needs to
     # cover a device that hears the winner's TTS a moment later.
-    "wakeArbitrationMs": 700,
-    # owwSpeexNs: openwakeword's built-in speexdsp noise suppressor (Q1,
-    # 2026-07-05 review). 16kHz-native, applied controller-side, only to
-    # the wake-word detection path — cannot affect STT audio since STT
-    # never sees it. Defaults False, but no longer for the original reason:
-    # the packaging blocker cleared (pinned speexdsp-ns==0.1.2 in
-    # requirements.txt, imports cleanly in the image), so the noisy-room
-    # A/B this is waiting on is now actually runnable. Off until someone
-    # runs it — not off because it cannot be turned on.
-    "owwSpeexNs":       False,
-    # nsAsr: DTLN noise suppression (em_ns.py), controller-side, applied
-    # ONLY to the turn audio streamed to HA's STT — the wake stream and
-    # all noise-floor measurement stay raw. Helps steady noise (fan, AC,
-    # hum) at marginal SNR; does little against competing speech (TV) —
-    # that's the beamformer's job. Default off, and the A/B that was
-    # "pending" has since run with a result that is NOT yet reconciled: with
-    # NS on, recordings showed 8-15% of samples at exact digital zero at a
-    # healthy signal level (the gate chewing speech); with it off, 0.3%.
-    # That is a candidate cause of the choppy-audio reports (#137). This
-    # fleet nonetheless runs it on, with one device explicitly overriding to
-    # off — so treat "on" as unvalidated rather than recommended until
-    # someone listens to a pair of recordings and decides.
-    # Models are vendored into the Docker image, so if the
-    # files are missing (bare-metal without NS_MODEL_DIR) the flag
-    # degrades to raw streaming with a warning.
-    "nsAsr":            False,
-    # saveUtterances: keep the mic audio of the last few voice turns
-    # (em_recordings.KEEP_PER_DEVICE) as WAVs, downloadable from the
-    # Activity tab. Diagnostic tooling for "is my mic any good" — the
-    # question you otherwise have to answer by inference from a bad
-    # transcript. Default OFF and deliberately so: this is the only feature
-    # that writes recognisable speech to disk, and turning it on should be
-    # a decision, not a default someone discovers later. Controller-side
-    # only (the device never sees the audio again); the key rides the
-    # config channel and the device ignores it, same as wakeArbitrationMs.
-    "saveUtterances":   False,
     # sendspinEnabled: the device runs a Sendspin player (#89) that Music
     # Assistant connects to directly for synchronised multi-room audio.
     # Default off: it opens a listening port and an mDNS record on the Echo.
@@ -247,22 +162,6 @@ DEFAULT_DEVICE_CONFIG = {
     # token and without it anyone on the LAN can claim to be a server.
     "sendspinEnabled":  False,
     "sendspinUnpaired": False,
-    # beamformingEnabled: True — ch6 (centre/omni) hears the wake word, then
-    # the turn locks to the best perimeter mic. The flag ONLY gates Lock():
-    # unlocked is always ch6 and the wake path never locks, so the wake
-    # stream is ch6 either way (beamformer.go). It cannot splice wake audio.
-    #
-    # This was False, on a comment describing the every-32ms reselection that
-    # be2f16d (v2.6.3 P0-2) had already fixed in the same commit. The real
-    # reason recorded there was that onset discrimination was unreliable at
-    # <=1.5m, "re-enable once P0-3/P0-4 are addressed" — P0-3 closed
-    # 2026-07-12 (DTLN) and v2.7.2's lock-back selection fixed the decayed-
-    # spike picks that caused most of the wrong-lock risk. Nobody went back.
-    # Meanwhile this fleet has run True since the 2026-07-20 config restore
-    # with no reported regression, so True is the value with field evidence
-    # behind it and False is the one that has not been run in months.
-    "beamformingEnabled": True,
-    "beamAngle":        -1,
     # wakeMic: which mic the wake word listens on. 0 = centre (default),
     # 1-6 = perimeter MK1-MK6. For a dead centre mic only (#705).
     "wakeMic":          0,
@@ -300,12 +199,6 @@ DEFAULT_DEVICE_CONFIG = {
     "meterGamma":       2.2,   # >1 expands the dark end so the swing reads
     "meterRef":         0.22,  # speaker RMS mapped to full brightness
     "meterCurve":       0.7,   # <1 lifts quiet consonants
-    # agcEnabled: automatic gain control (lockMic/button turn streams only).
-    # Disable to hear raw mic levels. (nsEnabled/RNNoise removed 2026-07-12
-    # with the device-side RNNoise code — a stale nsEnabled key in stored
-    # configs is harmless: new firmware ignores unknown fields, and old
-    # firmware keeps honouring the stored False until it's OTA'd.)
-    "agcEnabled":       True,
     # consolePassword: gate the emOS USB serial console behind a password.
     #
     # Stored and pushed as "<salt>:<hash>", never as a passphrase — the

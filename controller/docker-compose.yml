@@ -2,10 +2,6 @@ services:
   echomuse-controller:
     build:
       context: .
-      args:
-        # CUDA onnxruntime for wake-word inference on this host's GPU.
-        # The published GHCR image (docker-compose.deploy.yml) is CPU-only.
-        GPU: "1"
     container_name: echomuse-controller
     restart: unless-stopped
     network_mode: host
@@ -16,13 +12,6 @@ services:
     volumes:
       # Persist database across container rebuilds
       - ~EchoMuse/controller/data:/app/data
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     logging:
       driver: json-file
       options:

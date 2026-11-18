@@ -9,14 +9,24 @@ NEW = {"mic", "oww_shadow", "oww_trigger", L.CAPABILITY}
 OLD = {"mic", "oww_shadow", "oww_trigger"}
 
 
-def test_controller_mode_streams():
-    v = L.resolve("off", NEW, "local")
+def test_controller_mode_streams_while_the_echo_says_it_does():
+    v = L.resolve("off", NEW, "stream")
     assert v.state == L.STATE_CONTROLLER and v.streams is True
 
 
 def test_shadow_is_a_streaming_diagnostic():
-    v = L.resolve("shadow", NEW, None)
+    v = L.resolve("shadow", NEW, "stream")
     assert v.state == L.STATE_DIAGNOSTIC and v.streams is True
+
+
+def test_the_echos_report_outranks_a_stored_mode():
+    """EchoHome: nothing to configure, and nothing goes to the controller.
+    A stored "off" or "shadow" from before must not read as streaming."""
+    for mode in ("off", "shadow", "on"):
+        v = L.resolve(mode, NEW, "local")
+        assert v.state == L.STATE_LOCAL and v.streams is False, mode
+        assert L.resolve(mode, NEW, "degraded", "no microphone").streams is False, mode
+        assert L.resolve(mode, NEW, None).streams is None, mode
 
 
 def test_private_only_on_the_devices_word():

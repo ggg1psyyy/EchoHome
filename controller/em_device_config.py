@@ -12,10 +12,8 @@ import logging
 
 import em_config_types
 import em_console_pw
-import em_oww_sync
+import em_listen
 import em_scenes
-import em_shadow
-import em_tasks
 
 log = logging.getLogger("echomuse.api")
 
@@ -31,50 +29,15 @@ async def apply_live_config(device_id: str, live, effective: dict) -> None:
     the EFFECTIVE config, never a request body: with per-section scoping a
     body is partial by design, and a device must always be sent the whole
     resolved picture.
-
-    One key is held back: a NEW `owwModel` is not sent to a device that scores
-    locally until the classifier is actually on it — see em_oww_sync.hold_back_model.
     """
     effective = em_config_types.well_typed(device_id, effective)
-    effective, pending_model = em_oww_sync.hold_back_model(live, effective)
     await live.send_control({"type": "config", **effective})
-    if "owwThreshold" in effective:
-        live.oww_threshold = float(effective["owwThreshold"])
-    if "owwModel" in effective:
-        live.oww_model = effective["owwModel"]
-    if pending_model:
-        # The device is still on its previous wake word, still scoring
-        # locally, still answering. Install, then switch.
-        em_tasks.spawn(em_oww_sync.install_then_switch(device_id, pending_model))
-    if "wakeClipCapture" in effective:
-        live.wake_clip_capture = bool(effective["wakeClipCapture"])
-        if not live.wake_clip_capture:
-            live.wake_capture.reset()
-    # Consumed controller-side ONLY on the controller-detected wake path
-    # (#120): a device that detects its own wake plays the cue itself and
-    # never consults this. Mirrored anyway, because the path that does need
-    # it is the one where the setting would otherwise silently do nothing.
-    if "wakeSound" in effective:
-        live.wake_sound = bool(effective["wakeSound"])
-    # What a wake's level reading still contains; see em_arbiter.pick.
-    if "adcMicpga" in effective:
-        live.adc_gains = (int(effective["adcMicpga"]), live.adc_gains[1])
-    if "adcDigitalGain" in effective:
-        live.adc_gains = (live.adc_gains[0], int(effective["adcDigitalGain"]))
     if "owwOnDevice" in effective:
-        # Resolved against the CAPABILITY, not taken at face value: "on"
-        # against firmware that cannot trigger would stop this controller
-        # acting on its own detections while waiting for wakes the device has
-        # no code to send, leaving it deaf. em_shadow.effective_mode degrades
-        # that to shadow.
-        new_oww_on_device = em_shadow.effective_mode(
+        # Only firmware from before EchoHome acts on it; the privacy line
+        # reads it against that firmware's "stream" report (em_listen).
+        live.oww_on_device = em_listen.effective_mode(
             effective["owwOnDevice"], live.oww_trigger_capable,
         )
-        if new_oww_on_device != live.oww_on_device:
-            # #696 review: a buffered pre-roll from the old mode must not
-            # carry into the new one.
-            live.wake_capture.reset()
-        live.oww_on_device = new_oww_on_device
     if "bassGuardDb" in effective:
         live.bass_guard_db = float(effective["bassGuardDb"])
     live.led_scene = em_scenes.resolve(effective)

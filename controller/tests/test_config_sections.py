@@ -88,7 +88,7 @@ def test_no_sections_is_pure_fleet():
 
 
 def test_only_the_overridden_section_wins():
-    dev = {"owwThreshold": 0.9, "ledScene": "pride", "micGainDb": 40}
+    dev = {"duckDb": -9.0, "ledScene": "pride", "micGainDb": 40}
     out = cs.merge(_glob(), dev, ["ring"])
     assert out["ledScene"] == "pride"       # overridden section
     assert out["owwThreshold"] == 0.5       # fleet
@@ -96,7 +96,7 @@ def test_only_the_overridden_section_wins():
 
 
 def test_all_sections_reproduces_the_old_full_override():
-    dev = {"owwThreshold": 0.9, "ledScene": "pride", "micGainDb": 40}
+    dev = {"duckDb": -9.0, "ledScene": "pride", "micGainDb": 40}
     out = cs.merge(_glob(), dev, list(cs.SECTION_IDS))
     for k, v in dev.items():
         assert out[k] == v
@@ -113,7 +113,7 @@ def test_state_keys_always_come_from_the_device():
 
 
 def test_unknown_section_ids_are_dropped():
-    assert cs.normalise(["ring", "nonsense", "wakeword"]) == ["wakeword", "ring"]
+    assert cs.normalise(["ring", "nonsense", "microphones"]) == ["microphones", "ring"]
     assert cs.normalise(None) == []
 
 

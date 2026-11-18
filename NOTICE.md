@@ -59,12 +59,4 @@ These are dependencies rather than vendored code — they are fetched by the
 Dockerfiles and `requirements.txt`, and are not redistributed as source here.
 Listed because they end up in the published container image:
 
-- **ONNX Runtime** (MIT) — wake word inference, controller and device.
-- **openWakeWord** (Apache-2.0) — wake word models and feature pipeline.
 - The Python dependencies in `controller/requirements.txt`, all permissive.
-
-## Wake word models
-
-The stock models shipped by openWakeWord keep their upstream licence. Models
-built with `oww_forge/` are generated from synthetic speech; see
-`oww_forge/README.md`, whose pinned upstreams carry their own terms.

@@ -96,20 +96,6 @@ updates:
           - version-update:semver-major
           - version-update:semver-minor
 
-  # The forge image, same rule: digest bumps only, Python moves by hand
-  # (its pins in oww_forge/Dockerfile were chosen against 3.11).
-  - package-ecosystem: docker
-    directory: /oww_forge
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 1
-    ignore:
-      - dependency-name: python
-        update-types:
-          - version-update:semver-major
-          - version-update:semver-minor
-
   # ── Device Go modules ───────────────────────────────────────────────────
   # The GoTinyAlsa replace directive points at a submodule path, which
   # Dependabot skips; that fork is tracked by hand because it carries a fix

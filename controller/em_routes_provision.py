@@ -22,11 +22,9 @@ from aiohttp import web
 
 import em_auth as auth
 import em_chunked
-import em_db as db
 import em_emos_build
 import em_emos_ota
 import em_http
-import em_oww_assets
 import em_payloads
 import em_releases
 import em_support
@@ -41,8 +39,6 @@ def register(app: web.Application) -> None:
     app.router.add_get("/api/provision/debloat_packages", _get_provision_debloat_packages)
     app.router.add_get("/api/provision/magisk_db",    _get_provision_magisk_db)
     app.router.add_get("/api/provision/latest_binary", _get_provision_latest_binary)
-    app.router.add_get("/api/provision/oww_assets",    _get_provision_oww_manifest)
-    app.router.add_get("/api/provision/oww_asset/{name}", _get_provision_oww_asset)
     app.router.add_post("/api/provision/diagnostics",     _post_provision_diagnostics)
     app.router.add_get("/api/provision/emos_init",     _get_provision_emos_init)
     app.router.add_post("/api/provision/emos_image",   _post_provision_emos_image)
@@ -188,55 +184,6 @@ async def _get_provision_magisk_db(request: web.Request) -> web.Response:
         body=data,
         content_type='application/octet-stream',
         headers={'Content-Disposition': 'attachment; filename="magisk.db"'},
-    )
-
-
-@auth.require_auth
-async def _get_provision_oww_manifest(request: web.Request) -> web.Response:
-    """
-    GET /api/provision/oww_assets — what the wizard should push, and where.
-
-    The wizard pushes over ADB from the browser rather than through the shell
-    plane: a freshly-flashed device is not in em_state.devices yet, and USB is far
-    better suited to 15MB than a base64 heredoc. Same bytes, same md5s, same
-    destination as the field path — only the transport differs.
-    """
-    fleet = await asyncio.get_running_loop().run_in_executor(
-        None, db.get_global_device_config) or {}
-    models = [m for m in [fleet.get("owwModel") or ""] if m]
-    desired, problems = em_oww_assets.desired_assets(models)
-    return em_http.ok({
-        "dir": em_oww_assets.DEVICE_DIR,
-        "problems": problems,
-        "assets": [{"name": a.name, "size": a.size, "md5": a.md5} for a in desired],
-    })
-
-
-@auth.require_auth
-async def _get_provision_oww_asset(request: web.Request) -> web.Response:
-    """
-    GET /api/provision/oww_asset/{name} — the bytes of one asset.
-
-    Serves only names the manifest just listed, resolved from the manifest
-    rather than from the request: the filename is user-supplied, and joining
-    it onto a directory is how a path traversal gets written by accident.
-    """
-    name = request.match_info["name"]
-    fleet = await asyncio.get_running_loop().run_in_executor(
-        None, db.get_global_device_config) or {}
-    desired, _ = em_oww_assets.desired_assets(
-        [m for m in [fleet.get("owwModel") or ""] if m])
-    asset = next((a for a in desired if a.name == name), None)
-    if asset is None:
-        return em_http.error("not_found", f"{name} is not a current asset", 404)
-    try:
-        data = asset.source.read_bytes()
-    except OSError as e:
-        return em_http.error("unreadable", str(e), 500)
-    return web.Response(
-        body=data,
-        content_type="application/octet-stream",
-        headers={"X-Asset-MD5": asset.md5},
     )
 
 

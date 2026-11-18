@@ -12,7 +12,6 @@ import logging
 import time
 
 import em_config_sections as sections_mod
-import em_db as db
 import em_emos_ota
 import em_emos_update
 import em_incubator
@@ -185,8 +184,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "connected":        live is not None,
         "speaking":         live.speaking  if live else False,
         "muted":            getattr(live, "muted",     False) if live else False,
-        # Stored, not live (#286): an offline device reports HA's last choice.
-        "wake_word":        db.get_wake_word_enabled(device_id),
         "listening":        getattr(live, "listening", False) if live else False,
         "thinking":         getattr(live, "thinking",  False) if live else False,
         "stats":            live.stats if live else None,
@@ -225,10 +222,8 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # version comparison. Drives whether the dashboard OFFERS on-device
         # scoring: a toggle that silently does nothing on old firmware is worse
         # than no toggle, because it looks like the feature is broken.
-        "owwShadowCapable": getattr(live, "oww_shadow_capable", False) if live else False,
         # Separate from shadow: firmware in the field scores and reports without
         # being able to act on it; offered "on", it would never answer.
-        "owwTriggerCapable": getattr(live, "oww_trigger_capable", False) if live else False,
         # Gates the dashboard's Identify button (#860); disabled with the reason, not silent.
         "identifyRingCapable": getattr(live, "identify_ring_capable", False) if live else False,
         "incubatorSatelliteCapable": "incubator_satellite" in (getattr(live, "capabilities", None) or []) if live else False,
@@ -244,7 +239,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # do on reconnect is its own report to make.
         "owwLocalCapable": getattr(live, "oww_local_capable", False) if live else False,
         "listen":          _listen_json(live) if live else None,
-        "wakeCueCapable": getattr(live, "wake_cue_capable", False) if live else False,
         "volumeCueCapable": getattr(live, "volume_cue_capable", False) if live else False,
         "wakeMicCapable": getattr(live, "wake_mic_capable", False) if live else False,
         "responseLevelCapable": getattr(live, "response_level_capable", False) if live else False,
@@ -253,7 +247,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # (no secrets; the pairing token is its own request).
         "sendspinCapable": getattr(live, "sendspin_capable", False) if live else False,
         "sendspin":        getattr(live, "sendspin", None) if live else None,
-        "audioMixCapable": getattr(live, "audio_mix_capable", False) if live else False,
         # Gates the AEC delay slider, which only means anything on the
         # software tap. Paired with aecRef because the capability says the
         # firmware KNOWS how to use a hardware reference and aecRef says
@@ -286,7 +279,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # device shows the control as it always did.
         "androidUserspace": getattr(live, "android_userspace", True) if live else True,
         # Gates the tap-as-event toggle — see em_button.decide.
-        "buttonHoldCapable": getattr(live, "button_hold_capable", False) if live else False,
         # Whether the device found its ambient light sensor. Reported so the
         # dashboard can tell "no sensor" apart from "sensor present, no reading
         # yet" — which is the question #90 had to be answered by hand, because

@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from em_controller import Device
-    from openwakeword.model import Model as OWWModel
 
 
 # The live device registry — keyed by device_id (ro.serialno).

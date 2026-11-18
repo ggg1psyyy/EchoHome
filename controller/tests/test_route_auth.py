@@ -133,7 +133,3 @@ def test_public_list_names_real_routes():
     assert not (PUBLIC | WS_SELF_AUTH) - set(routes)
 
 
-def test_oww_assets_and_controller_release_need_a_session():
-    fns = _functions()
-    assert _decorators(fns["_get_oww_assets"]) & DECORATORS
-    assert _decorators(fns["_get_controller_release"]) & DECORATORS

@@ -25,25 +25,13 @@ SECTIONS: dict[str, dict] = {
         "label": "Playback",
         "keys": ["eqBands", "eqLoudness", "duckDb", "responseLevel",
                  "limiterEnabled", "limiterThreshold", "limiterRelease",
-                 "bassGuardEnabled", "bassGuardDb", "streamReply",
-                 "volumeButtonSound"],
-    },
-    "wakeword": {
-        "label": "Wake word",
-        "keys": [
-            "owwModel", "owwThreshold", "owwSpeexNs",
-            "bargeInEnabled", "bargeInThreshold", "wakeArbitrationMs",
-            "owwOnDevice", "wakeSound", "wakeSoundLevel",
-            "wakeClipCapture", "wakeClipMinScore",
-        ],
+                 "bassGuardEnabled", "bassGuardDb", "volumeButtonSound"],
     },
     "microphones": {
         "label": "Microphones",
         "keys": [
-            "adcMicpga", "adcDigitalGain", "micGainDb",
-            "beamformingEnabled", "beamAngle", "wakeMic",
-            "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource", "nsAsr",
-            "saveUtterances",
+            "adcMicpga", "adcDigitalGain", "micGainDb", "wakeMic",
+            "aecEnabled", "aecDelayMs", "aecTailMs", "aecRefSource",
         ],
     },
     "ring": {
@@ -57,15 +45,16 @@ SECTIONS: dict[str, dict] = {
     "advanced": {
         "label": "Advanced",
         "keys": [
-            "agcEnabled", "vadThreshold", "vadSpeechMs", "vadSilenceMs",
-            # Already the button-turn section; these decide whether they happen.
-            "buttonSingleTapEvent", "buttonMultiTapMs",
             # Fleet-level in practice: a per-device console password would be a
             # management problem with no upside. It sits in a section like
             # every other key because the partition has to stay total.
             "consolePassword", "consoleTimeoutMin",
             # Fleet-only (FLEET_KEYS): shown here, never overridden per device.
             "controllerEndpoints",
+            # No control: pushed for firmware from before EchoHome, which
+            # still listens by it (em_listen.effective_mode). EchoHome
+            # firmware ignores it.
+            "owwOnDevice",
         ],
     },
     "sendspin": {

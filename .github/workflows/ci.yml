@@ -53,18 +53,6 @@ jobs:
         working-directory: tools/audio_bench
         run: python -m pytest test_metrics.py -q
 
-  forge-metadata-tests:
-    name: ONNX metadata round trip
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-      # Keep runtime/model dependencies out of the lightweight controller suite.
-      - run: pip install pytest numpy pyyaml aiohttp onnx==1.17.0 onnxruntime
-      - run: python -m pytest oww_forge/tests/ -v
-
   controller-lint:
     name: Controller lint (undefined names)
     runs-on: ubuntu-24.04
@@ -142,7 +130,6 @@ jobs:
           node controller/tests/wifi_nvram.test.mjs
           node controller/tests/kernel_label.test.mjs
           node controller/tests/wifi_ssid.test.mjs
-          node controller/tests/wake_sensitivity.test.mjs
           node controller/tests/login_lcd.test.mjs
           node controller/tests/oidc_login.test.mjs
           node controller/tests/delete_ha_warning.test.mjs
@@ -155,8 +142,6 @@ jobs:
           curl -sfL -o /tmp/babel.min.js https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.5/babel.min.js
           echo "ee17810b11af1c9b97ac2d85752b9f73b9ba37d9f50ba6312e0709013ebeec6e  /tmp/babel.min.js" | sha256sum -c -
           BABEL_STANDALONE=/tmp/babel.min.js node controller/tests/dashboard_globals.test.mjs
-      - name: Run forge console tests
-        run: node oww_forge/tests/console_log.test.mjs
 
   device-tests:
     name: Device Go tests
