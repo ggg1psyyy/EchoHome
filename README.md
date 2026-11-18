@@ -1,3 +1,11 @@
+# EchoHome
+
+**Open firmware that makes an Amazon Echo a [Voice Incubator](https://github.com/OHF-Voice/voice-incubator) satellite, as a Home Assistant Voice PE on its Voice Incubator firmware is, with a tool to set it up.**
+
+> Work in progress. EchoHome is based on [EchoMuse](https://github.com/wilbowes/EchoMuse) by Wil Bowes (MIT, see `LICENSE` and `NOTICE.md`) and keeps its history. Everything below this note is still EchoMuse's README, and is being reworked. Not affiliated with or endorsed by Amazon or the Open Home Foundation.
+
+---
+
 # EchoMuse
 
 **Turn an old Amazon Echo Dot (2nd gen) or Echo (2nd gen) into a local voice assistant for Home Assistant.**
