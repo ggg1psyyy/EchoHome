@@ -35,30 +35,6 @@ configuration:
       The name advertised on your local network as
       <name>._emcontroller._tcp.local. Use lowercase letters, numbers, and
       hyphens.
-  esphome_project_version:
-    name: ESPHome project version
-    description: >-
-      Version reported to Home Assistant in the device's ESPHome info.
-      Normally leave this at the default.
-  esphome_port_base:
-    name: ESPHome satellite base port
-    description: >-
-      First port used for the per-device Home Assistant satellites; Bluetooth
-      proxies use this plus 1000. The stable and Early Access add-ons default
-      to different bases so that a Home Assistant configuration entry left
-      over from one can never reach a device belonging to the other. Changing
-      this affects only devices added from now on — existing devices keep the
-      port they were given.
-  oww_model:
-    name: Wake word model
-    description: >-
-      OpenWakeWord model to use, without the _v0.1.onnx suffix.
-      For example: hey_jarvis.
-  oww_threshold:
-    name: Wake word sensitivity
-    description: >-
-      Detection threshold from 0 to 1. Lower values are more sensitive and
-      may produce more false detections. The upstream default is 0.5.
   require_device_tls:
     name: Require encrypted device connections
     description: >-

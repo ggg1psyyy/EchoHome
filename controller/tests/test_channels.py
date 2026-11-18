@@ -111,38 +111,6 @@ def test_channel_is_distinguishable_in_the_ui():
     assert ea["panel_title"] != GA["panel_title"]
 
 
-def test_channels_hand_out_satellite_ports_from_disjoint_ranges():
-    """
-    Home Assistant keys an ESPHome device on its host and port, and the two
-    channels have separate databases — so both counters would otherwise start
-    at 16001 and hand the same numbers to different devices.
-
-    Measured 2026-08-19, switching channels with shared ranges: every
-    satellite entity unavailable for a day, wake words still firing and turns
-    dying in milliseconds because HA had no pipeline behind them. With the
-    ranges apart a stale entry visibly fails to connect instead.
-
-    The gap must also exceed any realistic device count, since a channel that
-    allocated its way into the next one's range would reintroduce exactly
-    this. BLE proxies ride at +BLE_PORT_OFFSET, so separating the voice bases
-    separates those too.
-    """
-    ea = _ea()
-    ga_base = GA["options"]["esphome_port_base"]
-    ea_base = ea["options"]["esphome_port_base"]
-
-    assert ea_base != ga_base, (
-        "Both channels allocate satellite ports from the same base — a Home "
-        "Assistant config entry from one will reach the other's devices")
-    assert abs(ea_base - ga_base) >= 100, (
-        f"Only {abs(ea_base - ga_base)} ports between the channel bases — a "
-        f"fleet that size would allocate into the other channel's range")
-
-    # The type is shared even though the value is not: a channel may not
-    # loosen validation the other enforces.
-    assert ea["schema"]["esphome_port_base"] == GA["schema"]["esphome_port_base"]
-
-
 def test_channel_pulls_the_same_image_repository():
     # Channels differ by TAG, not by artefact source. A second repository
     # would need a second publish path and could drift in ways no test here

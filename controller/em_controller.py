@@ -266,9 +266,7 @@ PING_TIMEOUT_SEC = 60.0
 # LEDs
 NUM_LEDS = 12
 
-# Wake word
-OWW_MODEL     = os.environ.get("OWW_MODEL", "hey_jarvis")
-OWW_THRESHOLD = float(os.environ.get("OWW_THRESHOLD", "0.5"))
+
 
 # mDNS re-registration interval — keeps IGMP membership alive on the LAN
 MDNS_REFRESH_INTERVAL = 120
