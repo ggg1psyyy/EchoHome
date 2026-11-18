@@ -1927,3 +1927,16 @@ The record is `<iterations>:<salt hex>:<hash hex>`, already hashed by the
 controller — no plaintext passes through the firmware. The rest of the design,
 including why hashing is worth it when deleting the file defeats it, is in
 `controller/CLAUDE.md`.
+
+## The Voice Incubator satellite (`internal/incubator`)
+
+- 2026-11-18: `internal/microfeatures` passed here (glibc 2.41) and failed
+  on CI's ubuntu-24.04 (glibc 2.39): 3 of 6 reference cases differed. The
+  frontend's set-up tables take their last bit from libm; under 2.39 two
+  filterbank weights of ~800 were one step in 4096 off (`log1pf`; 2.41's is
+  correctly rounded, CORE-MATH), the window (`cosf`) and PCAN (`powf`)
+  tables matched. The same cause fits the Echo's 2-in-998 frames of
+  2026-11-17 (channel 38, bionic's libm). Fixed by computing the three in
+  double and rounding once (`msf_math.h`, by `-include`, vendored sources
+  untouched): all 963 table entries equal the reference under 2.41, 2.39
+  and 2.36, and the test fails on 2.36 without it.

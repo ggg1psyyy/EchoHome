@@ -697,14 +697,6 @@ async def leds_off(device: Device):
 NO_HA_HOLD_S = 0.6
 
 
-# ─── Audio conversion ─────────────────────────────────────────────────────────
-
-# (The numpy linear-interpolation resample_to_48k that used to live here is
-# gone: em_tts_audio.fetch now decodes at SPEAKER_RATE directly, with ffmpeg
-# doing any rate conversion — and HA transcodes to 48kHz at source when it
-# honours the media player's declared supported_formats.)
-
-
 # ─── Control plane handler ────────────────────────────────────────────────────
 
 async def _link_auth_ok(

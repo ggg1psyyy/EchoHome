@@ -72,14 +72,5 @@ run() {
 echo "== python stack under $cpu"
 run /usr/local/bin/python3 /probe.py "--$cpu"
 
-# ffmpeg is spawned as a subprocess, and qemu-user does not follow execve
-# into a child — so the probe above cannot cover it. Decode a second of
-# tone under the same CPU on its own.
-echo "== ffmpeg under $cpu"
-bytes="$(run /usr/bin/ffmpeg -hide_banner -loglevel error \
-          -f lavfi -i sine=d=1 -f s16le -ar 48000 -ac 1 - | wc -c)"
-if [ "$bytes" -ne 96000 ]; then
-  echo "ffmpeg decoded $bytes bytes, expected 96000" >&2
-  exit 1
-fi
-echo "ffmpeg decoded 1s of audio"
+# ffmpeg left the image with the controller's voice path (EchoHome):
+# the Python stack is all that runs.

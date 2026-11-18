@@ -10,12 +10,11 @@
 //
 // What the tests show: frames identical to that configuration and scaling
 // (cut verbatim from the firmware by tools/mixednet_ref) on synthetic audio,
-// on the host. On an Echo (tools/mixednet_probe, 2026-11-17) a real speech
-// recording gives identical frames, but loud broadband audio differed in 2
-// of 998 frames, both in channel 38 (~7 kHz), one int8 step higher: the
-// set-up's float math (filterbank tables) runs on bionic's libm there, and
-// its last-bit rounding is the suspect. Accepted; docs/history/device.md
-// has the figures.
+// on the host. On an Echo (tools/mixednet_probe, 2026-11-17) loud broadband
+// audio once differed in 2 of 998 frames, channel 38, one int8 step: the
+// set-up's tables took their last bit from bionic's libm. They are computed
+// in double now (msf_math.h), so every libm gives the reference's tables;
+// docs/history/device.md has the figures.
 //
 // One feature frame of FeatureSize values comes out per step (10 ms by
 // default) over a 30 ms window.
@@ -28,6 +27,7 @@ package microfeatures
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/libmsf/include -I${SRCDIR}/libmsf/src -O2 -w
+#cgo CFLAGS: -include ${SRCDIR}/msf_math.h
 #cgo CFLAGS: -Dkiss_fft=msf_kiss_fft -Dkiss_fft_alloc=msf_kiss_fft_alloc -Dkiss_fft_cleanup=msf_kiss_fft_cleanup -Dkiss_fft_next_fast_size=msf_kiss_fft_next_fast_size -Dkiss_fft_stride=msf_kiss_fft_stride -Dkiss_fftr=msf_kiss_fftr -Dkiss_fftr_alloc=msf_kiss_fftr_alloc -Dkiss_fftri=msf_kiss_fftri -Dkiss_fftr_next_fast_size_real=msf_kiss_fftr_next_fast_size_real
 #cgo LDFLAGS: -lm
 #include <stdlib.h>
