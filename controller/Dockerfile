@@ -70,7 +70,7 @@ WORKDIR /app
 #
 # curl is for vendoring JS dependencies.
 ARG APT_SNAPSHOT=unset
-RUN echo "apt snapshot: ${APT_SNAPSHOT}" && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends curl ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN echo "apt snapshot: ${APT_SNAPSHOT}" && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -129,16 +129,10 @@ COPY em_auth.py .
 COPY em_eq.py .
 COPY em_limiter.py .
 COPY em_mbc.py .
-COPY em_output_mute.py .
 COPY em_scenes.py .
 COPY em_support.py .
 COPY em_shadow.py .
 COPY em_wake_samples.py .
-COPY em_barge.py .
-COPY em_earlytts.py .
-COPY em_ns.py .
-COPY em_speechgate.py .
-COPY em_wav.py .
 COPY em_pki.py .
 COPY em_hostip.py .
 COPY em_ingressauth.py .
@@ -166,7 +160,6 @@ COPY em_pacing.py .
 COPY em_platform.py .
 COPY em_wsclose.py .
 COPY em_rttlog.py .
-COPY em_esphome.py .
 COPY em_config_types.py .
 COPY em_dbwriter.py .
 COPY em_tasks.py .
@@ -176,7 +169,6 @@ COPY em_oww_check.py   ./
 COPY em_oww_models.py .
 COPY em_pairing.py .
 COPY em_oww_metadata.py .
-COPY em_oww_warmup.py .
 COPY em_arbiter.py .
 COPY em_state.py .
 COPY em_http.py .
@@ -194,10 +186,6 @@ COPY em_listen.py .
 COPY em_wakelevel.py .
 COPY em_endpoints.py .
 COPY em_health.py .
-COPY em_button.py .
-COPY em_wakeword.py .
-COPY em_tap_burst.py .
-COPY em_player.py .
 COPY em_config_sections.py .
 COPY em_console_pw.py .
 COPY em_labels.py .
@@ -205,37 +193,17 @@ COPY em_crashlog.py .
 COPY em_emos_build.py .
 COPY em_emos_update.py .
 COPY em_recordings.py .
-COPY em_tts_audio.py .
-COPY em_turn_record.py .
-COPY em_turnclock.py .
 COPY em_firmware.py .
-COPY em_announce.py .
-COPY em_runbarrier.py .
 COPY em_volume.py .
 COPY em_wifi.py .
-COPY em_timers.py .
 COPY em_identify.py .
 COPY em_loglevel.py .
 COPY em_incubator.py .
 COPY em_incubator_proto.py .
 COPY em_resample.py .
-COPY em_voice.py .
 COPY version.py .
-# ESPHome native API subpackage (frame protocol, message registry, vendored protobuf)
-COPY esphome/ ./esphome/
 # Device payloads (start_server.sh etc.) — canonical copies served to devices
 COPY device_payloads/ ./device_payloads/
-# Timer alarm sound (HA Voice PE, CC BY 4.0 — attribution in sounds/LICENSE.md,
-# which ships with the audio rather than only in the repo).
-COPY sounds/ ./sounds/
-
-# DTLN noise-suppression models (em_ns.py) — vendored at build time like the
-# JS deps above; pinned to a commit so builds are reproducible. MIT licensed.
-RUN mkdir -p /app/models/dtln && \
-    curl -sfL -o /app/models/dtln/model_1.onnx \
-      https://raw.githubusercontent.com/breizhn/DTLN/1de1f15a8b5b7e1c44905618ff2ef70ca8277fbc/pretrained_model/model_1.onnx && \
-    curl -sfL -o /app/models/dtln/model_2.onnx \
-      https://raw.githubusercontent.com/breizhn/DTLN/1de1f15a8b5b7e1c44905618ff2ef70ca8277fbc/pretrained_model/model_2.onnx
 
 # ONNX Runtime for the DEVICE (armeabi-v7a) — on-device wake word assets.
 #

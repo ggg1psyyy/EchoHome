@@ -12,7 +12,7 @@ import _sources
 
 def test_every_module_is_found():
     names = {p.name for p in _sources.MODULES}
-    assert {"em_controller.py", "em_api.py", "em_esphome.py", "em_state.py"} <= names
+    assert {"em_controller.py", "em_api.py", "em_incubator.py", "em_state.py"} <= names
     assert len(names) > 50
 
 

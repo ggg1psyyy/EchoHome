@@ -81,19 +81,6 @@ def _offline(d: dict, ctx: dict) -> list[dict]:
                      last_seen=d.get("last_seen"))]
 
 
-def _ha_not_connected(d: dict, ctx: dict) -> list[dict]:
-    view = d.get("view") or {}
-    if not d.get("live", {}).get("connected") or "voiceSatellite" not in view:
-        return []
-    if view.get("voiceIncubator"):
-        return []  # answered by the Voice Incubator: HA's voice is not needed
-    sat = view["voiceSatellite"]
-    if sat and sat.get("haConnected"):
-        return []
-    return [_finding(d["name"], "ha_not_connected", FACT,
-                     "Home Assistant is not connected to its voice satellite, "
-                     "so a wake lights the ring and nothing answers",
-                     satellite=sat)]
 
 
 def _incubator_not_connected(d: dict, ctx: dict) -> list[dict]:
@@ -233,7 +220,7 @@ def _turns(d: dict, ctx: dict) -> list[dict]:
 
 
 DEVICE_RULES: tuple[Callable[[dict, dict], list[dict]], ...] = (
-    _offline, _ha_not_connected, _incubator_not_connected, _listening, _link, _settings_ignored,
+    _offline, _incubator_not_connected, _listening, _link, _settings_ignored,
     _updates, _hardware, _turns,
 )
 

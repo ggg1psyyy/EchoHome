@@ -17,7 +17,6 @@ import em_db as db
 import em_device_view
 import em_http
 import em_ingressauth
-import em_player
 import em_process_stats
 import em_releases
 import em_routes_static
@@ -204,7 +203,6 @@ async def _get_support_bundle(request: web.Request) -> web.Response:
             "muted":        getattr(live, "muted", None) if live else None,
             "rtt_ms":       getattr(live, "rtt_last_ms", None) if live else None,
             "volume":       getattr(live, "volume", None) if live else None,
-            "media_state":  em_player.state(did),
             "stats":        em_support.redact_stats(live.stats if live else None),
             # Latest boot's reason and eMMC wear (schema v28): hardware
             # facts, nothing about the owner.

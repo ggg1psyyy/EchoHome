@@ -18,7 +18,6 @@ resolve(config) returns everything em_controller's LED helpers need:
   spin_frame  — fn(pos) -> list of 12 {id,r,g,b} dicts for spinner frame N
 """
 
-import em_timers
 
 NUM_LEDS = 12
 
@@ -31,6 +30,16 @@ ring (device/internal/incubator ring.go) with the specs in incubatorRing."""
 # the two "nothing upstream" signals are the same colour; the device scales
 # brightness itself when it renders a pulse.
 LINK_ORANGE = (255, 40, 0)
+
+
+# A ringing timer's ring, as the controller's own alarm had it (em_timers,
+# removed with the controller's voice): the satellite's "timer" scene.
+TIMER_ANIM = {
+    "pattern":  "pulse",
+    "colors":   [[255, 170, 0]],
+    "periodMs": 500,
+    "ttlSec":   5,
+}
 
 def _solid(r: int, g: int, b: int) -> list:
     return [(r, g, b)] * NUM_LEDS
@@ -309,7 +318,7 @@ def incubator_ring(scene: dict) -> dict:
     amber pulse for a ringing timer. Its listening ring is listeningAnim."""
     return {"spin": scene["spin_anim"], "meter": scene["meter_anim"],
             "done": scene["done_anim"], "error": scene["error_anim"],
-            "timer": dict(em_timers.TIMER_ANIM)}
+            "timer": dict(TIMER_ANIM)}
 
 
 def ring_push(scene: dict, capabilities) -> dict:

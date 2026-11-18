@@ -452,9 +452,6 @@ def test_the_skip_bounds_the_wait_after_a_stall():
     assert _lag_after_hiccup(skip=True) <= L.SCORING_MAX_LAG_S
 
 
-def test_the_wake_loop_skips_its_backlog():
-    src = _sources.code_only(_sources.def_source("_stream_listen"))
-    assert "em_listen.skip_backlog(device.mic_queue" in src
 
 
 def test_skipping_is_reported_at_most_every_thirty_seconds():
@@ -489,15 +486,3 @@ def test_streaming_modes_are_not_held_back():
     assert not L.awaiting_report(L.resolve("on", OLD, "stream"))
 
 
-def test_the_listener_waits_before_either_path_and_stream_rechecks():
-    from _sources import def_source, code_only
-    listener = code_only(def_source("wake_word_listener"))
-    assert listener.index("awaiting_report") < listener.index("_private_listen"), \
-        "wake_word_listener must wait on an unreported Echo before choosing a path"
-    stream = code_only(def_source("_stream_listen"))
-    first_mic = stream.index("mic_start()")
-    assert "awaiting_report" in stream[:first_mic] and "private_listening" in stream[:first_mic], (
-        "_stream_listen must re-check after loading its model and before its first "
-        "mic_start: the Echo can go private, or still be unreported, meanwhile")
-    waiter = code_only(def_source("_await_listen_report"))
-    assert "mic_start" not in waiter, "waiting must start nothing"

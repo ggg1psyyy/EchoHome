@@ -23,7 +23,7 @@ HEAVY = ("openwakeword", "sklearn", "scipy")
 PROBE = f"""
 import sys
 sys.path.insert(0, {str(CONTROLLER)!r})
-import em_api, em_controller, em_esphome, em_player, em_speechgate, em_oww_assets
+import em_api, em_controller, em_oww_assets
 loaded = sorted({{m.split('.')[0] for m in sys.modules}} & set({HEAVY!r}))
 print(','.join(loaded))
 """

@@ -186,13 +186,8 @@ absent optional fields take prior/default behaviour.
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `register` | see above | Handshake, sent once at connect |
-| `button` | `clickType`, `down`, `heldMs`, `muted`, `button.type` | Button press/release; `heldMs` only if `button_hold` |
 | `mute_state` | `muted` | Mute toggled (mute is device-sovereign — see `device/CLAUDE.md`) |
 | `volume_state` | `level` | Volume changed; controller persists it as `startupVolume` |
-| `oww_shadow_cross` | score/threshold/age fields | Shadow-mode wake crossing (report only) |
-| `oww_wake` | `score`, `threshold`, `ageMs`, `capturedMono`; `level`, `peak` when the crossing frame is still buffered; under private listening also `session`, `floor`, `barge` | On-device trigger fired (`owwOnDevice=on`). With `session` it opened a private-listening session whose audio follows as `0x07` ([listening.md](listening.md)); without, it lands in `Device.pending_wake` and the continuous stream carries the audio. `level`/`peak` are the wake word's loudness in dBFS with `micGainDb` removed, over the 2.0s ending at the crossing frame (definition: `controller/em_wakelevel.py`); logged, not acted on |
-| `listen_state` | `state` (`local`/`stream`/`degraded`), `reason?` | What the device is doing with its wake stream. Sent on every change and after every `ack` |
-| `listen_end` | `session`, `reason` | The device closed a session itself (`ack_timeout`, `max_open`, `muted`, `link`, `stopped`) |
 | `ambient_light` | `lux` | Light reading, sent on a real change (only if `ambient_light`); the ~30s `stats` report carries it as `ambientLux` |
 | `stats` | hardware and link telemetry (`internal/client/stats.go`, `DeviceStats`) | Every ~30s, plus once on connect. Every field is optional and absence means **not measured**, never zero. `tcpUpRetrans` is the device's own TCP retransmits across its planes since the last report, `tcpUpSegs` the segments sent where the kernel counts them (FireOS 5's 3.18 does not); `ble` carries the scanner's counters, including `yields`/`yieldedMs` for time the scan stood aside for the link |
 | `wifi_scan_result` | `networks[]` of `{ssid, ssid_hex, signal}`, or `error` | Answer to `wifi_scan` |
@@ -203,9 +198,14 @@ absent optional fields take prior/default behaviour.
 | `esphome_key` | `key`, or `error` | Answer to `esphome_key_request`: the key (base64, 32 bytes) of the Echo's own ESPHome server, as Home Assistant set it; `error` when none is set yet. Handed to the one waiting request; never logged or stored by the controller |
 | `sendspin_token` | `token`, `clientId`, or `error` | Answer to `sendspin_token_request`. The token (`SP:0…`) carries the device's Sendspin pairing key: the controller hands it to the one waiting request and never logs or stores it |
 | `incubator_state` | `state`: `listening`, `port`, `appConnected`, `inCall`, `wakeModels`, `monitored`, `error` | The Voice Incubator satellite's state as it changes, and in answer to every `incubator_satellite` (a repeat included, so a reconnecting controller learns whether the app is still connected). `inCall` (firmware announcing `incubator_calls`): the microphone is going to the app now (a call's listening, not the reply after it), which `listen_state` cannot say. `wakeModels` (firmware announcing `incubator_wake`): how many wake word models the app has pushed it, which it is listening for instead of its own wake word; absent is none. `monitored` (firmware announcing `incubator_monitor`): the microphone is streaming to the app outside a call now; the dashboard's privacy line follows it, never the switch. Only from firmware announcing `incubator_satellite` |
-| `playback_stats` | `periods`, `underruns`, `stats`, `barge?` | One completed speaker stream (a response or announcement), sent once it has drained. `stats` is the delivery margin (`minDepth`, `primeWaitMs`, `recvSpanMs`, `maxGapMs`, `bytesRecv`, from `speaker.StreamStats`); `periods`/`underruns` are also sent flat for controllers that predate `stats`. `barge` is the on-device scorer's `{peak, bar, frames}` over the stream when it scored one |
 | `log` | `level`, `message` | A device log line for the dashboard and support bundles. The controller persists and pushes it |
 | `pong` | `id`, `mono` when answering a `ping` that carried an `id` | Keepalive reply. `id` echoes the ping's; `mono` is the device's monotonic clock in ms (any fixed origin), which the controller maps onto its own to date `capturedMono`. Unsolicited keepalive pongs carry neither |
+
+Firmware older than EchoHome also sends `button`, `oww_wake`,
+`oww_shadow_cross`, `listen_state`, `listen_end` and `playback_stats`: the
+Home Assistant voice mode's messages. Since EchoHome the controller has no
+voice path and ignores them (an unknown type is logged at debug); an Echo
+whose voice is its own satellite handles its button and wake word itself.
 
 **Controller → Device**
 

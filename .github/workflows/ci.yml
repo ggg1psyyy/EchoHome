@@ -47,18 +47,6 @@ jobs:
       - name: Coverage floors
         working-directory: controller
         run: python tools/coverage_floor.py check coverage.json
-      # The real controller process, an Echo speaking the wire contract, and
-      # Home Assistant played by aioesphomeapi, the library HA's ESPHome
-      # integration uses (scenarios/harness.py). Its own pytest run, after the
-      # unit suite: aioesphomeapi and our vendored esphome/ register the same
-      # protobuf messages, which one process refuses. TTS is served as wire-
-      # rate WAV and passed through; ffmpeg decodes the timer alarm's FLAC.
-      - name: Scenario tests
-        working-directory: controller
-        run: |
-          command -v ffmpeg || { sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg; }
-          pip install -c requirements.txt aioesphomeapi==36.0.1
-          python -m pytest scenarios/ -v
       # The bench's scoring rules (#892). Its runs need captures, which stay
       # off the repository; the rules that score them are tested here.
       - name: Audio bench metrics
@@ -95,7 +83,7 @@ jobs:
       #
       # pyflakes finds that class of bug in milliseconds without importing
       # anything, which is what makes it worth a job: the controller's heavy
-      # modules (em_controller, em_api, em_esphome) are deliberately NOT
+      # modules (em_controller, em_api) are deliberately NOT
       # imported by the test suite, so every rarely-taken branch in them is
       # untested by construction. Undefined names are the failure mode that
       # punishes hardest -- silent until executed, then fatal.
@@ -106,7 +94,7 @@ jobs:
       - name: Check for undefined names
         working-directory: controller
         run: |
-          out=$(python -m pyflakes em_*.py tools/*.py tests/*.py scenarios/*.py esphome/*.py 2>&1 \
+          out=$(python -m pyflakes em_*.py tools/*.py tests/*.py 2>&1 \
                 | grep -i "undefined name" || true)
           if [ -n "$out" ]; then
             echo "$out"
@@ -369,9 +357,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # WHY THIS EXISTS: the two largest files in the controller have no
       # test that so much as imports them. controller/CLAUDE.md records the
-      # constraint honestly — the suite cannot import em_controller or
-      # em_esphome, which is why em_linkauth, em_runbarrier, em_barge and
-      # em_turnclock were split out as pure modules with real coverage.
+      # constraint honestly — the suite cannot import em_controller, which
+      # is why em_linkauth and its like were split out as pure modules with
+      # real coverage.
       # That split is right and should continue. What it leaves behind is a
       # blind spot: em_controller.py is ~4000 lines that nothing in CI ever
       # parses beyond `pyflakes`, and em_api.py is not far behind.

@@ -59,13 +59,8 @@ def test_a_healthy_bundle_has_no_findings():
     assert D.check(_bundle(turns=turns)) == []
 
 
-def test_ha_not_connected_is_found():
-    view = _view(voiceSatellite={"port": 6053, "listening": True, "haConnected": False})
-    assert _rules(_bundle(view=view)) == ["ha_not_connected"]
 
 
-def test_no_satellite_at_all_is_found():
-    assert _rules(_bundle(view=_view(voiceSatellite=None))) == ["ha_not_connected"]
 
 
 def test_a_degraded_echo_says_why():
@@ -162,9 +157,9 @@ def test_every_listed_key_is_a_config_key():
 
 def test_the_tool_reads_a_file(tmp_path, capsys):
     path = tmp_path / "b.json"
-    path.write_text(json.dumps(_bundle(view=_view(voiceSatellite=None))))
+    path.write_text(json.dumps(_bundle(live={"connected": False})))
     assert bundle_check.main([str(path)]) == 0
-    assert "[fact] device-1: Home Assistant is not connected" in capsys.readouterr().out
+    assert "[fact] device-1: not connected; everything live below is unknown" in capsys.readouterr().out
 
 
 def test_the_tool_warns_on_an_old_format(tmp_path, capsys):
@@ -201,10 +196,6 @@ def test_an_incubator_echo_does_not_need_home_assistants_voice():
     assert _rules(_bundle(view=view)) == []
 
 
-def test_a_home_assistant_echo_is_judged_as_before():
-    view = _view(voiceSatellite={"port": 6053, "listening": True, "haConnected": False},
-                 voiceIncubator=None)
-    assert _rules(_bundle(view=view)) == ["ha_not_connected"]
 
 
 def test_an_offline_incubator_echo_is_only_offline():

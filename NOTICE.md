@@ -18,8 +18,6 @@ needs to travel with it.
 |---|---|---|---|
 | SpeexDSP (acoustic echo canceller) | `device/internal/aec/` | BSD-3-Clause | Xiph.Org Foundation, Jean-Marc Valin, Analog Devices, CSIRO |
 | ONNX Runtime C API header | `device/internal/wakeword/ort/include/` | MIT | Microsoft |
-| aioesphomeapi protocol buffers | `controller/esphome/vendor/` | MIT | Otto Winter |
-| Home Assistant Voice PE timer sound (`timer_finished.flac`) | `controller/sounds/` | CC BY 4.0 | Clayton Charles Tapp |
 | pffft (the echo canceller's FFT) | `device/internal/aec/src/pffft/` | FFTPACK licence (BSD-style), in its source headers | Julien Pommier; University Corporation for Atmospheric Research |
 | libopus 1.5.2 (Sendspin's decoder) | `device/internal/opus/libopus/` | BSD-3-Clause | Xiph.Org Foundation, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo |
 | Voice Incubator firmware's mixednet executor, model parser and wake word detector, ported to Go | `device/internal/mixednet/` | Apache-2.0 (`LICENSE` there); changed: ported from C++ | OHF-Voice (firmware-voice-incubator) |
@@ -28,10 +26,7 @@ needs to travel with it.
 | Wake word models and a test recording, as test data | `device/internal/mixednet/testdata/`, `device/internal/incubator/testdata/` | Apache-2.0 (the `README.md` there names each source) | OHF-Voice, Kevin Ahrendt (microWakeWord), ESPHome |
 
 Full licence texts sit beside the code, in `COPYING` or `*_LICENSE` files. Do
-not remove them — they are the attribution the licences require. The timer
-sound carries its attribution in `controller/sounds/LICENSE.md`, which ships
-in the controller image alongside the audio: CC BY 4.0 asks that the credit
-travel with the work, and the container is where the work actually goes.
+not remove them — they are the attribution the licences require.
 
 ## Linked as a submodule
 
@@ -66,12 +61,6 @@ Listed because they end up in the published container image:
 
 - **ONNX Runtime** (MIT) — wake word inference, controller and device.
 - **openWakeWord** (Apache-2.0) — wake word models and feature pipeline.
-- **DTLN** (MIT, Nils L. Westhausen) — the two pretrained noise-suppression
-  models the controller image downloads at build time, pinned to a commit in
-  `controller/Dockerfile`. Baked into the published image, so they are
-  redistributed with it.
-- **ffmpeg** (LGPL-2.1+ as packaged by Debian) — invoked as a separate
-  process, never linked.
 - The Python dependencies in `controller/requirements.txt`, all permissive.
 
 ## Wake word models

@@ -12,7 +12,6 @@ import logging
 
 import em_config_types
 import em_console_pw
-import em_esphome
 import em_oww_sync
 import em_scenes
 import em_shadow
@@ -43,8 +42,6 @@ async def apply_live_config(device_id: str, live, effective: dict) -> None:
         live.oww_threshold = float(effective["owwThreshold"])
     if "owwModel" in effective:
         live.oww_model = effective["owwModel"]
-        # Refresh HA's wake-word dropdown.
-        await em_esphome.update_oww_model(device_id, effective["owwModel"])
     if pending_model:
         # The device is still on its previous wake word, still scoring
         # locally, still answering. Install, then switch.

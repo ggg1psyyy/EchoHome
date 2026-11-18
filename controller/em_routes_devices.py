@@ -23,7 +23,6 @@ import em_db as db
 import em_dbwriter
 import em_device_config
 import em_device_view
-import em_esphome
 import em_events
 import em_http
 import em_identify
@@ -186,11 +185,6 @@ async def _delete_device(request: web.Request) -> web.Response:
         return em_http.error("device_not_found", f"No device: {device_id}", 404)
 
     await loop.run_in_executor(None, db.delete_device, device_id)
-    # The satellite needs the same, and had no equivalent: it survives an
-    # ordinary disconnect on purpose, so a delete used to leave it in
-    # `_servers` holding the old port for a re-added device to inherit
-    # silently.
-    await em_esphome.device_deleted(device_id)
     await em_incubator.device_deleted(device_id)
     # Free the device's cached OWW models (#512), or a deleted device keeps its
     # models — and their ONNX sessions — for the life of the process.

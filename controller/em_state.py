@@ -118,3 +118,9 @@ link = {"ip": "", "port": 8767, "tls_port": 0}
 
 def set_link_ports(ip: str, port: int, tls_port: int) -> None:
     link.update(ip=ip or "", port=port, tls_port=tls_port)
+
+
+# The controller's mDNS responder (AsyncZeroconf, bound to SERVER_IP's
+# interface by em_controller.main), shared with what else announces from it:
+# the Voice Incubator satellites of Echoes it presents (em_incubator).
+zeroconf = None

@@ -20,7 +20,6 @@ import logging
 
 import em_config_types
 import em_db as db
-import em_esphome
 import em_events
 import em_oww_assets
 import em_ota
@@ -181,7 +180,6 @@ async def install_then_switch(device_id: str, model: str) -> None:
 
     await live.send_control({"type": "config", **em_config_types.well_typed(device_id, effective)})
     live.oww_model = model
-    await em_esphome.update_oww_model(device_id, model)
     await em_events.push_log(
         device_id, "info", "controller",
         f"Wake word model {model} installed — device switched"

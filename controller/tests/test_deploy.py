@@ -157,39 +157,6 @@ def test_addon_default_threshold_matches_the_controller():
     )
 
 
-def test_addon_default_reply_wait_matches_the_controller():
-    """
-    Same shape as the wake threshold above, and the same failure: config.yaml
-    ships the value a fresh add-on install meets, so a default that drifts
-    from em_turnclock's silently hands out a reply wait nobody chose.
-
-    The RANGE is pinned too, because the two halves of #805's ceiling live in
-    different files: the schema enforces it in the add-on UI, em_turnclock
-    clamps it for the standalone container, and both have to mean the same
-    number. The number itself is bounded by the thinking ring — see
-    `TTS_WAIT_MAX`.
-    """
-    import sys
-    sys.path.insert(0, str(CONTROLLER))
-    import em_turnclock
-
-    config = (CONTROLLER / "config.yaml").read_text()
-
-    default = re.search(r"^\s*tts_wait_timeout:\s*([0-9.]+)", config, re.M)
-    assert default, "config.yaml has no tts_wait_timeout option"
-    assert float(default.group(1)) == em_turnclock.TTS_WAIT_DEFAULT, (
-        f"config.yaml ships tts_wait_timeout {default.group(1)} but "
-        f"em_turnclock.TTS_WAIT_DEFAULT is {em_turnclock.TTS_WAIT_DEFAULT}"
-    )
-
-    rng = re.search(r'^\s*tts_wait_timeout:\s*"int\((\d+),(\d+)\)"',
-                    config, re.M)
-    assert rng, "schema has no tts_wait_timeout range"
-    assert float(rng.group(2)) == em_turnclock.TTS_WAIT_MAX, (
-        f"schema caps tts_wait_timeout at {rng.group(2)} but "
-        f"em_turnclock.TTS_WAIT_MAX is {em_turnclock.TTS_WAIT_MAX} — the "
-        f"add-on would accept a wait the controller then clamps"
-    )
 
 
 def test_addon_image_is_published_not_built_on_the_user_machine():
@@ -353,105 +320,12 @@ def test_release_change_is_pushed_to_open_dashboards():
         "the Updates tab must refresh while open, not fetch once on entry"
 
 
-def test_streamed_playback_waits_for_the_device_not_a_computed_sleep():
-    """
-    Turn playback must end when the DEVICE says its buffer drained, never on an
-    `audio_duration - elapsed` estimate.
-
-    That estimate was removed on 2026-07-24: it has no visibility of the
-    device's own buffer and cleared the ring 6.1s early on Retreat, 3.2s on
-    Lounge. The streaming path reintroduced it (PR #47) where it is worse still
-    — streaming already consumes most of the audio duration, so the remainder
-    computes to ~0 and the wait disappears while up to ~5.5s is queued in
-    audioChanDepth.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "em_controller.py").read_text()
-    fn = src[src.index("async def _run_streaming_post_turn_playback"):]
-    fn = fn[:fn.index("\nasync def ", 1)]
-
-    # Named on the API rather than on a variable: `playback_done` was a single
-    # Event on the Device and became a queue of per-playback waiters (#373), so
-    # the thing to assert is that this path registers one and waits on it, not
-    # what the old attribute was called.
-    assert "begin_playback()" in fn, \
-        "streamed playback must register a playback waiter"
-    assert "playback_ev.wait()" in fn, \
-        "streamed playback must await the device's playback_stats"
-    assert "end_playback(" in fn, \
-        ("the waiter must be retired in a finally, or a cancelled playback "
-         "takes the next one's report and desynchronises every one after it")
-    assert "asyncio.sleep(remaining)" not in fn, \
-        "the computed drain estimate was removed on 2026-07-24 — do not restore it"
 
 
-def test_send_ms_stays_socket_write_time():
-    """
-    send_ms is documented as socket-write time that completes near-instantly
-    however slow the link is — "never read it as delivery; that mistake cost a
-    whole investigation on 2026-07-20". Timing the whole streaming loop instead
-    folds HA's synthesis time in and makes it read exactly like delivery.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "em_controller.py").read_text()
-    fn = src[src.index("async def stream_speaker_chunks"):]
-    fn = fn[:fn.index("\n    async def ", 1) if "\n    async def " in fn[1:] else len(fn)]
-    assert "send_seconds" in fn, \
-        "socket-write time must be accumulated around the send calls"
-
-    caller = src[src.index("async def _run_streaming_post_turn_playback"):]
-    caller = caller[:caller.index("\nasync def ", 1)]
-    assert "device.playback_send_ms = send_ms" in caller, \
-        "send_ms must come from accumulated write time, not the loop duration"
 
 
-def test_meter_ring_is_raised_when_audio_starts_not_at_playback_setup():
-    """
-    The meter pattern renders the live speaker RMS, so it draws an UNLIT ring
-    until the device's ALSA write actually begins.
-
-    On the buffered path that was invisible: the TTS fetch had already
-    completed, so frames flushed at socket speed and audio began almost at
-    once. Streaming moves fetch+decode inside playback, so raising the meter at
-    setup time leaves the ring dark from the end of the spinner until HA
-    returns audio — seconds on a slow response, and indistinguishable from a
-    failed turn (user report 2026-07-31).
-
-    The spinner must therefore stay up until the meter has something to show.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "em_controller.py").read_text()
-    fn = src[src.index("async def post_turn_play_esphome"):]
-    fn = fn[:fn.index("\n            # P0-1")]
-
-    assert "_meter_at_playback_start(pcm_chunks" in fn, \
-        "the meter must be gated on the first audio reaching the device"
-
-    # A meter send is legitimate inside the nested helpers (_meter_on, and the
-    # dead-man refresher). What must not exist is one in the function's OWN
-    # body — that runs at setup, before any audio. Nested bodies are indented
-    # deeper, so indentation is the discriminator.
-    assert "\n" + " " * 20 + "await device.send_led_anim(meter)" not in fn, \
-        ("the meter is being raised at playback setup — on the streaming path "
-         "that is before HA has returned any audio, leaving the ring dark")
 
 
-def test_meter_gate_fires_for_responses_shorter_than_the_prime_window():
-    """
-    A response shorter than SPEAKER_PRIME_SECONDS never reaches the byte
-    threshold — the device starts playing it at EOS instead. Exhaustion must
-    fire the callback too, or short answers play with no ring at all.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "em_controller.py").read_text()
-    fn = src[src.index("async def _meter_at_playback_start"):]
-    fn = fn[:fn.index("\nasync def ", 1)]
-
-    body = fn.split("async for")[1]
-    assert "if not fired:" in body.rsplit("\n", 4)[-4:][0] or "if not fired" in body, \
-        "the generator must fire on exhaustion for sub-prime-length responses"
-    assert "SPEAKER_PRIME_SECONDS" in fn, \
-        "the threshold must track the device's actual prime window"
 
 
 def test_controller_update_is_advisory_only():
@@ -590,32 +464,6 @@ def test_wake_word_assets_reach_every_new_echo():
         "the push must verify md5 and fail loudly — a truncated file fails later at dlopen"
 
 
-def test_turn_end_reports_real_media_state_not_a_hardcoded_idle():
-    """
-    Issue #53: "the esphome media player reports that it is idle even though
-    the music continues to play on the echo."
-
-    Every voice turn ended by asserting MediaPlayerState.IDLE regardless of
-    what the media player was doing. The feed announces PLAYING exactly once,
-    when the decoder starts, so this IDLE arrived afterwards and became HA's
-    last word — the entity showed a play arrow over audible music, and nothing
-    ever corrected it.
-
-    _media_state_msg() exists for precisely this ("current media_player state
-    as HA should see it — em_player truth") and was being bypassed.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "em_esphome.py").read_text()
-
-    fn = src[src.index("        finally:\n            # Signal HA that the satellite has finished"):]
-    fn = fn[:fn.index("self._turn_active    = False")]
-
-    assert "self._media_state_msg()" in fn, \
-        "the turn must report the real media state at the end"
-    assert "state=MediaPlayerState.IDLE" not in fn, (
-        "a hardcoded IDLE at turn end overwrites the feed's PLAYING and "
-        "leaves HA showing idle over audible music"
-    )
 
 
 def test_no_unjustified_hardcoded_media_state():
@@ -674,40 +522,6 @@ def test_no_unjustified_hardcoded_media_state():
     )
 
 
-def test_every_deliberate_cancel_also_flushes_the_speaker():
-    """
-    Cancelling a turn must stop the AUDIO, not just our end of it.
-
-    cancel_event aborts the controller's feed. It cannot touch what is already
-    on the device — up to ~5.5s sits in audioChanDepth — so without a
-    speaker_flush the ring clears and the device carries on talking after you
-    have visibly cancelled it. Reported 2026-08-01 for the action button,
-    which was the one deliberate cancel missing it while mute and barge-in
-    both had it.
-
-    Forbidding the shape rather than fixing the instance: this is the second
-    bug of exactly this kind today (the other was a hardcoded MediaPlayerState
-    in one of three places), and fixing them one at a time is how the second
-    one survived the first.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "em_controller.py").read_text()
-
-    # Each deliberate cancel site, identified by its log line / guard, paired
-    # with how far to look for the flush that must accompany it.
-    sites = {
-        "Dot button — cancelling voice turn": 900,
-        "Muted during active turn": 900,
-    }
-    for marker, window in sites.items():
-        i = src.find(marker)
-        assert i != -1, f"cancel site {marker!r} not found — has it been renamed?"
-        block = src[i:i + window]
-        assert "cancel_event.set()" in block, f"{marker}: no cancel"
-        assert "speaker_flush" in block, (
-            f"{marker}: cancels the turn but never flushes the device speaker — "
-            f"the response will keep playing after the turn is cancelled"
-        )
 
 
 def test_supervisor_log_path_matches_between_script_and_controller():
@@ -859,23 +673,6 @@ def test_support_bundle_redacts_account_names():
     )
 
 
-def test_the_music_feed_reads_its_lead_per_chunk():
-    """
-    A voice turn lowers the music feed's lead so the response gets the shared
-    data plane (TURN_LEAD_S). That only works if the pacing loop reads the
-    CURRENT lead each time round — capturing LEAD_S once, or referring to the
-    module constant, silently restores the old behaviour and the fix becomes
-    a no-op with every test still passing.
-    """
-    feed = _sources.def_source("em_player._feed")
-    pacing = re.search(r"ahead = sent / BYTES_PER_SEC.*?await asyncio\.sleep\(([^)]*)\)",
-                       feed, re.S)
-    assert pacing, "could not find the feed's pacing sleep"
-    window = feed[:pacing.end()]
-    assert "self.lead_s" in window, (
-        "the pacing loop must read self.lead_s, not the LEAD_S constant — "
-        "otherwise lowering the lead for a voice turn does nothing"
-    )
 
 
 def _fn_body(src: str, name: str) -> str:
@@ -1430,138 +1227,12 @@ def test_debug_env_var_is_not_truthy_for_zero():
     assert '"0"' in match.group(1) and '"1"' in match.group(1), (
         "DEBUG must default to \"0\" and test for \"1\", the convention "
         "REQUIRE_DEVICE_TLS already uses")
-def test_wake_word_phrase_is_sent_and_matches_what_we_advertise():
-    """
-    Home Assistant's voice satellite setup arms an interceptor for the next
-    wake word and reads `wake_word_phrase` off the pipeline start. On None it
-    raises AssistSatelliteError("No wake word phrase provided") and ends the
-    run in milliseconds — so every voice turn worked while the one flow that
-    asks a device to prove it heard a wake word could never complete, and the
-    only way past was Skip (confirmed on hardware 2026-08-16).
-
-    HA then matches that phrase against the STATE of its wake-word select
-    entity, whose options are the display names we advertise
-    (esphome/assist_satellite.py `ww_state.state == wake_word_phrase`). So the
-    phrase and the advertised name must come from ONE function or they drift
-    apart and HA silently matches neither.
-
-    Source-shape assertions: this suite does not import em_esphome, which
-    needs aiohttp and the protobufs.
-    """
-    src = (CONTROLLER / "em_esphome.py").read_text()
-
-    start = re.search(r"api_pb2\.VoiceAssistantRequest\((.*?)\)\)", src, re.S)
-    assert start, "the pipeline-start VoiceAssistantRequest was not found"
-    assert "wake_word_phrase" in start.group(1), (
-        "VoiceAssistantRequest must carry wake_word_phrase — without it HA "
-        "refuses the run and the satellite setup dialog never advances")
-
-    advertised = re.search(r"api_pb2\.VoiceAssistantWakeWord\((.*?)\)", src, re.S)
-    assert advertised, "VoiceAssistantWakeWord advertisement not found"
-    assert "self.oww_model_info.name" in advertised.group(1), (
-        "the advertised wake_word must come from the connection metadata, "
-        "the same source as the phrase we send")
-
-    assert 'satellite.oww_model_info.name' in src, (
-        "the phrase must use the same connection metadata — a second spelling "
-        "is how it drifts from what we advertised")
 
 
-def test_button_turns_claim_no_wake_word():
-    """
-    A button turn has no wake word, and saying otherwise tells HA something
-    untrue about how the turn started — it would also satisfy a setup-flow
-    interceptor with a wake word nobody spoke. aioesphomeapi maps "" back to
-    None, so an empty string is the protocol's way to say "none".
-    """
-    src = (CONTROLLER / "em_esphome.py").read_text()
-    gate = re.search(r'wake_word_phrase\s*=\s*\((.*?)else ""', src, re.S)
-    assert gate, "the wake_word_phrase gate was not found"
-    assert 'trigger_label.startswith("wakeword")' in gate.group(1), (
-        "the phrase must be gated on the trigger being a wake word, so button "
-        "turns send \"\"")
 
 
-def test_a_run_ha_never_started_ends_the_turn():
-    """
-    Home Assistant's satellite setup intercepts a wake word by emitting
-    RUN_END and returning, without ever starting a pipeline. The controller
-    held the microphone anyway until its own timers expired — measured at
-    20.0s (streaming hard cap) and 5.2s (no-speech window) — while HA had
-    re-armed for the next wake word 18ms after ending the first. That is why
-    the setup flow's second "say it again" step landed on a device still
-    listening for the first.
-
-    The discriminator is RUN_START, not timing. Measured on hardware, a
-    genuine run is RUN_START (2ms before STT_START) … RUN_END (last, after
-    TTS_END); an interception is RUN_END alone. So a RUN_END with no
-    RUN_START cannot be the premature/duplicate RUN_END the other branch
-    exists for, because that one arrives MID-turn and a mid-turn RUN_END
-    follows the RUN_START that opened it.
-
-    Also: the outcome is `pipeline_refused`, not `no_speech`. The audio was
-    captured and streamed into a run that had already closed, and the outcome
-    is persisted — so `no_speech` would put every HA-side refusal into the
-    activity stats as a silent user.
-    """
-    src = (CONTROLLER / "em_esphome.py").read_text()
-
-    assert "VOICE_ASSISTANT_RUN_START" in src, (
-        "RUN_START must be handled — its absence is what identifies a "
-        "RUN_END that HA emitted without running a pipeline")
-    assert "_run_started" in src and "_ha_never_started" in src, \
-        "no state tracks whether HA ever started the run it just ended"
-    assert '"pipeline_refused"' in src, \
-        "an HA run that never started must not be recorded as no_speech"
-
-    handler = re.search(
-        r"VOICE_ASSISTANT_RUN_END:(.*?)elif event_type", src, re.S)
-    assert handler, "RUN_END handler not found"
-    body = handler.group(1)
-
-    assert "if not self._run_started:" in body, (
-        "RUN_END must check whether a RUN_START was ever seen before "
-        "treating itself as terminal")
-
-    # The premature/duplicate branch must stay gated on INTENT_END — acting
-    # on a mid-turn RUN_END would cut genuine turns short.
-    premature = body.split("if not self._run_started:")[1]
-    assert "self._intent_ended or self._turn_cancelled" in premature, (
-        "a RUN_END that DID follow a RUN_START must stay non-terminal until "
-        "INTENT_END — this is the guard against cutting genuine turns")
 
 
-def test_entity_names_do_not_repeat_the_device_label():
-    """
-    Home Assistant sets `_attr_has_entity_name = True` for every esphome
-    entity and composes "<device name> <entity name>" itself. Our device name
-    is already "<label> Voice Assistant", so putting the label in the entity
-    name too renders it twice:
-
-        'EA Test Device 01 Voice Assistant EA Test Device 01 Ambient Light'
-        'Lounge Voice Assistant Lounge'
-
-    Observed on every device and every entity (2026-08-16). em_ble_proxy had
-    it right all along with a bare "BLE advertisements", which is what makes
-    this a slip rather than a misunderstanding.
-
-    An empty name is HA's convention for the device's primary entity —
-    `self._attr_name = static_info.name or None` in esphome/entity.py — and
-    renders as the device name alone, so the media player is deliberately
-    "" rather than a label.
-    """
-    src = (CONTROLLER / "em_esphome.py").read_text()
-
-    block = re.search(r"ListEntitiesMediaPlayerResponse\((.*?)ListEntitiesDoneResponse",
-                      src, re.S)
-    assert block, "the ListEntities block was not found"
-    body = block.group(1)
-
-    assert "self.label" not in body, (
-        "an entity name must not include the device label — HA already "
-        "prefixes the device name, so it renders twice")
-    assert 'name=""' in body, \
-        "the media player should take the device's own name"
 
 
 def test_asset_sync_does_not_shadow_its_accumulator():
@@ -1663,53 +1334,8 @@ def test_a_failed_install_leaves_the_device_on_its_old_wake_word():
 
 
 
-def test_an_announcement_clears_the_cancel_flag_before_playing():
-    """
-    cancel_event is set by a cancel — a button press during a turn, a mute —
-    and was ONLY ever cleared when the next VOICE TURN started. Nothing in the
-    announcement path cleared it, and _run_post_turn_playback checks it, so a
-    cancelled turn silently killed every subsequent announcement until a turn
-    happened to run.
-
-    Measured on Test Device 01, 2026-08-17: a turn cancelled at 12:02:32 left
-    seven announcements over the next three minutes logging "Cancelled during
-    playback" and playing nothing. Adding a second device made it look like a
-    routing bug — that device played fine, because its own flag was clear.
-
-    An announcement is a new action; nothing that set the flag earlier has any
-    claim on it.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    fn = re.search(r"async def _standalone_play\(.*?\n(?=        async def )",
-                   src, re.S)
-    assert fn, "_standalone_play not found"
-    body = fn.group(0)
-
-    # The literal calls, not the prose: this function's comments name
-    # _run_post_turn_playback before either call happens.
-    clear = body.find("_d.cancel_event.clear()")
-    play = body.find("await _run_post_turn_playback(")
-    assert clear != -1, (
-        "an announcement no longer clears cancel_event — a cancelled turn "
-        "will silently kill every announcement that follows it"
-    )
-    assert clear < play, "the flag must be cleared BEFORE the audio is played"
 
 
-def test_an_announcement_reports_whether_it_actually_played():
-    """
-    The reply to HA carries one fact — did the user hear it. Something that
-    cancels mid-playback means they did not, and `return True` regardless
-    would make the reply decorative.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    fn = re.search(r"async def _standalone_play\(.*?\n(?=        async def )",
-                   src, re.S)
-    body = fn.group(0)
-    assert "-> bool" in body, "_standalone_play must report whether it played"
-    assert re.search(r"return not .*cancel_event\.is_set\(\)", body), (
-        "the return value must reflect whether playback was cancelled"
-    )
 
 
 def test_the_speaking_flag_and_its_dashboard_push_cannot_drift():
@@ -1743,35 +1369,6 @@ def test_the_speaking_flag_and_its_dashboard_push_cannot_drift():
     )
 
 
-def test_speaking_clears_on_device_confirmation_not_on_the_socket_write():
-    """
-    The stream task returns when the last byte reaches the socket, which
-    completes near-instantly however slow the link is — the device still has
-    its whole buffer to play. Clearing the flag there dropped the tile out of
-    Speaking seconds early, and because `thinking` was still set it fell BACK
-    to Thinking mid-response before finally going idle.
-
-    Exactly the mistake the LED ring made until 2026-07-24, in the same file.
-    The playback functions wait on the device's playback_stats; they are the
-    only things that know the speaker has stopped.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-
-    for fn_name in ("stream_speaker", "stream_speaker_chunks"):
-        fn = re.search(rf"async def {fn_name}\(.*?\n(?=    async def |    def )",
-                       src, re.S)
-        assert fn, f"{fn_name} not found"
-        assert "_set_speaking(False)" not in fn.group(0), (
-            f"{fn_name} clears speaking when the socket write finishes, not "
-            f"when the audio does"
-        )
-
-    for fn_name in ("_run_post_turn_playback", "_run_streaming_post_turn_playback"):
-        fn = _sources.def_source(fn_name)
-        assert "_set_speaking(False)" in fn, (
-            f"{fn_name} waits for the device's playback_stats and must be what "
-            f"clears speaking"
-        )
 
 
 def test_speaking_and_thinking_are_mutually_exclusive():
@@ -1819,68 +1416,12 @@ def test_the_speaking_push_cannot_fail_a_speaker_stream():
 # meanwhile scores wake words and reports them into a dead loop, so it looks
 # healthy from every side.
 
-def test_the_wake_listener_is_started_through_its_supervisor():
-    """
-    A bare create_task(wake_word_listener(...)) is the bug. The whole guard is
-    that the call site goes through the supervisor, and nothing else enforces
-    that.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    # The supervisor's OWN create_task is the one legitimate use, so check
-    # everywhere else. Splitting on the def keeps this honest if the helper
-    # moves.
-    start = src.index("def _supervise_wake_listener")
-    end = src.index("async def wake_word_listener")
-    outside = src[:start] + src[end:]
-    assert "create_task(wake_word_listener(" not in outside, (
-        "wake_word_listener started with a bare create_task outside its "
-        "supervisor — an exception would end it silently and nothing would "
-        "restart it. Use _supervise_wake_listener()."
-    )
-    assert "_supervise_wake_listener(device)" in outside
 
 
-def test_the_supervisor_attaches_a_done_callback():
-    """Without one the task ends and no code ever learns that it did."""
-    src = (CONTROLLER / "em_controller.py").read_text()
-    body = src[src.index("def _supervise_wake_listener"):]
-    body = body[:body.index("async def wake_word_listener")]
-    assert "add_done_callback" in body
-    # A restart that ignores cancellation would fight ordinary teardown.
-    assert "cancelled()" in body
-    # It must say so — silent recovery hides a recurring fault.
-    assert "log.error" in body
 
 
-def test_teardown_cancels_the_live_listener_not_a_stale_handle():
-    """
-    A supervised restart replaces the task object, so cancelling the variable
-    captured at connect time would leave the live listener running against a
-    closed connection.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    assert "(device.oww_task or oww_task).cancel()" in src
 
 
-def test_a_stuck_pause_can_be_recovered():
-    """
-    The other silent-deafness path. While oww_paused is set the wake loop
-    routes every frame away and the no-frames watchdog stands down, so a flag
-    that is never cleared is deafness with nothing to end it.
-
-    Recovery is gated on voice_lock being free as well as time, because a long
-    turn is legitimate — the spinner TTL alone runs to 135s — and only the
-    combination is impossible.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    assert "OWW_PAUSE_STUCK_S" in src
-    assert "oww_paused_since" in src
-    stuck = src[src.index("oww_paused stuck for") - 2000:
-                src.index("oww_paused stuck for") + 500]
-    assert "voice_lock.locked()" in stuck, (
-        "the stuck-pause recovery must check that no turn holds the lock — "
-        "time alone would cut a long but healthy turn"
-    )
 
 
 def test_deleting_a_device_bounces_its_link():
@@ -1911,34 +1452,6 @@ def test_deleting_a_device_bounces_its_link():
     )
 
 
-def test_deleting_a_device_drops_its_satellite():
-    """
-    `device_disconnected` keeps the DeviceESPhomeServer across a disconnect on
-    purpose — the port belongs to that device for good. So a delete that does
-    not remove it leaves the old port sitting in `_servers`, and a re-added
-    device meets it in `device_connected`, returns early on "already
-    listening", and never reaches assign_esphome_port: it keeps the port it
-    was being deleted to move OFF, under the previous row's label and MAC,
-    while its new row reads esphome_api_port NULL and the dashboard shows no
-    port at all.
-
-    The BT proxy already had this (`em_ble_proxy.reconcile`); the satellite
-    did not.
-    """
-    fn  = _sources.def_source("_delete_device")
-    code = "\n".join(l for l in fn.splitlines() if not l.lstrip().startswith("#"))
-
-    assert "em_esphome.device_deleted(device_id)" in code, (
-        "a deleted device's satellite must be dropped, or its port outlives "
-        "the row and the next registration inherits it"
-    )
-
-    esp = (CONTROLLER / "em_esphome.py").read_text()
-    body = _fn_body(esp, "device_deleted")
-    assert "_servers.pop(device_id" in body, (
-        "stopping the listener is not enough — the registry entry is what "
-        "device_connected finds and reuses"
-    )
 
 
 # ── The ring must say something when there is nothing to talk to ──────────────
@@ -1950,121 +1463,14 @@ def test_deleting_a_device_drops_its_satellite():
 # the ESPHome port-collision incident presented as ("the wake word stopped
 # working", while every part of it worked).
 
-def test_a_dropped_turn_surfaces_its_outcome_to_the_ring():
-    """
-    `last_turn_outcome` is what `_leds_turn_end` reads. A completed turn sets
-    it; a turn that never started has to as well, or the cleanup finds None
-    and blacks the ring with no signal at all.
-    """
-    fn  = _sources.def_source("em_turn_record.record_dropped_turn")
-    assert "device.last_turn_outcome" in fn, (
-        "a turn dropped for no HA must tell the ring cleanup why, or the "
-        "user gets a ring that flashes and clears"
-    )
 
 
-def test_a_device_with_no_ha_stands_down_before_it_can_claim():
-    """
-    Detection order is a PROXIMITY proxy: the nearest Echo crosses threshold
-    first whether or not HA has ever dialled its satellite port. So an
-    unlinked device must stand down before `_claim_wake`, or it wins
-    on nearness, silences the device that could have answered, and then dies
-    no_ha — nothing answers, and the one that was ready is the one that went
-    dark.
-
-    Source-shape because the suite cannot import em_controller, and the
-    ordering is the whole guard: a check placed after the claim would leave
-    the claim taken.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    body = src[src.index("async def wake_word_listener"):]
-    serves = body.index("can_serve_turn")
-    claim  = body.index("await _claim_wake(")
-    assert serves < claim, (
-        "the capability check must come BEFORE the arbitration claim — "
-        "after it, the unlinked device has already taken the window"
-    )
-    guard = body[serves:claim]
-    assert "if serves and" in guard, (
-        "the claim itself must be gated on it, not merely preceded by it"
-    )
 
 
-def test_the_button_path_stands_down_the_same_way():
-    """
-    The button is what someone reaches for when the wake word appeared to do
-    nothing, so answering it with silence is the worst version of this bug.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    assert src.count("voice.can_serve_turn") >= 2, (
-        "both the wake path and the button path must ask; a turn that cannot "
-        "reach HA should never hold the voice lock"
-    )
 
 
-def test_the_no_ha_cue_does_not_depend_on_another_device_losing():
-    """
-    The cue reports the DEVICE's state, not a turn's outcome — it says the
-    wake word works and the controller is here and HA is not. Firing it only
-    when no other Echo took the utterance would make it disappear exactly on
-    the multi-device fleets where the confusion is worst.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    body = src[src.index("async def wake_word_listener"):]
-    stand = body.index("if not serves:")
-    tail  = body[stand:stand + 2000]
-    assert "_leds_turn_end(device)" in tail, "no cue on the stand-down path"
-    assert "record_dropped_wake" in tail, (
-        "the wake must still reach the activity history, or an HA outage is "
-        "indistinguishable from a device that heard nothing"
-    )
 
 
-def test_a_barge_that_stands_down_for_no_ha_leaves_the_same_trace_as_a_wake():
-    """
-    #417. `barge_ceded` covered two reasons and only the arbitration loss was
-    handled, so talking over an answer during an HA outage produced silence,
-    no cue and nothing in the Activity tab — indistinguishable from a device
-    that heard nothing. The wake path's stand-down records and cues; both barge
-    paths must not decide differently about it.
-
-    The record and the cue are NOT written where the barge fires. That block
-    runs before anything can unwind the turn, so the interrupted turn's own
-    `em_turn_record.persist_turn` overwrites `last_turn_outcome` with "barged" before the
-    ring reads it, and clearing `barge_detected` there skips the turn loop's
-    ceded branch — leaving `barge_ceded` and `cancel_event` set into the next
-    turn. So the watcher only CARRIES the reason across, and the loop's ceded
-    branch records it, by then with nothing left to overwrite it.
-
-    Source-shape because the suite cannot import em_controller, and the
-    decision itself is already covered by `em_barge.cede` — what is not
-    covered is whether the watcher acts on it, and where.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    for name in ("_barge_watcher", "_private_barge"):
-        fn = _fn_body(src, name)
-        assert "em_barge.cede(" in fn, f"{name} must use the shared decision"
-        assert "(not serves) or won_by !=" not in fn, (
-            f"{name} has the decision inlined again — two copies of a "
-            f"stand-down rule can disagree about what leaves a record"
-        )
-        tail = fn[fn.index("em_barge.cede("):]
-        assert "verdict.no_ha:" in tail, (
-            f"{name} must branch on the no-HA reason separately from losing "
-            f"arbitration"
-        )
-        no_ha = tail[tail.index("verdict.no_ha:"):]
-        assert "device.barge_no_ha" in no_ha, (
-            f"{name}: the no-HA reason must reach the turn loop's ceded branch"
-        )
-        assert "record_dropped_wake" not in no_ha, (
-            f"{name}: recorded here, the row is overwritten by the interrupted "
-            f"turn's em_turn_record.persist_turn before _leds_turn_end can read it"
-        )
-        assert "device.barge_detected = False" not in no_ha, (
-            f"{name}: clearing this skips the ceded branch, so barge_ceded and "
-            f"cancel_event survive into the next turn"
-        )
 
 
 def test_every_outcome_cue_names_a_scene_key_that_exists():
@@ -2208,99 +1614,12 @@ def test_ble_adverts_leave_the_control_plane_only_when_negotiated():
         "the ack must carry the controller's feature list"
     )
 
-    # The advert branch must precede the mic guards, which would otherwise
-    # drop a 0x06 frame on the mic header-length test and lose it silently.
-    handler = src[src.index("async def handle_data"):]
-    ble = handler.index("BLE_ADVERTS_TYPE")
-    mic = handler.index("!= MIC_FRAME_TYPE")
-    assert ble < mic, (
-        "the BLE frame branch must come before the mic-frame guards, or the "
-        "frame is dropped by a length check written for PCM"
-    )
 
 
-def test_a_barge_in_is_arbitrated_like_any_other_wake():
-    """
-    Until 2026-09-02 the barge path claimed nothing, so on a fleet with two
-    Echoes in earshot a barge-in produced TWO answers: the barged device
-    started its interrupting turn while an idle neighbour heard the same
-    utterance on its ordinary wake listener and claimed an unopposed arbiter.
-    Reported by Wil, reproduced in the source.
-
-    The original wake's claim cannot cover it — `claim()` is bounded by
-    `window_s` (300-700ms), not held until `release()`, so it expired seconds
-    before anyone talked over the answer.
-    """
-    src  = (CONTROLLER / "em_controller.py").read_text()
-    body = src[src.index("async def _barge_watcher"):]
-    body = body[:body.index("\nasync def ", 1)]
-
-    assert "await _claim_wake(" in body, (
-        "the barge watcher must arbitrate — without it a second Echo answers "
-        "the same interrupting utterance"
-    )
-    # Same ordering rule as the wake path: a device that cannot finish a turn
-    # must not take the window first.
-    serves = body.index("can_serve_turn")
-    claim  = body.index("await _claim_wake(")
-    assert serves < claim, (
-        "can_serve_turn must precede the claim, or an unlinked device takes "
-        "the window and then dies no_ha"
-    )
 
 
-def test_a_ceded_barge_still_stops_playback_but_takes_no_turn():
-    """
-    The two halves answer different questions. Playback must stop whoever
-    ends up answering — the user spoke over THIS device. Running the
-    interrupting turn as well is the part that must not happen.
-
-    Folding them into one flag is how both devices answered.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    assert "barge_ceded" in src, "the ceded case needs its own flag"
-
-    # The ceded branch must be tested BEFORE the branch that starts the
-    # interrupting turn, or the turn starts regardless and the flag is
-    # decoration.
-    ceded = src.index("device.barge_detected and device.barge_ceded")
-    start = src.index("Barge-in: starting interrupting turn")
-    assert ceded < start, (
-        "the ceded branch must come before the one that starts the turn"
-    )
-    branch = src[ceded:start]
-    assert "break" in branch, (
-        "a ceded barge must leave the turn loop rather than fall through "
-        "into the interrupting turn"
-    )
 
 
-def test_the_no_ha_barge_records_where_nothing_overwrites_it():
-    """
-    The no-HA stand-down is the one barge outcome that must leave a row and a
-    cue, and both are written in the ceded branch for a reason that is only
-    visible as an ordering: the interrupted turn persists `barged` AFTER the
-    barge fires, so a row written at the point of the barge is overwritten
-    before the ring reads it. The branch also has to clear `barge_detected`
-    first, because `_leds_turn_end` suppresses its own cue while it is set.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    ceded = src.index("device.barge_detected and device.barge_ceded")
-    start = src.index("Barge-in: starting interrupting turn")
-    branch = src[ceded:start]
-    for call in ("leds_listening(device)", "record_dropped_wake(",
-                 "_leds_turn_end(device)"):
-        assert call in branch, f"the no-HA stand-down needs {call}"
-    assert branch.index("device.barge_detected = False") < \
-           branch.index("record_dropped_wake("), (
-        "the flag must be clear before the cue is painted, or "
-        "_leds_turn_end suppresses it"
-    )
-    cleanup = src.index("await cleanup_esphome()")
-    assert cleanup < ceded, (
-        "the record must come after the interrupted turn's cleanup has "
-        "persisted its own outcome, or that outcome overwrites this one"
-    )
 
 
 # ─── Connect-time reconcile ───────────────────────────────────────────────────

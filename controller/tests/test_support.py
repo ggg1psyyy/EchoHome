@@ -924,7 +924,6 @@ def _view():
         "wake_word": True, "aecRef": "software", "linkTls": False,
         "linkTokenIssued": True,
         "listen": {"state": "degraded", "streams": False, "reason": "no_model"},
-        "voiceSatellite": {"port": 6053, "listening": True, "haConnected": False},
         "linkQuality": {"verdict": "poor", "lossPct": 6.1, "minutes": [0.0, 6.1]},
         "linkRefused": f"token mismatch from {SECRETS['ip']}",
         "update_error": f"push failed: '{SECRETS['ssid']}' {SECRETS['bssid']}",
@@ -950,8 +949,6 @@ def test_the_view_leaks_nothing_identifying():
 
 def test_the_view_keeps_what_explains_a_fault():
     out = S.redact_view(_view())
-    # #349: the Echo lights up and nothing answers.
-    assert out["voiceSatellite"]["haConnected"] is False
     assert out["listen"] == {"state": "degraded", "streams": False, "reason": "no_model"}
     assert out["linkQuality"]["verdict"] == "poor"
     assert out["linkRefused"] == "token mismatch from <ip>"

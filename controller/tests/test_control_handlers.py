@@ -59,7 +59,7 @@ def _spec_device_to_controller() -> set[str]:
 
 def test_the_spec_table_was_found():
     # Guards the guard: a reformatted spec must fail here, not pass on nothing.
-    assert {"register", "button", "stats", "pong"} <= _spec_device_to_controller()
+    assert {"register", "stats", "pong"} <= _spec_device_to_controller()
 
 
 def test_every_message_in_the_spec_has_a_handler_and_nothing_else_does():
@@ -86,39 +86,28 @@ def test_the_spec_names_the_field_the_firmware_sends_for_ambient_light():
 
 # ── ambient_light ───────────────────────────────────────────────────────────
 
-@pytest.fixture
-def lux_pushes(monkeypatch):
-    pushed = []
-    monkeypatch.setattr(em_controller.esphome, "update_ambient_lux",
-                        lambda device_id, lux: pushed.append((device_id, lux)))
-    return pushed
-
-
-def test_a_light_change_before_the_first_stats_report_still_reaches_ha(lux_pushes):
-    """It raised on `device.stats` being None, and the #255 guard dropped it:
-    a light switched on in the first ~30s after connect never reached HA."""
+def test_a_light_change_before_the_first_stats_report_is_not_a_stats_report():
+    """It raised on `device.stats` being None, and the #255 guard dropped it."""
     d = _device()
     assert d.stats is None
     _run(em_controller._on_ambient_light(d, {"type": "ambient_light", "lux": 42}))
-    assert lux_pushes == [("dev1", 42)]
     assert d.stats is None, "a lux reading is not a stats report"
 
 
-def test_a_light_change_updates_the_held_stats(lux_pushes):
+def test_a_light_change_updates_the_held_stats():
     d = _device()
     d.stats = {"cpu": 10, "ambientLux": 3}
     _run(em_controller._on_ambient_light(d, {"type": "ambient_light", "lux": 400}))
     assert d.stats == {"cpu": 10, "ambientLux": 400}
-    assert lux_pushes == [("dev1", 400)]
 
 
 @pytest.mark.parametrize("lux", [None, "42", 4.2])
-def test_a_reading_that_is_not_an_integer_is_ignored(lux_pushes, lux):
+def test_a_reading_that_is_not_an_integer_is_ignored(lux):
     d = _device()
     d.stats = {}
     msg = {"type": "ambient_light"} if lux is None else {"type": "ambient_light", "lux": lux}
     _run(em_controller._on_ambient_light(d, msg))
-    assert lux_pushes == [] and d.stats == {}
+    assert d.stats == {}
 
 
 # ── answers to a request the controller is waiting on ───────────────────────

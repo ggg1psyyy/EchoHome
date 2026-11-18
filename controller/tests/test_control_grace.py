@@ -42,8 +42,7 @@ def test_the_grace_task_checks_for_a_replacement():
     assert "CONTROL_RECONNECT_GRACE_S" in task
     assert "em_state.devices.get(device.device_id)" in task, \
         "the task must check whether a replacement registered"
-    for call in ("notify_device_disconnected", "esphome.device_disconnected",
-                 "device_gone"):
+    for call in ("notify_device_disconnected",):
         assert call in task, f"{call} belongs in the deferred release"
 
 

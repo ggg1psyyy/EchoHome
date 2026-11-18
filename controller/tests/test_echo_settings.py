@@ -12,7 +12,6 @@ import em_config_sections as cs
 import em_db
 import em_device_config
 import em_echo_settings as es
-import em_esphome
 import em_events
 import em_incubator
 import em_state
@@ -32,11 +31,6 @@ def test_the_keys_the_echo_owns_are_the_firmwares():
         assert es.section_of(k), f"{k} is in no section"
 
 
-def test_the_echos_own_entity_keys_stay_clear_of_the_controllers():
-    go = _go("owned.go")
-    echo = [int(v) for v in re.findall(r"esphome\w+Key\s*=\s*(\d+)", go)]
-    ours = [v for k, v in vars(em_esphome).items() if k.endswith("_KEY") and isinstance(v, int)]
-    assert echo and min(echo) >= 20 and max(ours) < 20
 
 
 def test_a_section_the_echo_follows_from_the_fleet_is_seeded_from_it():

@@ -440,7 +440,6 @@ _VIEW_FIELDS = (
 )
 _VIEW_NESTED = {
     "listen": ("state", "streams", "reason"),
-    "voiceSatellite": ("port", "listening", "haConnected"),
     # null unless the Echo is answered by the Voice Incubator; no peer address.
     "voiceIncubator": ("port", "listening", "appConnected", "inCall", "onEcho"),
     "linkQuality": ("verdict", "lossPct", "minutes"),

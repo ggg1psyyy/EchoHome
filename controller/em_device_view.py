@@ -15,7 +15,6 @@ import em_config_sections as sections_mod
 import em_db as db
 import em_emos_ota
 import em_emos_update
-import em_esphome
 import em_incubator
 import em_health
 import em_ota
@@ -209,12 +208,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
                              else _stored_volume(row)),
         # Controller-side BT proxy state — non-None only while the device's
         # bleProxyEnabled config has a proxy server instantiated.
-        # Controller-side voice satellite state: whether Home Assistant is
-        # actually on the other end of this device's ESPHome port. Without
-        # it a device HA has never connected to renders as idle, which is
-        # the same thing a working device renders as (#349) — the wake word
-        # fires, the ring lights, and the turn dies in milliseconds.
-        "voiceSatellite":   em_esphome.get_status(device_id),
         "voiceIncubator":   em_incubator.status_view(device_id),  # None unless on it
         # Device-link security: token issued (persistent), and the link over TLS (live).
         "linkTokenIssued":  bool(row["token"]) if "token" in row.keys() else False,

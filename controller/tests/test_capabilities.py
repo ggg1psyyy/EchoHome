@@ -22,7 +22,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 CONTROL_GO = ROOT / "device" / "internal" / "client" / "control.go"
 CONTROLLER = ROOT / "controller" / "em_controller.py"
-ESPHOME = ROOT / "controller" / "em_esphome.py"
 
 
 def _device_record() -> str:
@@ -60,15 +59,11 @@ def test_every_capability_the_controller_checks_is_one_the_device_sends():
     the device-side test cannot.
     """
     caps = set(device_capabilities())
-    # Two idioms, both scanned: `"<cap>" in (self.capabilities or [])` on
-    # Device in em_controller, and _device_has("<cap>") on the ESPHome
-    # satellite, which decides which HA entities get advertised. A typo in
-    # either is an entity that never appears or never fires, with no error
+    # The idiom scanned: `"<cap>" in (self.capabilities or [])` on Device in
+    # em_controller. A typo is a feature that never turns on, with no error
     # anywhere — exactly what this test exists to catch.
     checked = set(re.findall(r'"([a-z_]+)"\s+in\s+\(self\.capabilities',
                              CONTROLLER.read_text()))
-    checked |= set(re.findall(r'_device_has\(\s*"([a-z_]+)"\s*\)',
-                              ESPHOME.read_text()))
     assert checked, "no capability checks found — has the idiom changed?"
     unknown = checked - caps
     assert not unknown, (
@@ -224,84 +219,10 @@ def test_the_toggle_control_actually_honours_disabled():
         "styling it grey while still writing the value is the bug this pins"
 
 
-def test_capabilities_reported_before_the_server_exists_are_not_lost():
-    """
-    A device registers BEFORE its ESPHome server is created — the listener
-    only comes up once the device is present — so the capability push finds
-    no server. Dropping it there built the entity list from an empty set, and
-    that list is a ONE-SHOT at ListEntities time: HA caches it and the sensor
-    is absent for the life of the connection.
-
-    Observed on Retreat, 2026-08-03: registered 05:25:33, server created
-    05:25:34, no ambient light entity in HA afterwards. The same race resolves
-    differently on each controller restart, which is why the graph came and
-    went rather than simply never working.
-
-    Read as source, not imported: em_esphome pulls in zeroconf and aiohttp,
-    which this suite deliberately does without.
-    """
-    src = ESPHOME.read_text()
-    setter = re.search(r"def set_device_capabilities\(.*?\n(?=\n\ndef |\Z)", src, re.S)
-    assert setter, "could not find set_device_capabilities"
-    body = setter.group(0)
-    # The store must happen unconditionally — not inside the "if server" arm,
-    # which is exactly what dropped it.
-    store = re.search(r"^\s{4}_pending_caps\[device_id\]\s*=", body, re.M)
-    assert store, (
-        "set_device_capabilities must hold the capabilities unconditionally; "
-        "pushing them only when a server already exists loses them"
-    )
 
 
-def test_the_pending_capabilities_are_applied_when_the_server_is_built():
-    """
-    Guard against the two halves drifting: holding the value is only useful
-    if server creation applies it to the same attribute the ListEntities gate
-    reads (_device_has → srv.capabilities).
-    """
-    src = ESPHOME.read_text()
-    create = re.search(r"async def _register_device_server\(.*?\n(?=\n\nasync def |\n\ndef |\Z)",
-                       src, re.S)
-    assert create, "could not find _register_device_server"
-    body = create.group(0)
-    assert "_pending_caps" in body, \
-        "server creation must seed capabilities from the pending map"
-    assert "set_capabilities" in body, \
-        "and must apply them via the same setter the entity gate reads"
 
 
-def test_a_capability_that_changes_later_rebuilds_the_entity_list():
-    """
-    The other half of the one-shot problem, and `_pending_caps` does not reach
-    it: when capabilities change AFTER HA has enumerated, the server has the
-    new list but HA read the entity list once at connect and never asks again.
-
-    Reachable in normal operation rather than only in theory. `als.resolve()`
-    deliberately does not cache a negative result, because the first lookup
-    happens moments after a cold boot when sysfs is least likely to be
-    complete — so a device can register without `ambient_light` and acquire it
-    on a later scan. Before this, that device kept the entity list from the
-    registration that missed the sensor, and the only cure was a controller
-    restart that happened to win the race (#90).
-
-    Bouncing the HA connection is the documented remedy; `update_oww_model`
-    does the same for the wake word configuration, and HA redials in seconds.
-    """
-    src = ESPHOME.read_text()
-    setter = re.search(r"def set_device_capabilities\(.*?\n(?=\n\ndef |\Z)", src, re.S)
-    assert setter, "could not find set_device_capabilities"
-    body = setter.group(0)
-
-    assert "disconnect()" in body, (
-        "a capability change after ListEntities must bounce the HA connection, "
-        "or the new entity never appears for the life of that connection"
-    )
-    # It must be conditional on an actual change. Bouncing on every register
-    # would drop HA's connection on every device reconnect.
-    assert re.search(r"if\s+set\(caps\)\s*==\s*before", body), (
-        "the bounce must be gated on the capability set actually changing; "
-        "bouncing unconditionally disconnects HA on every device reconnect"
-    )
 
 
 def test_the_api_can_tell_no_sensor_from_no_reading():
