@@ -215,7 +215,7 @@ func (e *echoParts) duckFor(r incubator.Ring) {
 	if active {
 		if !e.ducked && e.spk.MusicAudible(0) {
 			e.ducked = true
-			e.spk.SetDuck(config.Get().DuckDb)
+			duckHold(true)
 		}
 		return
 	}
@@ -228,7 +228,7 @@ func (e *echoParts) duckFor(r incubator.Ring) {
 		defer e.mu.Unlock()
 		if e.gen == gen && e.ducked {
 			e.ducked = false
-			e.spk.SetDuck(0)
+			duckHold(false)
 		}
 	})
 }

@@ -5,7 +5,9 @@
 //	go run ./tools/esphome_interop 16053 [base64 key | provision]   (from device/)
 //
 // then check.py (no key, or that key), or provision.py (provision: no key,
-// set by the client as Home Assistant sets it).
+// set by the client as Home Assistant sets it), or media.py (the media
+// player: internal/mediaplayer on a stand-in speaker playing 20x fast, its
+// WAV served on port+1).
 package main
 
 import (
@@ -31,9 +33,11 @@ func main() {
 		Name: "Microphone Muted", Icon: "mdi:microphone-off"}}
 	btn := &esphome.Event{Desc: &api.ListEntitiesEventResponse{ObjectId: "action_button", Key: 2, Name: "Action Button",
 		DeviceClass: "button", EventTypes: []string{"long", "single", "double", "triple"}}}
+	mp := mediaPlayerEntity()
 	s := esphome.New(esphome.DeviceInfo{Name: "echohome-interop", FriendlyName: "EchoHome interop",
 		MAC: "02:EC:00:00:00:99", Manufacturer: "EchoHome", Model: "biscuit",
-		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted)
+		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted, mp)
+	serveWav(port)
 	s.SetTimeSink(func(t time.Time, tz string) {
 		log.Printf("time from the client: %s (%s), %v off", t.UTC().Format(time.RFC3339), tz, time.Until(t).Round(time.Second))
 	})

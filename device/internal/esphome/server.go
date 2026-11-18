@@ -543,6 +543,10 @@ func (c *conn) handle(m proto.Message) bool {
 				c.reply(st)
 			}
 		}
+	case *api.MediaPlayerCommandRequest:
+		if mp, ok := s.byKey[m.Key].(*MediaPlayer); ok && mp.OnCommand != nil {
+			mp.OnCommand(m)
+		}
 	case *api.SwitchCommandRequest:
 		if w, ok := s.byKey[m.Key].(*Switch); ok && w.OnCommand != nil {
 			w.OnCommand(m.State)

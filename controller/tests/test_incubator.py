@@ -914,3 +914,17 @@ def test_the_echos_own_esphome_server_keeps_the_controllers_entities():
     # every message this controller knows has the same id there, and none of
     # the controller's is missing.
     assert {n: ids.get(n) for n in ours} == ours
+
+
+def test_the_echos_own_media_player_is_the_controllers():
+    """The Echo's media player (device/cmd/media.go) has the controller's key,
+    object id, empty name and features, and asks HA for the same WAV, so its
+    entity is the one HA already knows and nothing is decoded on the Echo."""
+    import re
+    from pathlib import Path
+    import em_esphome
+    go = (Path(__file__).resolve().parents[2] / "device" / "cmd" / "media.go").read_text()
+    assert int(re.search(r"esphomeMediaPlayerKey\s*=\s*(\d+)", go).group(1)) == em_esphome.MEDIA_PLAYER_KEY
+    assert int(re.search(r"esphomeMediaFeatures\s*=\s*(\d+)", go).group(1)) == em_esphome.MEDIA_PLAYER_FEATURES
+    assert 'ObjectId: "media_player"' in go and 'Name: ""' in go
+    assert re.search(r'Format: "wav", SampleRate: 48000, NumChannels: 1,.*SampleBytes: 2', go)

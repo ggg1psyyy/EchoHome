@@ -159,3 +159,40 @@ func (w *Switch) Value() bool {
 	defer w.mu.Unlock()
 	return w.value
 }
+
+// MediaPlayer is the Echo's media player (ListEntitiesMediaPlayerResponse):
+// commands go to OnCommand; HA sees the state Set reports.
+type MediaPlayer struct {
+	base
+	Desc      *api.ListEntitiesMediaPlayerResponse
+	OnCommand func(*api.MediaPlayerCommandRequest)
+	mu        sync.Mutex
+	state     api.MediaPlayerState
+	volume    float32
+	muted     bool
+}
+
+func (m *MediaPlayer) Key() uint32         { return m.Desc.Key }
+func (m *MediaPlayer) Info() proto.Message { return m.Desc }
+
+func (m *MediaPlayer) State() proto.Message {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st := m.state
+	if st == api.MediaPlayerState_MEDIA_PLAYER_STATE_NONE {
+		st = api.MediaPlayerState_MEDIA_PLAYER_STATE_IDLE
+	}
+	return &api.MediaPlayerStateResponse{Key: m.Desc.Key, State: st, Volume: m.volume, Muted: m.muted}
+}
+
+// Set records the state, volume (0-1) and mute, and sends them to
+// subscribed clients if any changed.
+func (m *MediaPlayer) Set(state api.MediaPlayerState, volume float32, muted bool) {
+	m.mu.Lock()
+	same := m.state == state && m.volume == volume && m.muted == muted
+	m.state, m.volume, m.muted = state, volume, muted
+	m.mu.Unlock()
+	if !same {
+		m.changed(m)
+	}
+}

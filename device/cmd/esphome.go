@@ -14,6 +14,7 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/atomicfile"
 	"github.com/wilbowes/EchoMuse/internal/bindings/als"
 	ledbind "github.com/wilbowes/EchoMuse/internal/bindings/led"
+	"github.com/wilbowes/EchoMuse/internal/bindings/speaker"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/clock"
 	"github.com/wilbowes/EchoMuse/internal/config"
@@ -166,7 +167,7 @@ func esphomeKeyReply() map[string]any {
 
 // setupESPHome builds the Echo's entities and identity; nothing listens
 // until applyESPHome turns it on.
-func setupESPHome(cc *client.ControlClient, s *server.Server) {
+func setupESPHome(cc *client.ControlClient, s *server.Server, spk *speaker.PcmSpeaker) {
 	muted := s.IsMuted()
 	serial := client.GetSerialNo()
 	short := strings.ToLower(serial)
@@ -185,6 +186,7 @@ func setupESPHome(cc *client.ControlClient, s *server.Server) {
 		ProjectName:    "EchoHome." + id,
 		ProjectVersion: client.Version,
 	}}
+	e.entries = append(e.entries, mediaEntityFor(s, spk))
 	e.entries = append(e.entries, &esphome.Event{Desc: &api.ListEntitiesEventResponse{ObjectId: "action_button",
 		Key: esphomeEventKey, Name: "Action Button", DeviceClass: "button", EventTypes: esphomeButtonEventTypes}})
 	if als.Present() {

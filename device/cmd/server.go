@@ -737,8 +737,9 @@ func main() {
 	controlClient.OnESPHomeKey(esphomeKeyReply)
 
 	// The Voice Incubator satellite, when the controller asks for it.
+	setupDuck(pcmSpeaker)
 	setupIncubator(controlClient, dataClient, pcmSpeaker, s)
-	setupESPHome(controlClient, s)
+	setupESPHome(controlClient, s, pcmSpeaker)
 
 	// Speaker flush — barge-in: cut buffered TTS the moment the controller
 	// hears the wake word during playback.
@@ -767,8 +768,8 @@ func main() {
 	// Per-stream playback stats — underrun/period counts reported upstream
 	// once per completed TTS stream, persisted against the voice turn.
 	pcmSpeaker.OnStreamStats(func(st speaker.StreamStats) {
-		if incubatorStreamEnded() {
-			return // the satellite's reply, not a turn's
+		if mediaStreamEnded() || incubatorStreamEnded() {
+			return // an announcement's or the satellite's reply, not a turn's
 		}
 		// How close the Echo came to hearing a barge-in over this stream.
 		// Under private listening nothing else can say: the controller
@@ -873,6 +874,7 @@ func main() {
 	s.SetVolumeChangeCallback(func(level int) {
 		controlClient.SendVolumeState(level)
 		sendspinVolumeChanged(level)
+		mediaVolumeChanged(level)
 		incubatorSaveSoon() // a standalone Echo keeps its own volume
 	})
 

@@ -324,3 +324,29 @@ func TestTheTimersNeverReadTheWallClock(t *testing.T) {
 		}
 	}
 }
+
+// A media player command reaches OnCommand; HA sees the state Set reports.
+func TestAMediaPlayerCommandIsHandedOn(t *testing.T) {
+	got := make(chan *api.MediaPlayerCommandRequest, 1)
+	mp := &MediaPlayer{Desc: &api.ListEntitiesMediaPlayerResponse{ObjectId: "media_player", Key: 1},
+		OnCommand: func(c *api.MediaPlayerCommandRequest) { got <- c }}
+	s := New(DeviceInfo{Name: "n"}, mp)
+	c := dialServer(t, s)
+	c.send(&api.SubscribeStatesRequest{})
+	if st, ok := c.recv().(*api.MediaPlayerStateResponse); !ok || st.State != api.MediaPlayerState_MEDIA_PLAYER_STATE_IDLE {
+		t.Fatalf("%v", st)
+	}
+	c.send(&api.MediaPlayerCommandRequest{Key: 1, HasMediaUrl: true, MediaUrl: "http://ha/x.wav"})
+	select {
+	case cmd := <-got:
+		if cmd.MediaUrl != "http://ha/x.wav" {
+			t.Fatalf("%v", cmd)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no command")
+	}
+	mp.Set(api.MediaPlayerState_MEDIA_PLAYER_STATE_PLAYING, 0.5, false)
+	if st, ok := c.recv().(*api.MediaPlayerStateResponse); !ok || st.State != api.MediaPlayerState_MEDIA_PLAYER_STATE_PLAYING || st.Volume != 0.5 {
+		t.Fatalf("%v", st)
+	}
+}
