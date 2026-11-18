@@ -246,6 +246,7 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "incubatorMonitorCapable": em_incubator.MONITOR_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
         "incubatorStandaloneCapable": em_incubator.STANDALONE_CAPABILITY in (getattr(live, "capabilities", None) or []) if live else False,
         "esphomeServerCapable": "esphome_server" in (getattr(live, "capabilities", None) or []) if live else False,
+        "esphomeNoiseCapable": "esphome_noise" in (getattr(live, "capabilities", None) or []) if live else False,
         "pairingCapable":   getattr(live, "pairing_capable", False) if live else False,
         # What this Echo is actually doing with its microphone
         # (docs/listening.md, em_listen.resolve) — the one source for every

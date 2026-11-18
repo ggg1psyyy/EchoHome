@@ -450,6 +450,7 @@ class Device:
         self.sendspin: dict | None = None
         # An outstanding sendspin_token_request, answered by sendspin_token.
         self.sendspin_token_waiter: asyncio.Future | None = None
+        self.esphome_key_waiter: asyncio.Future | None = None
         # Set from the register message; None on firmware that predates it.
         self.ambient_light_status: dict | None = None
         # Which userspace the device booted, from its register message.
@@ -4788,6 +4789,14 @@ async def _on_sendspin_token(device: Device, msg: dict) -> None:
         waiter.set_result(msg)
 
 
+async def _on_esphome_key(device: Device, msg: dict) -> None:
+    # The answer to esphome_key_request: the key of the Echo's own ESPHome
+    # server. A secret, handled as the Sendspin token is.
+    waiter = device.esphome_key_waiter
+    if waiter is not None and not waiter.done():
+        waiter.set_result(msg)
+
+
 async def _on_wifi_result(device: Device, msg: dict) -> None:
     device_id = device.device_id
     # Outcome of a wifi_change. The device re-sends this
@@ -5148,6 +5157,7 @@ CONTROL_HANDLERS = {
     "sendspin_status":  _on_sendspin_status,
     "incubator_state":  em_incubator.on_incubator_state,
     "sendspin_token":   _on_sendspin_token,
+    "esphome_key":      _on_esphome_key,
     "wifi_result":      _on_wifi_result,
     "playback_stats":   _on_playback_stats,
     "oww_shadow_cross": _on_oww_shadow_cross,

@@ -2,17 +2,36 @@
 Assistant's ESPHome integration uses, as HA would: connect (hello, login),
 device info, list entities, subscribe states. Fails on any difference.
 
-    python check.py [port]      (with the scenario venv's aioesphomeapi)
+    python check.py [port] [base64 key]   (with the scenario venv's aioesphomeapi)
+
+With a key, it also checks that a wrong key and no key are refused, as HA
+reads the refusal (InvalidEncryptionKeyAPIError, RequiresEncryptionAPIError).
 """
 import asyncio
+import base64
 import sys
 
 from aioesphomeapi import APIClient
 from aioesphomeapi.model import BinarySensorState, EventInfo, SensorState
 
 
-async def main(port: int) -> None:
-    cli = APIClient("127.0.0.1", port, password="")
+async def refused(port: int, key) -> str:
+    cli = APIClient("127.0.0.1", port, password="", noise_psk=key)
+    try:
+        await cli.connect(login=True)
+    except Exception as e:  # the type is what HA reads
+        return type(e).__name__
+    await cli.disconnect()
+    return "connected"
+
+
+async def main(port: int, key) -> None:
+    if key:
+        wrong = base64.b64encode(bytes(32)).decode()
+        assert await refused(port, wrong) == "InvalidEncryptionKeyAPIError"
+        assert await refused(port, None) == "RequiresEncryptionAPIError"
+        print("refused: a wrong key and no key, as HA expects")
+    cli = APIClient("127.0.0.1", port, password="", noise_psk=key)
     await cli.connect(login=True)
     info = await cli.device_info()
     assert info.name == "echohome-interop", info
@@ -46,4 +65,5 @@ async def main(port: int) -> None:
     print("ok")
 
 
-asyncio.run(main(int(sys.argv[1]) if len(sys.argv) > 1 else 16053))
+asyncio.run(main(int(sys.argv[1]) if len(sys.argv) > 1 else 16053,
+                 sys.argv[2] if len(sys.argv) > 2 else None))

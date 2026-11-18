@@ -733,6 +733,7 @@ func main() {
 	controlClient.OnIdentify(s.Identify)
 
 	controlClient.OnSendspinToken(sendspinToken)
+	controlClient.OnESPHomeKey(esphomeKeyReply)
 
 	// The Voice Incubator satellite, when the controller asks for it.
 	setupIncubator(controlClient, dataClient, pcmSpeaker, s)

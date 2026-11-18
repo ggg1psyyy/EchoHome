@@ -133,6 +133,7 @@ type ControlClient struct {
 	playCueCallback        func(string)
 	identifyCallback       StateCallback
 	sendspinTokenCallback  func() map[string]any
+	esphomeKeyCallback     func() map[string]any
 	incubatorCallback      func(IncubatorSatellite)
 	incubatorPressCallback func()
 	volumeSetCallback      VolumeSetCallback
@@ -220,6 +221,10 @@ func (c *ControlClient) OnWifiScan(cb StateCallback)              { c.wifiScanCa
 // the stats report, which lands in support bundles. The callback returns nil
 // when the player is off.
 func (c *ControlClient) OnSendspinToken(cb func() map[string]any) { c.sendspinTokenCallback = cb }
+
+// OnESPHomeKey answers the controller's request for the key Home Assistant
+// asks for when it adds the Echo's own ESPHome server. Never logged.
+func (c *ControlClient) OnESPHomeKey(cb func() map[string]any) { c.esphomeKeyCallback = cb }
 func (c *ControlClient) OnIncubatorSatellite(cb func(IncubatorSatellite)) {
 	c.incubatorCallback = cb
 }
@@ -1084,6 +1089,17 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 			reply["type"] = "sendspin_token"
 			c.writeJSON(reply)
 
+		case "esphome_key_request":
+			var reply map[string]any
+			if c.esphomeKeyCallback != nil {
+				reply = c.esphomeKeyCallback()
+			}
+			if reply == nil {
+				reply = map[string]any{"error": "no key"}
+			}
+			reply["type"] = "esphome_key"
+			c.writeJSON(reply)
+
 		case "speaker_flush":
 			// Barge-in: controller detected the wake word during TTS
 			// playback and wants the buffered audio cut immediately.
@@ -1402,6 +1418,8 @@ func capabilities() []string {
 	//
 	// "esphome_server": it can serve the ESPHome API itself (config
 	// esphomeServer), so Home Assistant connects to the Echo directly.
+	// "esphome_noise": that server is encrypted, with a key the Echo makes
+	// and keeps itself, handed out on esphome_key_request.
 	// "incubator_mdns": its satellite announces itself over mDNS too.
 	// "incubator_standalone": its satellite can outlive the controller
 	// (incubator_satellite standalone): saved on the Echo, started from it
@@ -1427,7 +1445,7 @@ func capabilities() []string {
 		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
 		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
-		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "ble_connect"}
+		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "esphome_noise", "ble_connect"}
 	if MicUnavailable() == "" {
 		caps = append(caps, "mic", "incubator_calls", "incubator_wake", "incubator_ring", "incubator_monitor")
 	}

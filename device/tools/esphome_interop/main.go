@@ -2,10 +2,11 @@
 // 127.0.0.1, for check.py to drive with aioesphomeapi (Home Assistant's own
 // ESPHome client): the proof that the Echo's server speaks what HA speaks.
 //
-//	go run ./tools/esphome_interop 16053     (from device/; then run check.py)
+//	go run ./tools/esphome_interop 16053 [base64 key]   (from device/; then check.py)
 package main
 
 import (
+	"encoding/base64"
 	"log"
 	"net"
 	"os"
@@ -30,6 +31,15 @@ func main() {
 	s := esphome.New(esphome.DeviceInfo{Name: "echohome-interop", FriendlyName: "EchoHome interop",
 		MAC: "02:EC:00:00:00:99", Manufacturer: "EchoHome", Model: "biscuit",
 		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted)
+	if len(os.Args) > 2 {
+		k, err := base64.StdEncoding.DecodeString(os.Args[2])
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := s.SetKey(k); err != nil {
+			log.Fatal(err)
+		}
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:"+port)
 	if err != nil {
 		log.Fatal(err)

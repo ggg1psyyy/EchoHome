@@ -2535,6 +2535,9 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 incubatorMonitorCapable={!device.connected || !!device.incubatorMonitorCapable}
                 incubatorStandaloneCapable={!device.connected || !!device.incubatorStandaloneCapable}
                 esphomeServerCapable={!device.connected || !!device.esphomeServerCapable}
+                esphomePanel={device.connected && device.esphomeNoiseCapable
+                  ? <ESPHomeServerKey deviceId={device.device_id} isAdmin={isAdmin}/>
+                  : null}
                 listen={device.connected ? deviceListen(device) : null}
                 wakeCueCapable={!device.connected || !!device.wakeCueCapable}
                 volumeCueCapable={!device.connected || !!device.volumeCueCapable}
@@ -9871,7 +9874,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             incubatorOnEchoCapable = true,
                             incubatorMonitorCapable = true,
                             incubatorStandaloneCapable = true,
-                            esphomeServerCapable = true,
+                            esphomeServerCapable = true, esphomePanel = null,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
                             wakeMicCapable = true,
@@ -10598,8 +10601,9 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
           )}
           <Toggle label="Serve Home Assistant from the Echo (experimental)"
             sub={esphomeServerCapable
-              ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome). Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
+              ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome), encrypted with the key below where the firmware has one. Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
               : "this Echo's firmware has no ESPHome server of its own (it lacks esphome_server)"}
+            after={config.esphomeServer === true ? esphomePanel : null}
             disabled={disabled || !esphomeServerCapable}
             value={config.esphomeServer === true}
             onChange={v => set('esphomeServer', v)}/>
@@ -10703,6 +10707,46 @@ function BleProxyKey({ deviceId, status, isAdmin }) {
         </div>
       )}
       {key && <div style={{ color: 'var(--muted)', fontSize: 'var(--fs-sm)' }}>Home Assistant asks for this on the BT Proxy device. Anyone with it can use this Echo's connections.</div>}
+      {error && <div style={{ color: 'var(--error)' }}>{error}</div>}
+    </div>
+  );
+}
+
+// ESPHomeServerKey: the encryption key Home Assistant asks for when it adds
+// the Echo's own ESPHome server. Made and kept on the Echo, asked of it on
+// request and never kept here.
+function ESPHomeServerKey({ deviceId, isAdmin }) {
+  const mono = "var(--font-mono)";
+  const [key, setKey] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const show = async () => {
+    setBusy(true); setError('');
+    try {
+      const r = await API.get(`/api/devices/${deviceId}/esphome/key`);
+      setKey(r.key);
+    } catch (e) {
+      setError(e.error || e.message || 'Could not get the key');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copy = () => {
+    navigator.clipboard.writeText(key).then(() => setCopied(true)).catch(() => {});
+  };
+  if (!isAdmin) return null;
+  return (
+    <div style={{ fontFamily: mono, fontSize: 'var(--fs-md)', color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      {!key && <div><Pill small disabled={busy} onClick={show}>{busy ? 'Asking the Echo…' : 'Show encryption key'}</Pill></div>}
+      {key && (
+        <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
+          <span style={{ wordBreak: 'break-all', userSelect: 'all' }}>{key}</span>
+          <Pill small onClick={copy}>{copied ? 'Copied' : 'Copy'}</Pill>
+          <Pill small onClick={() => { setKey(null); setCopied(false); }}>Hide</Pill>
+        </div>
+      )}
+      {key && <div style={{ color: 'var(--muted)', fontSize: 'var(--fs-sm)' }}>Home Assistant asks for this when it adds the Echo (port 6053). Anyone with it can talk to this Echo.</div>}
       {error && <div style={{ color: 'var(--error)' }}>{error}</div>}
     </div>
   );

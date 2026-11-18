@@ -3,6 +3,7 @@ package esphome
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -52,6 +53,7 @@ type DeviceInfo struct {
 // entities. Safe for concurrent use.
 type Server struct {
 	info     DeviceInfo
+	psk      []byte // nil: plaintext
 	entities []Entity
 	byKey    map[uint32]Entity
 
@@ -70,6 +72,16 @@ func New(info DeviceInfo, entities ...Entity) *Server {
 		e.bind(s.publish)
 	}
 	return s
+}
+
+// SetKey makes the server encrypted (ESPHome's Noise transport) with this
+// 32-byte pre-shared key, refusing plaintext clients. Before Serve.
+func (s *Server) SetKey(psk []byte) error {
+	if len(psk) != KeySize {
+		return fmt.Errorf("esphome: a key is %d bytes, not %d", KeySize, len(psk))
+	}
+	s.psk = append([]byte(nil), psk...)
+	return nil
 }
 
 // Serve accepts clients on ln until Close.
@@ -95,7 +107,7 @@ func (s *Server) Serve(ln net.Listener) error {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		cn := &conn{s: s, c: c, out: make(chan []byte, outQueue), done: make(chan struct{})}
+		cn := &conn{s: s, c: c, out: make(chan packet, outQueue), done: make(chan struct{})}
 		s.mu.Lock()
 		if s.closed {
 			s.mu.Unlock()
@@ -103,10 +115,9 @@ func (s *Server) Serve(ln net.Listener) error {
 			continue
 		}
 		s.conns[cn] = struct{}{}
-		s.wg.Add(2)
+		s.wg.Add(1)
 		s.mu.Unlock()
-		go cn.write()
-		go cn.read()
+		go cn.run()
 	}
 }
 
@@ -156,7 +167,7 @@ func (s *Server) Fire(key uint32, eventType string) {
 }
 
 func (s *Server) broadcast(m proto.Message) {
-	frame, err := frameOf(m)
+	p, err := packetOf(m)
 	if err != nil {
 		log.Printf("[esphome] %v", err)
 		return
@@ -170,16 +181,20 @@ func (s *Server) broadcast(m proto.Message) {
 	}
 	s.mu.Unlock()
 	for _, c := range all {
-		c.send(frame)
+		c.send(p)
 	}
 }
 
-func frameOf(m proto.Message) ([]byte, error) {
+// packet is one message, encoded but not framed: each client's writer
+// frames it, encrypting it for that client.
+type packet struct {
+	typ     uint32
+	payload []byte
+}
+
+func packetOf(m proto.Message) (packet, error) {
 	typ, b, err := Encode(m)
-	if err != nil {
-		return nil, err
-	}
-	return AppendFrame(nil, typ, b), nil
+	return packet{typ, b}, err
 }
 
 // conn is one client: a reader that answers it, and a writer fed through a
@@ -187,7 +202,8 @@ func frameOf(m proto.Message) ([]byte, error) {
 type conn struct {
 	s          *Server
 	c          net.Conn
-	out        chan []byte
+	out        chan packet
+	noise      *noiseTransport // nil: plaintext
 	done       chan struct{}
 	once       sync.Once
 	subscribed atomic.Bool
@@ -203,11 +219,11 @@ func (c *conn) close() {
 	})
 }
 
-// send queues a frame, or drops the client if its queue is full.
-func (c *conn) send(frame []byte) {
+// send queues a message, or drops the client if its queue is full.
+func (c *conn) send(p packet) {
 	select {
 	case <-c.done:
-	case c.out <- frame:
+	case c.out <- p:
 	default:
 		log.Printf("[esphome] %s too slow to follow: dropped", c.c.RemoteAddr())
 		c.close()
@@ -215,23 +231,45 @@ func (c *conn) send(frame []byte) {
 }
 
 func (c *conn) reply(m proto.Message) {
-	frame, err := frameOf(m)
+	p, err := packetOf(m)
 	if err != nil {
 		log.Printf("[esphome] %v", err)
 		return
 	}
-	c.send(frame)
+	c.send(p)
+}
+
+// writeRaw writes bytes straight to the socket: the handshake's, before the
+// writer runs.
+func (c *conn) writeRaw(b []byte) error {
+	c.c.SetWriteDeadline(time.Now().Add(writeDeadline))
+	_, err := c.c.Write(b)
+	return err
 }
 
 func (c *conn) write() {
 	defer c.s.wg.Done()
+	var buf []byte
 	for {
 		select {
 		case <-c.done:
 			return
-		case f := <-c.out:
-			c.c.SetWriteDeadline(time.Now().Add(writeDeadline))
-			if _, err := c.c.Write(f); err != nil {
+		case p := <-c.out:
+			// What else is queued goes in the same write.
+			buf = buf[:0]
+			for more := true; more; {
+				var err error
+				buf, err = c.frame(buf, p)
+				if err != nil {
+					log.Printf("[esphome] %v", err)
+				}
+				select {
+				case p = <-c.out:
+				default:
+					more = false
+				}
+			}
+			if err := c.writeRaw(buf); err != nil {
 				c.close()
 				return
 			}
@@ -239,13 +277,42 @@ func (c *conn) write() {
 	}
 }
 
-func (c *conn) read() {
+func (c *conn) frame(b []byte, p packet) ([]byte, error) {
+	if c.noise != nil {
+		return c.noise.appendMessage(b, p.typ, p.payload)
+	}
+	return AppendFrame(b, p.typ, p.payload), nil
+}
+
+func (c *conn) readMessage(r *bufio.Reader) (uint32, []byte, error) {
+	if c.noise != nil {
+		return c.noise.readMessage(r)
+	}
+	return ReadFrame(r)
+}
+
+// run serves one client: the handshake if the server has a key, then the
+// writer and the reader.
+func (c *conn) run() {
 	defer c.s.wg.Done()
 	defer c.close()
 	r := bufio.NewReader(c.c)
+	if c.s.psk != nil {
+		c.c.SetReadDeadline(time.Now().Add(readIdle))
+		t, err := handshake(r, c.writeRaw, c.s.psk, c.s.info.Name, c.s.info.MAC)
+		if err != nil {
+			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+				log.Printf("[esphome] %s: %v", c.c.RemoteAddr(), err)
+			}
+			return
+		}
+		c.noise = t
+	}
+	c.s.wg.Add(1)
+	go c.write()
 	for {
 		c.c.SetReadDeadline(time.Now().Add(readIdle))
-		typ, payload, err := ReadFrame(r)
+		typ, payload, err := c.readMessage(r)
 		if err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
 				log.Printf("[esphome] %s: %v", c.c.RemoteAddr(), err)

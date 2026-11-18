@@ -149,6 +149,23 @@ def test_sendspin_is_gated_on_its_capability_and_its_token_stays_private():
         "the sendspin_token handler must hand the token to its waiter and nothing else"
 
 
+def test_the_echos_esphome_key_stays_private():
+    """The key of the Echo's own ESPHome server is made and kept on the Echo
+    and asked of it for one admin request: the handler, the route and the
+    firmware's answer never log it, and nothing here stores it."""
+    assert "esphome_noise" in device_capabilities()
+    handler = _sources.def_source("_on_esphome_key")
+    assert "log." not in handler and "em_events.push" not in handler
+    route = _sources.def_source("_get_esphome_key")
+    assert "log." not in route and "db." not in route
+    assert "@auth.require_admin\nasync def _get_esphome_key" in (
+        ROOT / "controller" / "em_routes_devices.py").read_text()
+    go = (ROOT / "device" / "cmd" / "esphome.go").read_text()
+    body = go[go.index("func esphomeKeyReply"):]
+    body = body[:body.index("\n}\n")]
+    assert "log.Printf" not in body.replace('log.Printf("[esphome] no key: %v", err)', "")
+
+
 def test_triggering_is_a_separate_capability_from_scoring():
     """
     Shadow shipped first, so there is firmware in the field that scores the

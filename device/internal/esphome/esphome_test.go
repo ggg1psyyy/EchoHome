@@ -197,12 +197,12 @@ func TestASlowClientIsDroppedNotWaitedFor(t *testing.T) {
 	s := New(DeviceInfo{Name: "n"})
 	a, b := net.Pipe()
 	defer b.Close()
-	cn := &conn{s: s, c: a, out: make(chan []byte, 2), done: make(chan struct{})}
+	cn := &conn{s: s, c: a, out: make(chan packet, 2), done: make(chan struct{})}
 	s.conns[cn] = struct{}{}
 	// No writer runs: the queue fills and stays full.
 	start := time.Now()
 	for i := 0; i < 3; i++ {
-		cn.send([]byte{0})
+		cn.send(packet{typ: 7})
 	}
 	if time.Since(start) > 100*time.Millisecond {
 		t.Fatal("a full queue made the sender wait")

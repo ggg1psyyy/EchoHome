@@ -125,6 +125,7 @@ def test_a_reading_that_is_not_an_integer_is_ignored(lux_pushes, lux):
 
 @pytest.mark.parametrize("handler, attr", [
     ("_on_sendspin_token", "sendspin_token_waiter"),
+    ("_on_esphome_key", "esphome_key_waiter"),
     ("_on_wifi_scan_result", "wifi_scan_future"),
 ])
 def test_an_answer_resolves_the_waiting_request(handler, attr):
@@ -140,6 +141,7 @@ def test_an_answer_resolves_the_waiting_request(handler, attr):
 
 @pytest.mark.parametrize("handler, attr", [
     ("_on_sendspin_token", "sendspin_token_waiter"),
+    ("_on_esphome_key", "esphome_key_waiter"),
     ("_on_wifi_scan_result", "wifi_scan_future"),
 ])
 def test_an_answer_nobody_is_waiting_for_is_dropped(handler, attr):

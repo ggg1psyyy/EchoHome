@@ -52,6 +52,7 @@ def register(app: web.Application) -> None:
     app.router.add_get("/api/devices/{id}/config",        _get_device_config)
     app.router.add_get("/api/devices/{id}/sendspin/token", _get_sendspin_token)
     app.router.add_get("/api/devices/{id}/ble_proxy/key", _get_ble_proxy_key)
+    app.router.add_get("/api/devices/{id}/esphome/key", _get_esphome_key)
     app.router.add_post("/api/devices/{id}/config",       _post_device_config)
     app.router.add_get("/api/devices/{id}/logs",          _get_device_logs)
     app.router.add_post("/api/devices/{id}/wifi",         _post_device_wifi)
@@ -168,6 +169,35 @@ async def _get_sendspin_token(request: web.Request) -> web.Response:
     if reply.get("error") or not reply.get("token"):
         return em_http.error("sendspin_off", "Turn Sendspin on for this Echo first", 409)
     return em_http.ok({"token": reply["token"], "clientId": reply.get("clientId")})
+
+
+@auth.require_admin
+async def _get_esphome_key(request: web.Request) -> web.Response:
+    """GET /api/devices/{id}/esphome/key — the encryption key Home Assistant
+    asks for when it adds the Echo's own ESPHome server (esphome_noise).
+
+    Made and kept on the Echo, asked of it each time and never stored or
+    logged here: anyone holding it can talk to the Echo. Admin only.
+    """
+    device_id = request.match_info["id"]
+    live = em_state.devices.get(device_id)
+    if live is None:
+        return em_http.error("device_offline", "The Echo is offline", 409)
+    if "esphome_noise" not in (getattr(live, "capabilities", None) or []):
+        return em_http.error("unsupported", "This Echo's firmware has no encrypted ESPHome server", 409)
+    waiter = asyncio.get_event_loop().create_future()
+    live.esphome_key_waiter = waiter
+    try:
+        await live.send_control({"type": "esphome_key_request"})
+        reply = await asyncio.wait_for(waiter, SENDSPIN_TOKEN_TIMEOUT_S)
+    except (asyncio.TimeoutError, Exception):
+        return em_http.error("timeout", "The Echo did not answer", 504)
+    finally:
+        if live.esphome_key_waiter is waiter:
+            live.esphome_key_waiter = None
+    if reply.get("error") or not reply.get("key"):
+        return em_http.error("no_key", "The Echo could not keep a key", 409)
+    return em_http.ok({"key": reply["key"]})
 
 
 @auth.require_admin
