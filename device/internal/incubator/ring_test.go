@@ -336,6 +336,22 @@ func TestAfterAFlashIdleIsPaintedAgain(t *testing.T) {
 	rings(t, echo, RingListening, RingThinking, RingDone, RingOff)
 }
 
+// With no app connected the ring is idle, and a repaint paints idle: not
+// always dark (the Echo's LED Ring light). Bench, 00LQ, 2026-11-18: after a
+// restart the ring stayed dark until the first call.
+func TestARepaintWithNoAppPaintsIdle(t *testing.T) {
+	echo := &fakeEcho{}
+	s, err := Listen(Config{Name: "n", MAC: "m", Device: echo}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.Repaint()
+	if got := echo.shown(); len(got) != 1 || got[0] != RingOff {
+		t.Fatalf("the ring was given %v, want [off]", got)
+	}
+}
+
 func TestNightRepaintsWhatIsShown(t *testing.T) {
 	s, echo, _, a := connectApp(t)
 	event(a, "timer_progress", twoTimers)

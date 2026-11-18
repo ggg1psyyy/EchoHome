@@ -31,6 +31,7 @@ const (
 
 type ledRingState struct {
 	On         bool    `json:"on"`
+	Effect     string  `json:"effect,omitempty"` // "" or "None": the plain colour
 	Brightness float32 `json:"brightness"`
 	R          float32 `json:"r"`
 	G          float32 `json:"g"`
@@ -55,8 +56,12 @@ func loadLEDRing() {
 }
 
 func (st ledRingState) response() *api.LightStateResponse {
+	effect := st.Effect
+	if effect == "" {
+		effect = "None"
+	}
 	return &api.LightStateResponse{State: st.On, Brightness: st.Brightness, ColorMode: api.ColorMode_COLOR_MODE_RGB,
-		ColorBrightness: 1, Red: st.R, Green: st.G, Blue: st.B}
+		ColorBrightness: 1, Red: st.R, Green: st.G, Blue: st.B, Effect: effect}
 }
 
 // ledRingEntities builds the light and the action.
@@ -64,7 +69,8 @@ func ledRingEntities() []esphome.Entity {
 	loadLEDRing()
 	l := &esphome.Light{Desc: &api.ListEntitiesLightResponse{ObjectId: "led_ring", Key: esphomeLEDRingKey,
 		Name: "LED Ring", Icon: "mdi:circle-outline",
-		SupportedColorModes: []api.ColorMode{api.ColorMode_COLOR_MODE_RGB}}}
+		SupportedColorModes: []api.ColorMode{api.ColorMode_COLOR_MODE_RGB},
+		Effects:             ledRingEffectNames}}
 	l.OnCommand = ledRingCommand
 	ledRing.Lock()
 	ledRing.entity = l
@@ -90,6 +96,12 @@ func ledRingCommand(c *api.LightCommandRequest) {
 	}
 	if c.HasRgb {
 		st.R, st.G, st.B = clamp01(c.Red), clamp01(c.Green), clamp01(c.Blue)
+	}
+	if c.HasEffect {
+		st.Effect = ""
+		if _, ok := ledRingEffects[c.Effect]; ok {
+			st.Effect = c.Effect
+		}
 	}
 	changed := st != ledRing.st
 	ledRing.st = st
@@ -126,5 +138,57 @@ func ledRingIdle() (server.AnimSpec, bool) {
 		return server.AnimSpec{}, false
 	}
 	ch := func(v float32) uint8 { return uint8(math.Round(float64(clamp01(v*st.Brightness)) * 255)) }
-	return server.AnimSpec{Pattern: "solid", Colors: [][3]uint8{{ch(st.R), ch(st.G), ch(st.B)}}}, true
+	colour := [3]uint8{ch(st.R), ch(st.G), ch(st.B)}
+	if effect, ok := ledRingEffects[st.Effect]; ok {
+		return effect(colour, st.Brightness), true
+	}
+	return server.AnimSpec{Pattern: "solid", Colors: [][3]uint8{colour}}, true
+}
+
+// The LED Ring's effects, as an ESPHome light lists them ("None", the plain
+// colour, first), drawn by the ring's own animator: in the light's colour
+// and brightness, the rainbow in its own colours at the light's brightness.
+var ledRingEffectNames = []string{"None", "Pulse", "Slow Pulse", "Spin", "Rainbow"}
+
+var ledRingEffects = map[string]func(c [3]uint8, brightness float32) server.AnimSpec{
+	"Pulse": func(c [3]uint8, _ float32) server.AnimSpec {
+		return server.AnimSpec{Pattern: "pulse", Colors: [][3]uint8{c}, PeriodMs: 2000}
+	},
+	"Slow Pulse": func(c [3]uint8, _ float32) server.AnimSpec {
+		return server.AnimSpec{Pattern: "pulse", Colors: [][3]uint8{c}, PeriodMs: 5000}
+	},
+	"Spin": func(c [3]uint8, _ float32) server.AnimSpec {
+		trail := [3]uint8{c[0] / 4, c[1] / 4, c[2] / 4}
+		return server.AnimSpec{Pattern: "spin", Colors: [][3]uint8{c, trail}, PeriodMs: 90}
+	},
+	"Rainbow": func(_ [3]uint8, brightness float32) server.AnimSpec {
+		return server.AnimSpec{Pattern: "rotate", Colors: rainbow(brightness), PeriodMs: 150}
+	},
+}
+
+// rainbow is twelve hues around the ring at full saturation, scaled.
+func rainbow(brightness float32) [][3]uint8 {
+	out := make([][3]uint8, 12)
+	for i := range out {
+		h := float64(i) / 12 * 6
+		x := 1 - math.Abs(math.Mod(h, 2)-1)
+		var r, g, b float64
+		switch int(h) {
+		case 0:
+			r, g = 1, x
+		case 1:
+			r, g = x, 1
+		case 2:
+			g, b = 1, x
+		case 3:
+			g, b = x, 1
+		case 4:
+			r, b = x, 1
+		default:
+			r, b = 1, x
+		}
+		k := float64(clamp01(brightness)) * 255
+		out[i] = [3]uint8{uint8(math.Round(r * k)), uint8(math.Round(g * k)), uint8(math.Round(b * k))}
+	}
+	return out
 }

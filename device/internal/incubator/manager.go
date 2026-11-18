@@ -94,6 +94,7 @@ func (m *Manager) Apply(st Settings) {
 	}
 	m.s, m.want = s, st
 	log.Printf("[incubator] satellite listening on %d as %s", st.Port, st.Name)
+	s.Repaint() // idle, until the app connects
 	if m.Announce != nil {
 		w, err := m.Announce(st.Name, st.MAC, s.Port())
 		if err != nil {

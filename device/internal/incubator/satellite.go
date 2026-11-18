@@ -221,6 +221,13 @@ func (s *Server) Drained() {
 func (s *Server) Repaint() {
 	if sess := s.session(); sess != nil {
 		sess.repaint()
+		return
+	}
+	// No app connected: the ring is idle, which is not always dark (the
+	// Echo's LED Ring light; bench, 00LQ, 2026-11-18: after a restart it
+	// stayed dark until the first call).
+	if s.cfg.Device != nil {
+		s.cfg.Device.Show(RingView{State: RingOff})
 	}
 }
 
