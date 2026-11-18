@@ -247,8 +247,12 @@ func TestAQuietClientIsPingedAndKeptIfItAnswers(t *testing.T) {
 	if _, _, err := ReadFrame(c.r); err == nil {
 		t.Fatal("a second frame to a silent client")
 	}
-	if s.Clients() != 0 {
-		t.Fatal("a silent client was kept")
+	// The socket closes before the server forgets the client, so the count
+	// may lag the EOF just read (seen on CI under -race).
+	for deadline := time.Now().Add(time.Second); s.Clients() != 0; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("a silent client was kept")
+		}
 	}
 }
 
