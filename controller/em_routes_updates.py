@@ -444,9 +444,12 @@ async def _get_controller_release(request: web.Request) -> web.Response:
         stored = await asyncio.get_running_loop().run_in_executor(None, lambda: {
             key: db.get_config(key, "") or "" for key in (
                 "latest_controller_version", "latest_controller_notes",
-                "latest_controller_published_at")})
+                "latest_controller_published_at", "latest_controller_repo")}
+            | {"repo": em_releases.firmware_repo()})
         version = stored["latest_controller_version"]
-        if not version:
+        # Another repository's release (upstream's, before EchoHome) is
+        # not an update for this setup tool.
+        if not version or stored["latest_controller_repo"] != stored["repo"]:
             return em_http.ok({"version": None, "current": CONTROLLER_VERSION,
                         "status": "unknown", "available": False})
         data = {

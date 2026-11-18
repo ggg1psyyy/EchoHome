@@ -138,10 +138,16 @@ async def _patch_system_config(request: web.Request) -> web.Response:
         "device_approval",
         "session_expiry_days",
         "update_check_interval",
-        "github_repo",
+        *em_releases.REPO_KEYS,
     }
     body = await em_http.json_body(request)
     loop = asyncio.get_event_loop()
+
+    # Checked before anything is written: one bad value leaves nothing half-set.
+    for key in em_releases.REPO_KEYS:
+        if key in body and not em_releases.valid_repo(body[key]):
+            return em_http.error(
+                "bad_repo", f"{key} must be a GitHub owner/name", 400)
 
     updated = {}
     unknown = []
@@ -149,6 +155,7 @@ async def _patch_system_config(request: web.Request) -> web.Response:
         if key not in MUTABLE_KEYS:
             unknown.append(key)
             continue
+
         await loop.run_in_executor(None, db.set_config, key, str(value))
         updated[key] = value
 

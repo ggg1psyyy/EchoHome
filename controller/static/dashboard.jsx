@@ -11160,21 +11160,26 @@ function SettingsPanel({ globalConfig, onGlobalConfigChange, onClose, username, 
 
                     <div className="em-panel em-panel--stacked">
                       <div className="em-label" style={{ marginBottom:'var(--space-7)' }}>Release source</div>
-                      <div style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-md)', color:'var(--text2)', marginBottom:'var(--space-3)' }}>
-                        GitHub repository
-                      </div>
                       <div style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-sm)', color:'var(--muted)', lineHeight:1.6, marginBottom:'var(--space-4)' }}>
-                        Where firmware and emOS releases are fetched from. Change this only if
-                        you run a fork.
+                        GitHub repositories releases are fetched from: the firmware from
+                        EchoHome, emOS from EchoMuse, which builds and tests it. Change these
+                        only if you run a fork.
                       </div>
-                      <input type="text" autoComplete="off" spellCheck="false"
-                        aria-label="GitHub repository"
-                        value={sysVal('github_repo', 'wilbowes/EchoMuse')}
-                        onChange={e => setSysVal('github_repo', e.target.value)}
-                        className="em-inset"
-                        style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-md)', width:'100%',
-                                 boxSizing:'border-box', color:'var(--text)',
-                                 border:'1px solid var(--field-line)' }}/>
+                      {[['firmware_repo', 'Firmware', 'ggg1psyyy/EchoHome'],
+                        ['emos_repo',     'emOS',     'wilbowes/EchoMuse']].map(([key, name, dflt]) => (
+                        <label key={key} style={{ display:'block', marginBottom:'var(--space-4)' }}>
+                          <div style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-md)', color:'var(--text2)', marginBottom:'var(--space-3)' }}>
+                            {name}
+                          </div>
+                          <input type="text" autoComplete="off" spellCheck="false"
+                            value={sysVal(key, dflt)}
+                            onChange={e => setSysVal(key, e.target.value)}
+                            className="em-inset em-input"
+                            style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-md)', width:'100%',
+                                     boxSizing:'border-box', color:'var(--text)',
+                                     border:'1px solid var(--field-line)' }}/>
+                        </label>
+                      ))}
                     </div>
 
                     {Object.keys(sysEdit).length > 0 && (

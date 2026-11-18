@@ -102,7 +102,7 @@ def test_a_disabled_interval_serves_a_stale_cache_without_fetching(stored, fetch
     """The dashboard read path awaits a refresh when its cache has aged out,
     which with updates disabled would be an outbound call per visit."""
     stored.update(update_check_interval="0", latest_version="v2.18.1",
-                  latest_binary_url="u", last_update_check="0")
+                  latest_binary_url="u", latest_repo=em_releases.FIRMWARE_REPO, last_update_check="0")
     got = asyncio.run(em_releases.cached_firmware())
     assert got["version"] == "v2.18.1"
     assert fetches == []
@@ -129,7 +129,7 @@ def test_an_enabled_interval_with_no_cache_fetches(stored, fetches):
 
 def test_a_stale_cache_is_refreshed_when_enabled(stored, fetches):
     stored.update(update_check_interval="60", latest_version="v2.18.0",
-                  latest_binary_url="u", last_update_check="0")
+                  latest_binary_url="u", latest_repo=em_releases.FIRMWARE_REPO, last_update_check="0")
     asyncio.run(em_releases.cached_firmware())
     assert fetches == ["firmware"]
 
@@ -141,7 +141,7 @@ def test_an_install_asks_github_even_when_the_cache_is_fresh(stored, monkeypatch
     the release had been published since the last poll.
     """
     stored.update(update_check_interval="3600", latest_version="v2.19.0-ea.3",
-                  latest_binary_url="u", last_update_check="9999999999")
+                  latest_binary_url="u", latest_repo=em_releases.FIRMWARE_REPO, last_update_check="9999999999")
     new = {"version": "v2.19.0-ea.4", "url": "u4"}
 
     async def github(force=False):
@@ -152,7 +152,7 @@ def test_an_install_asks_github_even_when_the_cache_is_fresh(stored, monkeypatch
 
 def test_an_install_falls_back_to_the_cache_when_github_cannot_answer(stored, fetches):
     stored.update(update_check_interval="3600", latest_version="v2.19.0-ea.3",
-                  latest_binary_url="u", last_update_check="9999999999")
+                  latest_binary_url="u", latest_repo=em_releases.FIRMWARE_REPO, last_update_check="9999999999")
     got = asyncio.run(em_releases.firmware_to_install())
     assert got["version"] == "v2.19.0-ea.3"
     assert fetches == ["firmware"]

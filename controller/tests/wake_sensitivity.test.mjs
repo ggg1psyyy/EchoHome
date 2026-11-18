@@ -140,14 +140,11 @@ assert.ok(/formatValue=\{\(\) => wakeT\.toFixed\(3\)\}/.test(src),
 
 // ── The contract with the scorers ────────────────────────────────────────────
 
-// Both of these use `>=`, which is what makes a 1.0 threshold unreachable
-// rather than merely strict. If either flips to `>`, the reasoning above needs
-// revisiting — and if either stops comparing a score to a threshold at all,
-// this control is no longer setting what this test thinks it sets.
-const ctrl = readFileSync(join(HERE, "..", "em_controller.py"), "utf8");
-assert.ok(/score >= eff_threshold/.test(ctrl),
-  "em_controller.py no longer tests `score >= eff_threshold` — re-check whether " +
-  "the top of the Sensitivity range is still reachable");
+// The scorer uses `>=`, which is what makes a 1.0 threshold unreachable
+// rather than merely strict. If it flips to `>`, the reasoning above needs
+// revisiting — and if it stops comparing a score to a threshold at all, this
+// control is no longer setting what this test thinks it sets. (The
+// controller scored too until EchoHome; the Echo is the only scorer now.)
 
 const shadow = readFileSync(
   join(HERE, "..", "..", "device", "internal", "wakeword", "shadow", "shadow.go"), "utf8");

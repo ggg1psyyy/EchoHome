@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Optional
 
@@ -45,11 +46,52 @@ log = logging.getLogger("echomuse.api")
 # GA emOS install failed at Build emOS (#1090).
 GITHUB_API_URL = "https://api.github.com/repos/{repo}/releases?per_page=100"
 
+# Where each kind of release comes from (EchoHome). The firmware, and the
+# setup tool's own update notice, are EchoHome's; emOS is upstream EchoMuse's,
+# unchanged and hardware-tested there, and runs our firmware through the one
+# path it starts (/data/local/bin/start_server.sh). Two keys, not the old
+# `github_repo` (still in the database, no longer read): a stored value of it
+# is upstream's, and must not keep feeding firmware to an EchoHome Echo.
+FIRMWARE_REPO_KEY = "firmware_repo"
+FIRMWARE_REPO = "ggg1psyyy/EchoHome"
+EMOS_REPO_KEY = "emos_repo"
+EMOS_REPO = "wilbowes/EchoMuse"
+REPO_KEYS = (FIRMWARE_REPO_KEY, EMOS_REPO_KEY)
+
+_OWNER_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}")
+_NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,100}")
+
+
+def valid_repo(value) -> bool:
+    """GitHub's `owner/name`: owner 1-39 alphanumerics or single inner
+    hyphens; name 1-100 of alphanumerics, `-`, `_`, `.`, never `.` or `..`."""
+    if not isinstance(value, str) or value.count("/") != 1:
+        return False
+    owner, name = value.split("/")
+    return (_OWNER_RE.fullmatch(owner) is not None
+            and _NAME_RE.fullmatch(name) is not None
+            and name not in (".", ".."))
+
+
+def _repo(key: str, default: str) -> str:
+    value = (db.get_config(key, default) or default).strip()
+    return value if valid_repo(value) else default
+
+
+def firmware_repo() -> str:
+    return _repo(FIRMWARE_REPO_KEY, FIRMWARE_REPO)
+
+
+def emos_repo() -> str:
+    return _repo(EMOS_REPO_KEY, EMOS_REPO)
+
+
 # How long to cache GitHub release info in memory (seconds).
 # DB is the persistent cache; this avoids hitting the DB on every
 # /api/releases/latest request.
 _release_cache: dict = {}
 _release_cache_ts: float = 0.0
+_release_cache_repo: str = ""  # whose releases _release_cache holds
 RELEASE_CACHE_TTL = 60  # seconds
 
 # github.com answers an asset download with a 302 whose Content-Security-Policy
@@ -75,6 +117,7 @@ GITHUB_TAG_OBJECT_URL = "https://api.github.com/repos/{repo}/git/tags/{sha}"
 
 _controller_cache: dict = {}
 _controller_cache_ts: float = 0.0
+_controller_cache_repo: str = ""
 
 # The newest emOS release's tag, as last seen. `emos_latest_version` falls
 # back to the stored copy, so a restart does not blank the Updates tab.
@@ -118,22 +161,29 @@ async def cached_firmware() -> Optional[dict]:
     Falls back to the DB cache if the in-memory cache is cold.
     Triggers a background fetch if the DB cache is stale.
     """
-    global _release_cache, _release_cache_ts
+    global _release_cache, _release_cache_ts, _release_cache_repo
 
+    repo = await asyncio.get_running_loop().run_in_executor(None, firmware_repo)
     # In-memory cache hit
-    if _release_cache and (time.monotonic() - _release_cache_ts) < RELEASE_CACHE_TTL:
+    if (_release_cache and _release_cache_repo == repo
+            and (time.monotonic() - _release_cache_ts) < RELEASE_CACHE_TTL):
         return _release_cache
 
     # Load from DB cache
     stored = await asyncio.get_running_loop().run_in_executor(None, lambda: {
         key: db.get_config(key) for key in (
             "latest_version", "latest_binary_url", "last_update_check",
-            "latest_notes", "latest_release_url", "latest_published_at")})
+            "latest_notes", "latest_release_url", "latest_published_at",
+            "latest_repo")})
     version = stored["latest_version"]
     url     = stored["latest_binary_url"]
     last_check = stored["last_update_check"]
 
-    if version and url:
+    # A release cached from another repository is no cache at all: before
+    # EchoHome that was upstream's, and firmware_to_install falls back to
+    # this when GitHub has nothing, so it would install upstream firmware.
+    # A cache written before the stamp existed is upstream's too.
+    if version and url and stored["latest_repo"] == repo:
         _release_cache = {
             "version":      version,
             "url":          url,
@@ -142,6 +192,7 @@ async def cached_firmware() -> Optional[dict]:
             "published_at": stored["latest_published_at"] or "",
         }
         _release_cache_ts = time.monotonic()
+        _release_cache_repo = repo
 
         # If the DB cache has aged out, AWAIT the refresh rather than firing it
         # into the background and returning the stale value.
@@ -219,11 +270,10 @@ async def fetch_firmware(force: bool = False) -> Optional[dict]:
 
     Returns the release dict or None on failure.
     """
-    global _release_cache, _release_cache_ts
+    global _release_cache, _release_cache_ts, _release_cache_repo
 
     loop = asyncio.get_running_loop()
-    repo = await loop.run_in_executor(
-        None, db.get_config, "github_repo", "wilbowes/EchoMuse")
+    repo = await loop.run_in_executor(None, firmware_repo)
     url  = GITHUB_API_URL.format(repo=repo)
 
     log.info(f"[api] Polling GitHub releases: {url}")
@@ -267,6 +317,7 @@ async def fetch_firmware(force: bool = False) -> Optional[dict]:
             db.set_config("latest_release_url", release.get("html_url") or "")
             db.set_config("latest_published_at", release.get("published_at") or "")
             db.set_config("last_update_check", str(time.time()))
+            db.set_config("latest_repo",       repo)
             return previous
 
         # Persist to DB
@@ -281,6 +332,7 @@ async def fetch_firmware(force: bool = False) -> Optional[dict]:
             "published_at": release.get("published_at") or "",
         }
         _release_cache_ts = time.monotonic()
+        _release_cache_repo = repo
 
         log.info(f"[api] Latest release: {tag}")
         if tag != previous_tag:
@@ -315,20 +367,21 @@ async def fetch_controller(force: bool = False) -> Optional[dict]:
     release, not a broken one, so it still reports the version with empty
     notes.
     """
-    global _controller_cache, _controller_cache_ts
+    global _controller_cache, _controller_cache_ts, _controller_cache_repo
 
+    loop = asyncio.get_running_loop()
+    repo = await loop.run_in_executor(None, firmware_repo)
+    if _controller_cache_repo != repo:
+        _controller_cache = {}  # another repository's releases say nothing here
     if (not force and _controller_cache
             and (time.monotonic() - _controller_cache_ts) < RELEASE_CACHE_TTL):
         return _controller_cache
 
-    loop = asyncio.get_running_loop()
     # Disabled (#159) means no outbound call from a dashboard visit either:
     # GET /api/releases/controller asks without `force` and falls back to
     # the stored release. Only the poll loop forces, and it is gated already.
     if not force and await loop.run_in_executor(None, check_interval) <= 0:
         return _controller_cache or None
-    repo = await loop.run_in_executor(
-        None, db.get_config, "github_repo", "wilbowes/EchoMuse")
     headers = {"Accept": "application/vnd.github+json"}
     timeout = aiohttp.ClientTimeout(total=10)
 
@@ -374,6 +427,7 @@ async def fetch_controller(force: bool = False) -> Optional[dict]:
             db.set_config("latest_controller_version", version)
             db.set_config("latest_controller_notes", notes)
             db.set_config("latest_controller_published_at", published_at)
+            db.set_config("latest_controller_repo", repo)
             return before
 
         previous = await loop.run_in_executor(None, _persist)
@@ -387,6 +441,7 @@ async def fetch_controller(force: bool = False) -> Optional[dict]:
             **_compare_versions(CONTROLLER_VERSION, version),
         }
         _controller_cache_ts = time.monotonic()
+        _controller_cache_repo = repo
 
         log.info(f"[api] Latest controller release: {version} "
                  f"(running {CONTROLLER_VERSION}, {_controller_cache['status']})")
@@ -433,8 +488,7 @@ async def fetch_emos() -> Optional[dict]:
     does not `startswith("v")`, so the firmware poll can never select an emOS
     release, and this one cannot select a firmware release.
     """
-    repo = await asyncio.get_running_loop().run_in_executor(
-        None, db.get_config, "github_repo", "wilbowes/EchoMuse")
+    repo = await asyncio.get_running_loop().run_in_executor(None, emos_repo)
     url = GITHUB_API_URL.format(repo=repo)
     try:
         async with aiohttp.ClientSession() as session:
