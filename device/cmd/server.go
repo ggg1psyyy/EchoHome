@@ -312,6 +312,16 @@ func main() {
 			log.Printf("[cmd] bad led_anim spec: %v", err)
 			return
 		}
+		// While the Echo's own satellite runs, idle is its to paint: the
+		// controller's "off" (sent on every connect, em_controller after the
+		// config push) is idle, which is the LED Ring light when it is on.
+		// Bench, 00LQ, 2026-11-18: that "off" left the ring dark after
+		// every restart.
+		if spec.Pattern == "off" && incubatorMgr != nil && incubatorMgr.Running() {
+			s.StopAnim()
+			incubatorMgr.Repaint()
+			return
+		}
 		s.StartAnim(spec)
 	})
 
