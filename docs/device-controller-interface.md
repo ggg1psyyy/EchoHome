@@ -186,6 +186,7 @@ absent optional fields take prior/default behaviour.
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `register` | see above | Handshake, sent once at connect |
+| `listen_state` | `state` (`local`/`stream`/`degraded`), `reason?` | What the device is doing with its wake stream. Sent on every change and after every `ack` |
 | `mute_state` | `muted` | Mute toggled (mute is device-sovereign — see `device/CLAUDE.md`) |
 | `volume_state` | `level` | Volume changed; controller persists it as `startupVolume` |
 | `ambient_light` | `lux` | Light reading, sent on a real change (only if `ambient_light`); the ~30s `stats` report carries it as `ambientLux` |
@@ -202,8 +203,8 @@ absent optional fields take prior/default behaviour.
 | `pong` | `id`, `mono` when answering a `ping` that carried an `id` | Keepalive reply. `id` echoes the ping's; `mono` is the device's monotonic clock in ms (any fixed origin), which the controller maps onto its own to date `capturedMono`. Unsolicited keepalive pongs carry neither |
 
 Firmware older than EchoHome also sends `button`, `oww_wake`,
-`oww_shadow_cross`, `listen_state`, `listen_end` and `playback_stats`: the
-Home Assistant voice mode's messages. Since EchoHome the controller has no
+`oww_shadow_cross`, `listen_end` and `playback_stats`: the Home Assistant
+voice mode's messages. Since EchoHome the controller has no
 voice path and ignores them (an unknown type is logged at debug); an Echo
 whose voice is its own satellite handles its button and wake word itself.
 

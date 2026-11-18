@@ -54,34 +54,6 @@ def test_old_firmware_is_shown_streaming():
     assert not v.private
 
 
-def test_fleet_summary():
-    views = [L.resolve("on", NEW, "local"), L.resolve("off", NEW, None),
-             L.resolve("on", NEW, None), L.resolve("on", NEW, "degraded")]
-    s = L.fleet_summary(views)
-    assert s == {"total": 4, "streaming": 1, "private": 2, "unknown": 1,
-                 "degraded": 1}
-
-
-# ── frames ───────────────────────────────────────────────────────────────────
-
-def test_frame_round_trip():
-    pcm = bytes(range(10))
-    f = L.build_frame(0xFFFFFFFF, 65537, pcm)
-    assert L.parse_frame(f) == (0xFFFFFFFF, 1, pcm)
-
-
-def test_parse_rejects_other_frames_and_session_zero():
-    assert L.parse_frame(b"\x01\x00\x00" + b"\x00" * 10) is None
-    assert L.parse_frame(L.build_frame(0, 0, b"xx")) is None
-    assert L.parse_frame(b"\x07\x00") is None
-
-
-def test_frame_layout_matches_the_firmware():
-    """[0x07][session u32 BE][seq u16 BE][PCM] — data.go sendListenFrame."""
-    f = L.build_frame(1, 2, b"P")
-    assert f == b"\x07\x00\x00\x00\x01\x00\x02P"
-
-
 # ── routing ──────────────────────────────────────────────────────────────────
 
 def test_audio_that_beats_its_wake_is_held_then_delivered_in_order():
@@ -148,31 +120,6 @@ def test_rtt_estimator_follows_rfc6298():
     assert e.srtt == 100 and e.rto == 100 + 4 * 50
     e.add(200)
     assert e.srtt == 0.875 * 100 + 0.125 * 200
-
-
-def test_parse_wake():
-    ev = L.parse_wake({"session": 3, "score": 0.8, "threshold": 0.5,
-                       "ageMs": 120, "floor": 0.002, "barge": True}, 5.0)
-    assert ev == {"session": 3, "score": 0.8, "threshold": 0.5, "age_ms": 120,
-                  "floor": 0.002, "barge": True, "arrived": 5.0,
-                  "captured_mono": None, "level": None, "peak": None}
-
-
-def test_parse_wake_carries_the_wake_level():
-    ev = L.parse_wake({"session": 3, "score": 0.8, "level": -60.5, "peak": -50}, 5.0)
-    assert (ev["level"], ev["peak"]) == (-60.5, -50.0)
-
-
-def test_parse_wake_refuses_what_it_cannot_act_on():
-    assert L.parse_wake({"score": 0.8}, 0) is None
-    assert L.parse_wake({"session": 0, "score": 0.8}, 0) is None
-    assert L.parse_wake({"session": 1 << 32, "score": 0.8}, 0) is None
-    assert L.parse_wake({"session": 2, "score": "x"}, 0) is None
-
-
-def test_parse_wake_tolerates_missing_optionals():
-    ev = L.parse_wake({"session": 2, "score": 0.9}, 1.0)
-    assert ev["floor"] is None and ev["threshold"] is None and ev["age_ms"] == 0
 
 
 def test_frame_is_bytes_to_every_other_reader():
@@ -313,14 +260,6 @@ def test_old_samples_leave_the_window():
     assert abs(c.to_local((250.0 - 7.0) * 1000, arrived=250.5) - 250.0) < 1e-6
 
 
-def test_parse_wake_carries_the_capture_instant():
-    ev = L.parse_wake({"type": "oww_wake", "session": 3, "score": 0.9,
-                       "ageMs": 40, "capturedMono": 123456}, 7.0)
-    assert ev["captured_mono"] == 123456
-    old = L.parse_wake({"type": "oww_wake", "session": 3, "score": 0.9}, 7.0)
-    assert old["captured_mono"] is None
-
-
 # ── detection path and the mixed-fleet hold (em_arbiter.contest) ─────────────
 
 def test_detector_by_state():
@@ -334,30 +273,6 @@ def test_detector_by_state():
     assert L.detector(V(L.STATE_UNKNOWN, None), True) == "unknown"
 
 
-def test_hold_whenever_two_or_more_echoes_can_claim():
-    """Choosing by loudness needs every claim in hand, so any fleet of two or
-    more holds, however each Echo detects (Wil, 2026-10-05, #747). Until then
-    only a mixed fleet did."""
-    hold = L.arbitration_hold
-    assert hold([]) == 0
-    assert hold(["device"]) == 0
-    assert hold(["device", "device"]) == L.ARB_HOLD_S
-    assert hold(["controller", "controller"]) == L.ARB_HOLD_S
-    assert hold(["device", "controller"]) == L.ARB_HOLD_S
-    assert hold(["device", "unknown"]) == L.ARB_HOLD_S
-    # A degraded Echo cannot claim, so there is nobody to wait for.
-    assert hold(["device", None]) == 0
-    assert hold(["controller", None, None]) == 0
-
-
-def test_only_a_stream_the_controller_scored_has_a_wake_tail_to_drop():
-    # "hey Verona tell me a joke" reached STT as "me a joke" (2026-10-09).
-    assert L.tail_discard(True, True, 3) == 0
-    assert L.tail_discard(True, False, 3) == 3
-    assert L.tail_discard(False, False, 3) == 0
-    assert L.tail_discard(False, True, 3) == 0
-
-
 # ── skip_backlog (#946) ──────────────────────────────────────────────────────
 
 import asyncio  # noqa: E402
@@ -365,124 +280,10 @@ import asyncio  # noqa: E402
 import _sources  # noqa: E402
 
 
-def _queue(*items):
-    q = asyncio.Queue(maxsize=64)
-    for item in items:
-        q.put_nowait(item)
-    return q
-
-
-def test_a_scorer_keeping_up_skips_nothing():
-    q = _queue(L.Frame(b"b", 9.95))
-    item = L.Frame(b"a", 10.0 - L.SCORING_MAX_LAG_S)
-    assert L.skip_backlog(q, item, 10.0) == (item, 0)
-    assert q.qsize() == 1
-
-
-def test_a_stale_backlog_is_skipped_to_the_last_half_second():
-    now = 20.0
-    fresh = L.Frame(b"f", now - L.SCORING_KEEP_S)
-    q = _queue(*[L.Frame(b"s", now - 4.0 + i * 0.08) for i in range(40)], fresh,
-               L.Frame(b"g", now - 0.1))
-    item, dropped = L.skip_backlog(q, L.Frame(b"x", now - 5.0), now)
-    assert item is fresh
-    assert dropped == 41
-    assert q.qsize() == 1
-
-
-def test_a_stream_boundary_in_the_backlog_is_still_read():
-    q = _queue(L.Frame(b"s", 1.0), "listen_mode", L.Frame(b"t", 1.1))
-    item, dropped = L.skip_backlog(q, L.Frame(b"x", 0.9), 10.0)
-    assert (item, dropped) == ("listen_mode", 2)
-    assert q.qsize() == 1
-
-
-def test_an_all_stale_queue_leaves_nothing_to_score():
-    q = _queue(L.Frame(b"s", 1.0), L.Frame(b"t", 1.1))
-    assert L.skip_backlog(q, L.Frame(b"x", 0.9), 10.0) == (None, 3)
-    assert q.empty()
-
-
-def test_unstamped_audio_is_never_stale():
-    item = b"\x00\x01"
-    assert L.skip_backlog(_queue(), item, 1e9) == (item, 0)
-
-
-def _lag_after_hiccup(skip: bool) -> float:
-    """
-    The worst wait a frame scored 20-60s in had in mic_queue: an Echo sends
-    a frame every 80ms into a 64-frame queue that drops the oldest when full,
-    and the scorer takes 78ms a frame (2.5% faster than real time) with one
-    6s stall at 10s, the shape #946 measured on a Pi with four Dots.
-    """
-    q = asyncio.Queue(maxsize=64)
-    t, next_frame, worst = 0.0, 0.0, 0.0
-
-    def produce_until(until):
-        nonlocal next_frame
-        while next_frame <= until:
-            frame = L.Frame(b"", next_frame)
-            if q.full():
-                q.get_nowait()
-            q.put_nowait(frame)
-            next_frame += 0.08
-
-    while t < 60.0:
-        produce_until(t)
-        if q.empty():
-            t = next_frame
-            continue
-        item = q.get_nowait()
-        if skip:
-            item, _ = L.skip_backlog(q, item, t)
-            if item is None:
-                continue
-        if t >= 20.0:
-            worst = max(worst, t - item.arrived)
-        t += 6.0 if 10.0 <= t < 10.078 else 0.078
-    return worst
-
-
-def test_without_the_skip_one_stall_leaves_every_wake_five_seconds_late():
-    """The bug, reproduced: the queue stays full long after the stall."""
-    assert _lag_after_hiccup(skip=False) > 4.5
-
-
-def test_the_skip_bounds_the_wait_after_a_stall():
-    assert _lag_after_hiccup(skip=True) <= L.SCORING_MAX_LAG_S
-
-
-
-
-def test_skipping_is_reported_at_most_every_thirty_seconds():
-    log = L.BacklogLog()
-    assert "skipped 3 stale frames (0.2s" in log.add(3, 100.0)
-    assert log.add(10, 101.0) is None
-    assert log.add(2, 129.9) is None
-    assert "skipped 14 stale frames" in log.add(2, 130.0)
-
-
 # ── awaiting_report: nothing starts before a private Echo says it is private ──
 #
 # 41C8, 2026-11-15: after a reboot the Echo reported `stream` (its boot state)
 # for 0.9s, and the controller's streaming path sent mic_start once its model
 # had loaded. Only a 2.9s load kept that mic_start out of the window.
-
-def test_a_private_echo_that_has_not_reported_is_waited_on():
-    for reported in (None, "stream"):
-        assert L.awaiting_report(L.resolve("on", NEW, reported)), reported
-
-
-def test_an_echo_that_reported_is_not_waited_on():
-    assert not L.awaiting_report(L.resolve("on", NEW, "local"))
-    assert not L.awaiting_report(L.resolve("on", NEW, "degraded"))
-
-
-def test_streaming_modes_are_not_held_back():
-    # Configured to stream, shadow, or old firmware that cannot listen
-    # privately: those stream by design and are labelled so.
-    assert not L.awaiting_report(L.resolve("off", NEW, None))
-    assert not L.awaiting_report(L.resolve("shadow", NEW, None))
-    assert not L.awaiting_report(L.resolve("on", OLD, "stream"))
 
 

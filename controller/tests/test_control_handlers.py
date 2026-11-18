@@ -208,3 +208,22 @@ def test_an_unsolicited_pong_is_not_a_measurement():
     _run(em_controller._on_pong(d, {"type": "pong"}))
     _run(em_controller._on_pong(d, {"type": "pong", "id": 8}))
     assert d.ping_sent == {7: 0.0}
+
+
+# ── listen_state: the privacy line's only source ────────────────────────────
+
+def test_the_privacy_line_reads_what_the_echo_reports(monkeypatch):
+    """Strip 2 dropped this handler with the voice messages; without it an
+    Echo set to listen on itself read "waiting for the Echo to report"
+    forever. The state is the Echo's, never the configuration's."""
+    monkeypatch.setattr(em_controller.em_dbwriter, "submit", lambda *a, **k: None)
+    d = em_controller.Device("dev1", "10.0.0.1", ["mic", "oww_local_only"], None)
+    d.oww_on_device = "on"
+    assert d.listen_view.state == em_controller.em_listen.STATE_UNKNOWN
+    _run(em_controller._on_listen_state(d, {"type": "listen_state", "state": "local"}))
+    assert d.listen_view.state == em_controller.em_listen.STATE_LOCAL
+    assert d.listen_view.streams is False
+    _run(em_controller._on_listen_state(d, {"type": "listen_state", "state": "degraded",
+                                            "reason": "no_model"}))
+    assert d.listen_view.state == em_controller.em_listen.STATE_DEGRADED
+    assert d.listen_view.reason == "no_model"

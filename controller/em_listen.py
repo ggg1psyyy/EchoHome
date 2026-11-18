@@ -25,7 +25,6 @@ Three pieces:
 
 from __future__ import annotations
 
-import struct
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -38,8 +37,6 @@ FEATURE = "listen_session"
 # its listen_state report.
 CAPABILITY = "oww_local_only"
 
-FRAME_TYPE = 0x07
-_HEADER = struct.Struct(">BIH")    # type, session, seq
 
 # How long frames for a session nobody has announced are held, waiting for its
 # oww_wake. Covers the control plane lagging the data plane by a retransmit or
@@ -61,19 +58,6 @@ CLOSED_MEMORY = 32
 # Echo's ack timeout, after which a late private wake's session is gone.
 MAX_ARB_SLACK_S = 3.0
 
-# How long after a wake was HEARD its claim is held, whenever two or more
-# Echoes can claim (em_arbiter.contest). Long enough for every Echo that heard
-# the utterance to be counted before one is chosen. Measured 2026-09-24: an
-# on-device wake arrived 78ms after capture; a stream-scored one 85ms in
-# transit plus 16ms to score, and the stream moves in 80ms frames. In #747's
-# data the nearest Echo's claim was heard up to 164ms after the first.
-# 250ms covers both with a frame to spare.
-#
-# Until 2026-10-05 only a MIXED fleet held, because only there did the two
-# detection paths reach the arbiter at different speeds. Choosing by loudness
-# needs every claim in hand, so every fleet of two or more now holds.
-ARB_HOLD_S = 0.25
-MIXED_HOLD_S = ARB_HOLD_S   # the name it had while only mixed fleets held
 
 DETECT_DEVICE     = "device"
 DETECT_CONTROLLER = "controller"
@@ -148,23 +132,6 @@ def resolve(configured: str, capabilities, reported: str | None,
     return ListenView(STATE_UNKNOWN, None, "waiting for the Echo to report")
 
 
-def awaiting_report(view: ListenView) -> bool:
-    """Whether the controller must start NOTHING for this Echo yet.
-
-    An Echo set to listen privately, on firmware that can, is `unknown` until
-    it reports `local` or `degraded` after the config push. Until then it is
-    still in its boot state, which streams (the firmware's default before any
-    config). The controller's streaming path would send `mic_start` into that
-    window: on 41C8 (2026-11-15) the Echo reported `stream` for 0.9s after a
-    reboot, and only a 2.9s model load kept the `mic_start` from landing in it.
-    "Nothing ever falls back to streaming" (docs/listening.md) must not depend
-    on a model being slow to load, so an unknown Echo is waited on: no stream,
-    no scorer, no `mic_start`. An Echo that never reports stays unanswered,
-    which is the button-only outcome, never a stream.
-    """
-    return view.state == STATE_UNKNOWN
-
-
 def detector(view: ListenView, trigger_capable: bool) -> str | None:
     """Where an Echo's wake word is detected, for arbitration; None if it
     cannot wake at all. Not knowing yet is its own answer, so a fleet with
@@ -181,51 +148,7 @@ def detector(view: ListenView, trigger_capable: bool) -> str | None:
     return DETECT_UNKNOWN
 
 
-def arbitration_hold(detectors) -> float:
-    """ARB_HOLD_S when two or more Echoes can claim, else 0. `detectors` has
-    one entry per Echo, None for one that cannot claim (degraded). How each
-    detects no longer matters (Wil, 2026-10-05), only that there is someone
-    to wait for."""
-    return ARB_HOLD_S if sum(1 for d in detectors if d is not None) > 1 else 0.0
-
-
-def fleet_summary(views) -> dict:
-    """Counts for the dashboard's fleet line ("1 of 3 Echoes streams…")."""
-    views = list(views)
-    return {
-        "total":     len(views),
-        "streaming": sum(1 for v in views if v.streams is True),
-        "private":   sum(1 for v in views if v.streams is False),
-        "unknown":   sum(1 for v in views if v.streams is None),
-        "degraded":  sum(1 for v in views if v.state == STATE_DEGRADED),
-    }
-
-
 # ── Frames ───────────────────────────────────────────────────────────────────
-
-def tail_discard(is_wakeword: bool, on_session: bool, frames: int) -> int:
-    """Frames to drop from the start of a turn as the wake word's tail.
-
-    A stream the controller scored still holds the end of the word. A session
-    is trimmed on the Echo (listen.WakeLead), so dropping more removed the
-    first word of a command run on from the wake word.
-    """
-    return frames if is_wakeword and not on_session else 0
-
-
-def parse_frame(data: bytes) -> tuple[int, int, bytes] | None:
-    """(session, seq, pcm) from a 0x07 frame, or None if it is not one."""
-    if len(data) < _HEADER.size or data[0] != FRAME_TYPE:
-        return None
-    _, session, seq = _HEADER.unpack_from(data)
-    if session == 0:
-        return None
-    return session, seq, bytes(data[_HEADER.size:])
-
-
-def build_frame(session: int, seq: int, pcm: bytes) -> bytes:
-    """The inverse of parse_frame; for tests and tools."""
-    return _HEADER.pack(FRAME_TYPE, session, seq & 0xFFFF) + pcm
 
 
 # ── Routing ──────────────────────────────────────────────────────────────────
@@ -407,59 +330,6 @@ class CaptureClock:
         return max(arrived - MAX_ARB_SLACK_S, min(arrived, captured))
 
 
-# The wake scorer skips audio that has waited this long in mic_queue, keeping
-# only what arrived in the last SCORING_KEEP_S (#946). The queue holds 64
-# frames (5.12s) and drops the OLDEST when full, so once one hiccup filled it
-# a scorer running only just faster than real time never caught up, and every
-# wake was scored ~5s late until a turn drained the queue. Scoring it late
-# buys nothing: a turn drains the backlog before it listens, so the command
-# that followed a late wake was gone anyway, and a late claim loses
-# arbitration to an Echo that was not behind.
-SCORING_MAX_LAG_S = 1.0
-SCORING_KEEP_S = 0.5
-
-
-def skip_backlog(q, item, now: float):
-    """
-    Skip stale audio in the wake scorer's queue: `(next item, frames dropped)`.
-
-    `item` was just taken from `q`. If it is stamped audio that waited more
-    than SCORING_MAX_LAG_S, it and the queued frames that arrived before
-    `now - SCORING_KEEP_S` are dropped, and the first item that is fresh, or
-    is not stamped audio (a stream boundary the loop must still read), is
-    returned in its place; None if that emptied the queue. Otherwise `item`
-    comes back with 0 dropped.
-    """
-    if now - getattr(item, "arrived", now) <= SCORING_MAX_LAG_S:
-        return item, 0
-    dropped = 1
-    while not q.empty():
-        item = q.get_nowait()
-        if now - getattr(item, "arrived", now) <= SCORING_KEEP_S:
-            return item, dropped
-        dropped += 1
-    return None, dropped
-
-
-class BacklogLog:
-    """What the scorer skipped, reported at most once per `every_s`: a scorer
-    that cannot keep up skips about once a second."""
-
-    def __init__(self, every_s: float = 30.0) -> None:
-        self.every_s = every_s
-        self._frames = 0
-        self._at = -1e9
-
-    def add(self, frames: int, now: float) -> str | None:
-        self._frames += frames
-        if now - self._at < self.every_s:
-            return None
-        msg = (f"wake scoring fell behind — skipped {self._frames} stale "
-               f"frames ({self._frames * CaptureClock.FRAME_S:.1f}s of audio)")
-        self._at, self._frames = now, 0
-        return msg
-
-
 def arrival(payload, default: float) -> float:
     """When `payload` arrived; `default` for audio that was never stamped."""
     return getattr(payload, "arrived", default)
@@ -539,38 +409,3 @@ class RttEstimator:
 
 # ── Wakes ────────────────────────────────────────────────────────────────────
 
-def parse_wake(msg: dict, arrived: float) -> dict | None:
-    """
-    A session-bearing oww_wake, validated. None if it cannot be acted on.
-
-    `age_ms` is how long before sending the device captured the wake word's
-    last frame; `floor` is its room noise floor (RMS 0..1), which the
-    controller can no longer measure from a stream it does not receive.
-    """
-    try:
-        session = int(msg["session"])
-        score = float(msg["score"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    if not 0 < session <= 0xFFFFFFFF:
-        return None
-    def _num(key, default=None):
-        try:
-            v = msg.get(key)
-            return default if v is None else float(v)
-        except (TypeError, ValueError):
-            return default
-    age = _num("ageMs", 0.0)
-    return {
-        "captured_mono": _num("capturedMono"),
-        "session":   session,
-        "score":     score,
-        "threshold": _num("threshold"),
-        "age_ms":    int(max(0.0, age)),
-        "floor":     _num("floor"),
-        # dBFS, mic gain removed (em_wakelevel); absent on older firmware.
-        "level":     _num("level"),
-        "peak":      _num("peak"),
-        "barge":     bool(msg.get("barge")),
-        "arrived":   arrived,
-    }

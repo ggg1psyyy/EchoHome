@@ -186,9 +186,6 @@ async def _delete_device(request: web.Request) -> web.Response:
 
     await loop.run_in_executor(None, db.delete_device, device_id)
     await em_incubator.device_deleted(device_id)
-    # Free the device's cached OWW models (#512), or a deleted device keeps its
-    # models — and their ONNX sessions — for the life of the process.
-    em_state.forget_oww_models(device_id)
     # A re-added device is the one whose payloads are least likely to be
     # right, so it must not inherit the deleted row's debounce and skip its
     # first reconcile — the bounce below has it redialling within seconds.

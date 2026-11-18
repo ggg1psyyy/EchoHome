@@ -67,7 +67,6 @@ from zeroconf import ServiceInfo
 import em_db as db
 import em_events
 import em_incubator_proto as proto
-import em_oww_models
 import em_state
 
 log = logging.getLogger("echomuse.incubator")
@@ -82,8 +81,6 @@ Until it does (older firmware, or offline at the decision) the controller's
 satellite serves it, as for "incubator". Either way the Echo's backend is the
 Incubator: Home Assistant offers no voice assistant for it, and nothing
 falls back to Home Assistant."""
-BACKENDS = (BACKEND_HA, BACKEND_INCUBATOR)
-SETTINGS = (BACKEND_HA, BACKEND_INCUBATOR, ON_ECHO)
 
 FIRMWARE_CAPABILITY = "incubator_satellite"
 MONITOR_KEY = "incubatorMonitor"
@@ -103,47 +100,16 @@ PORT_OFFSET = 2000
 em_db.BLE_PORT_OFFSET). The channels' 100-port spacing carries over: GA
 18001+, EA 18101+, a dev add-on 18201+."""
 
-WAKE_LEAD_MS = 260
 """A private session's audio from before the crossing (listen WakeLead): the pre-roll."""
 
 
-
-READER_LIMIT = 8192
-
-
-
-
-
-
-
-COMMAND_ENDED = frozenset({
-    "processing", "recognized", "not_recognized", "responding", "result",
-})
 """EVENTs that mean the app has stopped listening to the command."""
 
 
-
-EVENT_LOG_KEYS = ("stage", "ok", "active", "reason", "timers", "shown", "on")
 """The only EVENT fields logged. The rest can be what someone said or was
 told (`recognized` text, `responding` text, `not_recognized` heard) or who
 they are (`processing` speaker), and the log tail goes into support bundles,
 which drop transcript lines by pattern, not by guessing."""
-
-
-def _identifier(value) -> str:
-    """The app's word for something (a hang-up reason, an event's stage),
-    kept only while it looks like one: short, lowercase, letters and
-    underscores. Anything else -- which no part of the app sends today --
-    becomes `other` before it reaches the log, the turn record or a bundle."""
-    text = str(value)
-    if 0 < len(text) <= 32 and all(c.islower() or c == "_" for c in text) and text.isascii():
-        return text
-    return "other"
-
-
-def _event_summary(event: proto.Event) -> dict:
-    return {k: (_identifier(event.data[k]) if isinstance(event.data[k], str) else event.data[k])
-            for k in EVENT_LOG_KEYS if k in event.data}
 
 
 def backend(config: dict) -> str:
@@ -164,43 +130,11 @@ def echo_capable(device_id: str) -> bool:
     return dev is not None and FIRMWARE_CAPABILITY in (getattr(dev, "capabilities", None) or [])
 
 
-def satellite_model(board: str | None) -> str:
-    """HELLO's `model`: what the satellite is, as the spec's examples are
-    (`voice-pe`, `box-3`, `linux`)."""
-    return f"echomuse-{board}" if board else "echomuse"
-
-
 def node_name(device_id: str) -> str:
     """The Echo's ESPHome node name (em_esphome's DeviceInfo `name`): HELLO's
     `name` must be it, because it is how Home Assistant knows the device and
     how the app finds its media player."""
     return f"echomuse-{device_id[-12:].lower()}"
-
-
-def wake_word_name(model: str) -> str:
-    """CALL_START's `wake_word` for a wake: the model's key, prefixed so the
-    app's verifier cannot resolve it (module docstring)."""
-    return f"echomuse-{em_oww_models.prediction_key(model)}"
-
-
-def call_kind(trigger_label: str, oww_model: str, session: int | None) -> tuple[str, int]:
-    """(wake_word, preroll_bytes) for a turn. A wake from a private session
-    starts WAKE_LEAD_MS before the crossing; one the controller scored, and
-    every other turn, starts at the detection or later."""
-    if trigger_label.startswith("wakeword") or trigger_label.startswith("barge-in"):
-        lead = WAKE_LEAD_MS * proto.BYTE_RATE // 1000 if session else 0
-        return wake_word_name(oww_model), lead
-    if trigger_label == "continuation":
-        return proto.FOLLOW_UP, 0
-    return proto.MANUAL, 0
-
-
-
-
-
-
-
-
 
 
 _online: set[str] = set()
@@ -264,12 +198,6 @@ def _azc():
     # em_controller.main): one per controller, bound to SERVER_IP's
     # interface. None until then, and the announcement waits for it.
     return em_state.zeroconf
-
-
-
-
-def _server_ip() -> str:
-    return em_state.link["ip"]
 
 
 async def reconcile(device_id: str) -> None:
@@ -428,10 +356,6 @@ async def on_incubator_state(device, msg: dict) -> None:
                           "state": {"voiceIncubator": status_view(device_id)}})
 
 
-
-
-
-
 async def start(host: str = "0.0.0.0") -> None:
     """At controller start, before the device listeners open (em_controller
     main): every approved Echo's backend is read now, so Home Assistant's
@@ -493,34 +417,5 @@ def status_view(device_id: str) -> Optional[dict]:
                 "onEcho": True}
     # Set to the Voice Incubator, not (yet) on the Echo: nothing runs it.
     return {"port": None, "listening": False, "appConnected": False, "inCall": False}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

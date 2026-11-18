@@ -35,7 +35,6 @@ def world(monkeypatch):
 
     monkeypatch.setattr(inc, "_azc", lambda: FakeZeroconf())
     monkeypatch.setattr(inc, "_backends", {})  # no order between tests
-    monkeypatch.setattr(inc, "_server_ip", lambda: "127.0.0.1")
     monkeypatch.setattr(inc, "_host", "127.0.0.1")
     monkeypatch.setattr(inc, "PORT_OFFSET", 0)
     monkeypatch.setattr(inc.db, "get_device", lambda _i: (

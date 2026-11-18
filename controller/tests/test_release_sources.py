@@ -138,10 +138,59 @@ def test_changing_the_repository_drops_the_memory_cache(stored, asked):
     assert asyncio.run(em_releases.cached_firmware()) is None
 
 
-def test_a_successful_fetch_stamps_its_repository():
-    src = em_releases.__loader__.get_source("em_releases")
-    assert 'db.set_config("latest_repo",       repo)' in src
-    assert 'db.set_config("latest_controller_repo", repo)' in src
+class _Ok:
+    status = 200
+
+    def __init__(self, body):
+        self._body = body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def json(self):
+        return self._body
+
+
+def test_a_successful_fetch_stamps_its_repository(stored, monkeypatch):
+    stored["firmware_repo"] = "someone/fork"
+    written = {}
+    monkeypatch.setattr(em_releases.db, "set_config", lambda k, v: written.__setitem__(k, v))
+    async def no_push(_event):
+        return None
+    monkeypatch.setattr(em_releases.em_events, "push", no_push)
+    release = {"tag_name": "v9.9.0", "prerelease": False, "draft": False, "body": "",
+               "assets": [{"name": "server",
+                           "browser_download_url": "https://github.com/someone/fork/releases/download/v9.9.0/server"}]}
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, url, **kw):
+            return _Ok([release])
+    monkeypatch.setattr(em_releases.aiohttp, "ClientSession", lambda *a, **k: Session())
+    got = asyncio.run(em_releases.fetch_firmware())
+    assert got["version"] == "v9.9.0"
+    assert written["latest_repo"] == "someone/fork"
+    # ...and the stamp is what makes the cache usable afterwards.
+    stored.update(written, last_update_check="9999999999", update_check_interval="3600")
+    monkeypatch.setattr(em_releases, "_release_cache", {})
+    assert asyncio.run(em_releases.cached_firmware())["version"] == "v9.9.0"
+
+
+def test_the_binary_cache_tells_two_repositories_apart():
+    up = em_releases.cache_key("https://github.com/wilbowes/EchoMuse/releases/download/v2.28.0/server", "v2.28.0")
+    home = em_releases.cache_key("https://github.com/ggg1psyyy/EchoHome/releases/download/v2.28.0/server", "v2.28.0")
+    assert up != home and up.startswith("v2.28.0+") and home.startswith("v2.28.0+")
+    assert em_releases.em_firmware.safe_version(up) == up  # still a usable path component
+    assert em_releases.cache_key("https://elsewhere/x", "v1") == "v1"
+    assert em_releases.cache_key("https://github.com/a/b/releases/download/v1/server", "") == ""
 
 
 class _Req:

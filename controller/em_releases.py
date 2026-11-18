@@ -13,6 +13,7 @@ the dashboard sets (0 = never, #159).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import time
@@ -592,6 +593,21 @@ def why_failed(download_url: str, default: str) -> str:
     return f"Refused: {why}" if why else default
 
 
+_RELEASE_URL_RE = re.compile(r"https://github\.com/([^/]+/[^/]+)/releases/download/")
+
+
+def cache_key(download_url: str, version: str) -> str:
+    """The binary cache's name for a release asset: its tag plus the
+    repository it came from. Two repositories can publish the same tag (an
+    EchoHome v2.28.0 beside upstream's), so the tag alone could serve one's
+    binary for the other's. Hashed, because the cache wants a short path
+    component; an asset from no recognisable release URL keeps the tag."""
+    m = _RELEASE_URL_RE.match(download_url or "")
+    if not version or m is None:
+        return version
+    return f"{version}+{hashlib.sha256(m.group(1).lower().encode()).hexdigest()[:12]}"
+
+
 async def download(download_url: str,
                         version: str = "") -> Optional[bytes]:
     """
@@ -611,6 +627,7 @@ async def download(download_url: str,
     """
     loop = asyncio.get_event_loop()
     data = None
+    version = cache_key(download_url, version)
     if version:
         data = await loop.run_in_executor(None, em_firmware.read, version)
     from_cache = data is not None

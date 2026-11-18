@@ -169,7 +169,6 @@ COPY em_oww_check.py   ./
 COPY em_oww_models.py .
 COPY em_pairing.py .
 COPY em_oww_metadata.py .
-COPY em_arbiter.py .
 COPY em_state.py .
 COPY em_http.py .
 COPY em_events.py .

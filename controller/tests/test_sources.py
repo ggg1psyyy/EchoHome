@@ -17,7 +17,7 @@ def test_every_module_is_found():
 
 
 def test_find_def_finds_a_function_wherever_it_lives():
-    path, node = _sources.find_def("forget_oww_models")
+    path, node = _sources.find_def("set_link_ports")
     assert path.name == "em_state.py"
     assert isinstance(node, ast.FunctionDef)
 

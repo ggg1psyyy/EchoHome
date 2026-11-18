@@ -46,41 +46,16 @@ async def apply_live_config(device_id: str, live, effective: dict) -> None:
         # The device is still on its previous wake word, still scoring
         # locally, still answering. Install, then switch.
         em_tasks.spawn(em_oww_sync.install_then_switch(device_id, pending_model))
-    if "owwSpeexNs" in effective:
-        live.oww_speex_ns = bool(effective["owwSpeexNs"])
-    if "nsAsr" in effective:
-        live.ns_asr = bool(effective["nsAsr"])
-    if "saveUtterances" in effective:
-        live.save_utterances = bool(effective["saveUtterances"])
     if "wakeClipCapture" in effective:
         live.wake_clip_capture = bool(effective["wakeClipCapture"])
         if not live.wake_clip_capture:
             live.wake_capture.reset()
-    if "wakeClipMinScore" in effective:
-        try:
-            live.wake_clip_min_score = max(0.05, min(0.95, float(effective["wakeClipMinScore"])))
-        except (TypeError, ValueError):
-            live.wake_clip_min_score = 0.20
-    if "streamReply" in effective:
-        live.stream_reply = bool(effective["streamReply"])
-    if "bargeInEnabled" in effective:
-        live.barge_in_enabled = bool(effective["bargeInEnabled"])
-    if "bargeInThreshold" in effective:
-        live.barge_threshold = float(effective["bargeInThreshold"])
-    if "buttonSingleTapEvent" in effective:
-        live.button_single_tap_event = bool(effective["buttonSingleTapEvent"])
-    if "buttonMultiTapMs" in effective:
-        live.button_multi_tap_ms = int(effective["buttonMultiTapMs"])
-    if "wakeArbitrationMs" in effective:
-        live.wake_arb_ms = int(effective["wakeArbitrationMs"])
     # Consumed controller-side ONLY on the controller-detected wake path
     # (#120): a device that detects its own wake plays the cue itself and
     # never consults this. Mirrored anyway, because the path that does need
     # it is the one where the setting would otherwise silently do nothing.
     if "wakeSound" in effective:
         live.wake_sound = bool(effective["wakeSound"])
-    if "micGainDb" in effective:
-        live.mic_gain_db = float(effective["micGainDb"])
     # What a wake's level reading still contains; see em_arbiter.pick.
     if "adcMicpga" in effective:
         live.adc_gains = (int(effective["adcMicpga"]), live.adc_gains[1])
@@ -100,25 +75,6 @@ async def apply_live_config(device_id: str, live, effective: dict) -> None:
             # carry into the new one.
             live.wake_capture.reset()
         live.oww_on_device = new_oww_on_device
-    if "eqBands" in effective:
-        live.eq_bands = effective["eqBands"]
-    if "eqLoudness" in effective:
-        live.eq_loudness = bool(effective["eqLoudness"])
-    # The output chain is consumed HERE, not on the device — it ignores these
-    # five keys entirely — so this mirror is the only thing that carries them.
-    # Missing it meant a push wrote the database, sent JSON the device threw
-    # away, and changed nothing audible until the device happened to
-    # reconnect. Exactly the shape this function's docstring warns about, and
-    # it cost a whole listening test on 2026-08-19: every setting appeared to
-    # do nothing, because every setting WAS doing nothing.
-    if "limiterEnabled" in effective:
-        live.limiter_enabled = bool(effective["limiterEnabled"])
-    if "limiterThreshold" in effective:
-        live.limiter_threshold = float(effective["limiterThreshold"])
-    if "limiterRelease" in effective:
-        live.limiter_release = float(effective["limiterRelease"])
-    if "bassGuardEnabled" in effective:
-        live.bass_guard_enabled = bool(effective["bassGuardEnabled"])
     if "bassGuardDb" in effective:
         live.bass_guard_db = float(effective["bassGuardDb"])
     live.led_scene = em_scenes.resolve(effective)
