@@ -1,27 +1,17 @@
 package bluetooth
 
-// One owner of the HCI transport, shared by the scanner and the connection
-// manager (#656).
-//
-// The scanner used to read /dev/stpbt itself and wait for each command's
-// answer inline, discarding whatever else arrived meanwhile. That was fine
-// while the only other traffic was advertising reports. With a connection up
-// it is not: the scan is toggled several times a minute (Yield), and every
-// toggle would have thrown away the ACL packets and link events that landed
-// during the wait.
-//
-// So there is one read pump, and it sorts packets three ways:
+// One owner of the HCI transport: a single read pump, which sorts packets:
 //   - a Command Complete/Status for the command in flight goes to its caller;
-//   - advertising reports go to adv, and are DROPPED under backlog, as before
-//     — the next one is 100ms away;
-//   - everything else (ACL data, connection events) goes to link, which is
-//     deep and is only dropped when nobody is reading it at all.
+//   - advertising reports go to adv, and are DROPPED under backlog — the next
+//     one is 100ms away;
+//   - everything else is dropped. It went to the connection manager for Home
+//     Assistant's active proxy (#656), removed in EchoHome: the Echo's own
+//     ESPHome proxy is passive.
 
 import (
 	"fmt"
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -36,20 +26,16 @@ type hciHost struct {
 	pendCh chan commandComplete
 
 	adv    chan []byte   // LE advertising reports
-	link   chan []byte   // ACL data and every other event
 	active chan struct{} // poked on any inbound packet, for the watchdog
 
 	dead chan struct{} // closed when the pump exits
 	err  error         // why; set before dead closes
-
-	linkDrops atomic.Uint64
 }
 
 func newHCIHost(rw io.ReadWriteCloser) *hciHost {
 	h := &hciHost{
 		rw:     rw,
 		adv:    make(chan []byte, 64),
-		link:   make(chan []byte, 256),
 		active: make(chan struct{}, 1),
 		dead:   make(chan struct{}),
 	}
@@ -97,11 +83,6 @@ func (h *hciHost) route(pkt []byte) {
 		default:
 		}
 		return
-	}
-	select {
-	case h.link <- pkt:
-	default:
-		h.linkDrops.Add(1)
 	}
 }
 

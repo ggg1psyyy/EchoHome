@@ -104,64 +104,18 @@ type Scanner struct {
 	yieldWant atomic.Bool
 	yieldSig  chan struct{}
 
-	// conns holds the LE connections (#656). connHold is its request to
-	// pause the scan while one is being made; it shares yieldSig.
-	// connPaused is the session loop's answer that the scan is off, tagged
-	// with the holdGen of the hold it answers.
-	conns      *ConnManager
-	connHold   atomic.Bool
-	holdGen    atomic.Uint64
-	connPaused chan uint64
-
 	bluedroidDisabled bool
 }
 
 func NewScanner(onBatch BatchCallback) *Scanner {
-	s := &Scanner{
-		onBatch:    onBatch,
-		unique:     make(map[string]time.Time),
-		pending:    make(map[string]Advert),
-		gate:       newEmitGate(),
-		yieldSig:   make(chan struct{}, 1),
-		connPaused: make(chan uint64, 1),
+	return &Scanner{
+		onBatch:  onBatch,
+		unique:   make(map[string]time.Time),
+		pending:  make(map[string]Advert),
+		gate:     newEmitGate(),
+		yieldSig: make(chan struct{}, 1),
 	}
-	s.conns = newConnManager(func(hold bool) {
-		if !hold {
-			if s.connHold.Swap(false) {
-				s.poke()
-			}
-			return
-		}
-		// The pause must land before the create is sent (#859): the loop
-		// acts on yieldSig only when it gets to it, and a connect that beats
-		// it ends with the scan never paused. Wait for its answer, bounded so
-		// a session that is ending cannot hang the connect.
-		// The generation, set before the hold, tells this hold's answer
-		// from one the loop meant for an earlier hold.
-		g := s.holdGen.Add(1)
-		s.connHold.Store(true)
-		s.poke()
-		t := time.NewTimer(cmdTimeout)
-		defer t.Stop()
-		for {
-			select {
-			case v := <-s.connPaused:
-				if v == g {
-					return
-				}
-				s.poke() // an earlier hold's answer; ask again
-			case <-t.C:
-				log.Printf("[ble] scan not paused within %s; connecting anyway", cmdTimeout)
-				return
-			}
-		}
-	})
-	return s
 }
-
-// Conns is the connection manager. Its links live inside the scan session,
-// so they exist only while the scanner is enabled.
-func (s *Scanner) Conns() *ConnManager { return s.conns }
 
 func (s *Scanner) poke() {
 	select {
@@ -321,18 +275,15 @@ func (s *Scanner) session(stopCh chan struct{}) error {
 // serve runs a session on an open transport. Split from session so the whole
 // lifecycle can be driven against a simulated controller.
 func (s *Scanner) serve(rw io.ReadWriteCloser, stopCh chan struct{}) error {
-	// The host owns the read pump: command answers come back through Cmd,
-	// advertising reports on host.adv, and everything a connection needs on
-	// host.link, which the connection manager reads. The pump exits when the
-	// transport closes.
+	// The host owns the read pump: command answers come back through Cmd and
+	// advertising reports on host.adv. The pump exits when the transport
+	// closes.
 	host := newHCIHost(rw)
 	sendCmd := host.Cmd
 
 	if _, err := sendCmd(opReset, nil); err != nil {
 		return err
 	}
-	s.conns.attach(host)
-	defer s.conns.detach()
 	// The factory address, before anything is advertised or connected
 	// (bdaddr.go). A chip that refuses it keeps its default and still scans.
 	want := factoryBdAddr()
@@ -386,7 +337,7 @@ func (s *Scanner) serve(rw io.ReadWriteCloser, stopCh chan struct{}) error {
 	}
 	// A session that starts while the link is busy (the watchdog re-init,
 	// or the proxy being enabled mid-turn) holds the scan until it is not.
-	wantScan := func() bool { return !s.yieldWant.Load() && !s.connHold.Load() }
+	wantScan := func() bool { return !s.yieldWant.Load() }
 	if wantScan() {
 		if err := setScan(true); err != nil {
 			return err
@@ -432,20 +383,8 @@ func (s *Scanner) serve(rw io.ReadWriteCloser, stopCh chan struct{}) error {
 					watchdog.Reset(watchdogQuiet)
 				}
 			}
-			if !scanOn {
-				// The generation first: read with the hold after it, it is
-				// that hold's.
-				g := s.holdGen.Load()
-				if s.connHold.Load() {
-					select {
-					case s.connPaused <- g:
-					default:
-					}
-				}
-			}
 		case <-host.active:
-			// Any packet at all says the chip is alive, a link's as much as
-			// an advert: re-initialising would drop every connection.
+			// Any packet at all says the chip is alive.
 			if scanOn {
 				disarm()
 				watchdog.Reset(watchdogQuiet)
