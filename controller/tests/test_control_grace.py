@@ -28,7 +28,6 @@ def test_teardown_is_deferred_not_immediate():
     task_call = seg.index("em_tasks.spawn(")
     sync_path = seg[:task_call]
     for call in ("esphome.device_disconnected",
-                 "em_ble_proxy.device_disconnected",
                  "device_gone", "notify_device_disconnected"):
         assert call not in sync_path, \
             f"{call} must move into the grace task, not run on close"
@@ -44,7 +43,7 @@ def test_the_grace_task_checks_for_a_replacement():
     assert "em_state.devices.get(device.device_id)" in task, \
         "the task must check whether a replacement registered"
     for call in ("notify_device_disconnected", "esphome.device_disconnected",
-                 "em_ble_proxy.device_disconnected", "device_gone"):
+                 "device_gone"):
         assert call in task, f"{call} belongs in the deferred release"
 
 

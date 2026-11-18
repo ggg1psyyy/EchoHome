@@ -16,7 +16,6 @@ import time
 from aiohttp import web
 
 import em_auth as auth
-import em_ble_proxy
 import em_incubator
 import em_config_sections as sections_mod
 import em_config_types
@@ -51,7 +50,6 @@ def register(app: web.Application) -> None:
     app.router.add_post("/api/devices/{id}/identify",     _post_identify)
     app.router.add_get("/api/devices/{id}/config",        _get_device_config)
     app.router.add_get("/api/devices/{id}/sendspin/token", _get_sendspin_token)
-    app.router.add_get("/api/devices/{id}/ble_proxy/key", _get_ble_proxy_key)
     app.router.add_get("/api/devices/{id}/esphome/key", _get_esphome_key)
     app.router.add_post("/api/devices/{id}/config",       _post_device_config)
     app.router.add_get("/api/devices/{id}/logs",          _get_device_logs)
@@ -116,29 +114,6 @@ async def _patch_device(request: web.Request) -> web.Response:
 # file read and one message on the control plane; seconds of slack are for
 # this fleet's link stalls, not for the work.
 SENDSPIN_TOKEN_TIMEOUT_S = 8
-
-
-@auth.require_admin
-async def _get_ble_proxy_key(request: web.Request) -> web.Response:
-    """GET /api/devices/{id}/ble_proxy/key — the encryption key Home Assistant
-    asks for when it adds or re-authenticates this Echo's Bluetooth proxy.
-
-    Handed to the one request and nothing else: never logged, never put in an
-    event (events reach every open tab and support bundles). It is all that
-    stands between the LAN and whatever the proxy can connect to. Admin only
-    for the same reason. There is a key only while connections are on —
-    a passive proxy is unencrypted and has nothing to show.
-    """
-    device_id = request.match_info["id"]
-    status = em_ble_proxy.get_status(device_id)
-    if status is None or not status.get("connections"):
-        return em_http.error("connections_off",
-                      "Turn on Bluetooth connections for this Echo first", 409)
-    key = await asyncio.get_event_loop().run_in_executor(
-        None, db.ensure_ble_proxy_key, device_id)
-    if not key:
-        return em_http.error("not_found", "Unknown device", 404)
-    return em_http.ok({"key": key})
 
 
 @auth.require_admin
@@ -211,8 +186,6 @@ async def _delete_device(request: web.Request) -> web.Response:
         return em_http.error("device_not_found", f"No device: {device_id}", 404)
 
     await loop.run_in_executor(None, db.delete_device, device_id)
-    # Row gone → reconcile tears down any BT proxy listener/mDNS for it.
-    await em_ble_proxy.reconcile(device_id)
     # The satellite needs the same, and had no equivalent: it survives an
     # ordinary disconnect on purpose, so a delete used to leave it in
     # `_servers` holding the old port for a re-added device to inherit
@@ -454,10 +427,8 @@ async def _post_device_config(request: web.Request) -> web.Response:
         log.info(f"[api] Config pushed to live device: {device_id}")
         pushed = True
 
-    # BT proxy lifecycle follows bleProxyEnabled in the *effective* config —
-    # reconcile unconditionally (idempotent): re-scoping a section changes the
-    # effective value without the key appearing in the body.
-    await em_ble_proxy.reconcile(device_id)
+    # Reconciled unconditionally (idempotent): re-scoping a section changes
+    # the effective value without the key appearing in the body.
     await em_incubator.reconcile(device_id)
 
     await em_events.push({"type": "device_update", "device_id": device_id,

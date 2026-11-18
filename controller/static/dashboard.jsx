@@ -2446,28 +2446,17 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                     {!s && <div style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-xs)', color:'var(--muted)', marginTop:'var(--space-4)' }}>waiting for device stats…</div>}
                   </Panel>
                 </div>
-                {device.bleProxy && (() => {
-                  const b  = s?.ble || null;          // device-side scanner stats
-                  const bp = device.bleProxy;         // controller-side proxy state
-                  const haState = bp.haSubscribed ? 'Streaming to HA'
-                    : bp.haConnected ? 'HA connected (not subscribed)'
-                    : bp.listening ? 'Waiting for HA' : 'Port down (device offline)';
+                {s?.ble && (() => {
+                  const b  = s.ble;   // the Echo's scanner; HA reads it from the Echo's own device
                   return (
                     <Panel label="Bluetooth proxy">
                       <div className="em-grid2" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 var(--space-12)' }}>
                         <div>
                           {row('Scanner', b ? (b.scanning ? 'Scanning' : 'Stopped') : '—', b?.scanning ? 'var(--ok)' : undefined)}
-                          {/* The controller's count, from the same instant as
-                              Forwarded to HA; the device's own counts from
-                              its boot (#410). */}
-                          {row('Adverts seen', bp.advertsSeen != null ? String(bp.advertsSeen) : '—')}
                           {row('Nearby devices (5 min)', b ? String(b.uniqueAddrs ?? 0) : '—')}
                           {row('BT address', b?.bdAddr || '—')}
                         </div>
                         <div>
-                          {row('Home Assistant', haState, bp.haSubscribed ? 'var(--ok)' : undefined)}
-                          {row('Forwarded to HA', String(bp.advertsForwarded ?? 0))}
-                          {row('ESPHome port', String(bp.port))}
                           {/* Amber on any non-zero: reopening /dev/stpbt
                               re-initialises the combo radio WiFi shares, so
                               this is the first thing to check against an
@@ -2574,10 +2563,6 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 sendspinCapable={!device.connected || !!device.sendspinCapable}
                 sendspinPanel={device.connected && device.sendspinCapable
                   ? <SendspinPairing deviceId={device.device_id} status={device.sendspin} isAdmin={isAdmin}/>
-                  : null}
-                bleConnectCapable={!device.connected || !!device.bleConnectCapable}
-                blePanel={device.connected && device.bleConnectCapable
-                  ? <BleProxyKey deviceId={device.device_id} status={device.bleProxy} isAdmin={isAdmin}/>
                   : null}
                 mixCapable={!device.connected || !!device.audioMixCapable}
                 holdCapable={!device.connected || !!device.buttonHoldCapable}
@@ -9904,7 +9889,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             stockSoundCapable = false,
                             wakeMicCapable = true,
                             sendspinCapable = true, sendspinPanel = null,
-                            bleConnectCapable = true, blePanel = null }) {
+                          }) {
   // emosFleet defaults TRUE for the same reason the capability props above do,
   // and for one more: it gates the console password, which is emOS-only, and
   // disabling a setting because we do not KNOW the fleet has an emOS device
@@ -10648,16 +10633,10 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
       {/* 06 BLUETOOTH */}
       <Stage n="06" title="Bluetooth"
         chips={<><ScopeChip tone="device">Device</ScopeChip><ScopeChip tone="controller">Controller</ScopeChip></>}
-        desc="Turns the device into a Home Assistant Bluetooth proxy: it passively listens for BLE advertisements (presence beacons, temperature sensors) and forwards them to HA as a separate ESPHome device — independent of the voice assistant. Enabling permanently switches the Dot's Bluetooth chip away from Android's stack (Bluetooth speaker pairing, never used by EchoMuse, stops being possible)."
-        scope={scopeEl('bluetooth')} dim={secStyle('bluetooth')}
-        after={(config.bleProxyConnections ?? false) ? blePanel : null}>
+        desc="Makes the Echo a Home Assistant Bluetooth proxy: it passively listens for BLE advertisements (presence beacons, temperature sensors) and hands them to HA through its own ESPHome device. Passive only: no connections. The same switch is on the Echo's device in HA."
+        scope={scopeEl('bluetooth')} dim={secStyle('bluetooth')}>
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
           <Toggle label="Bluetooth proxy" sub="passive BLE scan → HA (Bermuda, BLE sensors)" value={config.bleProxyEnabled ?? false} onChange={v => set('bleProxyEnabled', v)}/>
-          <Toggle label="Allow connections"
-            sub={bleConnectCapable ? 'proxy goes offline in HA until you enter its key' : 'needs newer firmware on this Echo'}
-            disabled={!bleConnectCapable || !(config.bleProxyEnabled ?? false)}
-            value={config.bleProxyConnections ?? false}
-            onChange={v => set('bleProxyConnections', v)}/>
         </div>
       </Stage>
 
@@ -10680,59 +10659,6 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
             onChange={v => set('sendspinUnpaired', v)}/>
         </div>
       </Stage>
-    </div>
-  );
-}
-
-// BleProxyKey: one Echo's Bluetooth connection slots, and the encryption key
-// Home Assistant asks for once connections are on (the proxy's port requires
-// it from then). Fetched on request and never kept, like the Sendspin token.
-function BleProxyKey({ deviceId, status, isAdmin }) {
-  const mono = "var(--font-mono)";
-  const [key, setKey] = useState(null);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const show = async () => {
-    setBusy(true); setError('');
-    try {
-      const r = await API.get(`/api/devices/${deviceId}/ble_proxy/key`);
-      setKey(r.key);
-    } catch (e) {
-      setError(e.error || e.message || 'Could not get the key');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const copy = () => {
-    copyText(key).then(() => setCopied(true)).catch(() => setError('The browser would not copy it: select the key and copy it by hand'));
-  };
-
-  const on = !!(status && status.connections);
-  let line = 'Save to turn connections on';
-  if (on) {
-    line = status.slotsLimit
-      ? `${status.slotsFree} of ${status.slotsLimit} connections free`
-      : 'Waiting for the Echo';
-    if (!status.haConnected) line += ' · Home Assistant not connected';
-  }
-
-  return (
-    <div style={{ fontFamily: mono, fontSize: 'var(--fs-md)', color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      <div>{line}</div>
-      {on && isAdmin && !key && (
-        <div><Pill small disabled={busy} onClick={show}>{busy ? 'Fetching…' : 'Show encryption key'}</Pill></div>
-      )}
-      {key && (
-        <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
-          <span style={{ wordBreak: 'break-all', userSelect: 'all' }}>{key}</span>
-          <Pill small onClick={copy}>{copied ? 'Copied' : 'Copy'}</Pill>
-          <Pill small onClick={() => { setKey(null); setCopied(false); }}>Hide</Pill>
-        </div>
-      )}
-      {key && <div style={{ color: 'var(--muted)', fontSize: 'var(--fs-sm)' }}>Home Assistant asks for this on the BT Proxy device. Anyone with it can use this Echo's connections.</div>}
-      {error && <div style={{ color: 'var(--error)' }}>{error}</div>}
     </div>
   );
 }

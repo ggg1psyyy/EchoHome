@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import em_ble_proxy
 import em_config_sections as sections_mod
 import em_config_types
 import em_db as db
@@ -79,7 +78,6 @@ async def from_echo(device_id: str, settings) -> bool:
         # The push is the Echo's acknowledgement.
         await em_device_config.apply_live_config(device_id, live, effective)
     await em_incubator.reconcile(device_id)
-    await em_ble_proxy.reconcile(device_id)
     await em_events.push({"type": "device_update", "device_id": device_id,
                           "state": {"config": effective,
                                     "config_sections": new_sections,

@@ -2219,22 +2219,6 @@ def test_ble_adverts_leave_the_control_plane_only_when_negotiated():
     )
 
 
-def test_the_control_plane_advert_message_is_still_handled():
-    """
-    Firmware in the field predates the data plane for this, and firmware
-    negotiates rather than assuming. Removing the old handler would silently
-    deafen every proxy running an older build — degrade to old behaviour,
-    never to a wrong answer.
-    """
-    src = (CONTROLLER / "em_controller.py").read_text()
-    table = src[src.index("CONTROL_HANDLERS = {"):]
-    table = table[:table.index("}")]
-    assert '"ble_adverts":' in table, (
-        "the control-plane ble_adverts message must stay handled for firmware "
-        "that cannot use the data plane"
-    )
-
-
 def test_a_barge_in_is_arbitrated_like_any_other_wake():
     """
     Until 2026-09-02 the barge path claimed nothing, so on a fleet with two

@@ -444,10 +444,6 @@ _VIEW_NESTED = {
     # null unless the Echo is answered by the Voice Incubator; no peer address.
     "voiceIncubator": ("port", "listening", "appConnected", "inCall", "onEcho"),
     "linkQuality": ("verdict", "lossPct", "minutes"),
-    "bleProxy": ("port", "listening", "haConnected", "haSubscribed",
-                 "advertsReceived", "advertsForwarded", "advertsSeen",
-                 "hciRestarts", "hciErrors", "connections", "encrypted",
-                 "slotsFree"),
     # clientId, server and group name the player and its peers.
     "sendspin": ("state", "paired", "pairedWith", "synced", "syncErrUs",
                  "bufferedMs", "volume", "muted", "delayMs", "unpairedAccess"),

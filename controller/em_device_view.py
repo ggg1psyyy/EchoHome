@@ -11,7 +11,6 @@ import json
 import logging
 import time
 
-import em_ble_proxy
 import em_config_sections as sections_mod
 import em_db as db
 import em_emos_ota
@@ -210,7 +209,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
                              else _stored_volume(row)),
         # Controller-side BT proxy state — non-None only while the device's
         # bleProxyEnabled config has a proxy server instantiated.
-        "bleProxy":         em_ble_proxy.get_status(device_id),
         # Controller-side voice satellite state: whether Home Assistant is
         # actually on the other end of this device's ESPHome port. Without
         # it a device HA has never connected to renders as idle, which is
@@ -266,7 +264,6 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # Sendspin player (#89): whether the firmware has one, and its status
         # (no secrets; the pairing token is its own request).
         "sendspinCapable": getattr(live, "sendspin_capable", False) if live else False,
-        "bleConnectCapable": getattr(live, "ble_connect_capable", False) if live else False,
         "sendspin":        getattr(live, "sendspin", None) if live else None,
         "audioMixCapable": getattr(live, "audio_mix_capable", False) if live else False,
         # Gates the AEC delay slider, which only means anything on the

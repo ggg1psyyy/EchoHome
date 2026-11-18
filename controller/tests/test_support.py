@@ -931,7 +931,6 @@ def _view():
         "pairRequest": {"at": 1.0, "ip": SECRETS["ip"]},
         "sendspin": {"state": "playing", "synced": True, "clientId": SECRETS["token"],
                      "server": SECRETS["ip"], "group": SECRETS["label"]},
-        "bleProxy": {"haConnected": True, "connections": 1, "peer": SECRETS["bssid"]},
         "wifi": {"pending": None, "last_result": {
             "ok": False, "ssid": SECRETS["ssid"], "at": 5.0,
             "error": f"could not join '{SECRETS['ssid']}'"}},

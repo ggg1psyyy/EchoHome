@@ -109,13 +109,11 @@ import em_wake_samples
 import em_oww_warmup
 import em_barge
 import em_listen
-import em_ble_gatt
 import em_wakelevel
 import em_button
 import em_wakeword
 import em_tap_burst
 import em_esphome as esphome
-import em_ble_proxy
 import em_incubator
 import em_voice as voice
 import em_oww_models
@@ -386,14 +384,11 @@ BLE_ADVERTS_TYPE   = 0x06
 # announced the same capability, and leaves EQ, bass guard and limiter to it.
 # The device runs its chain only when it sees this, so neither half alone
 # changes anything and the two can never both process the same audio.
-#
-# "ble_connect": this controller drives Bluetooth LE connections through a
-# device that announced the same capability (#656), as BLE_GATT_TYPE frames in
-# both directions. A message on a new frame code is negotiated both ways for
-# the usual reason: sent to a side that does not read it, it vanishes.
-CONTROLLER_FEATURES = ["ble_adverts_data", "listen_session", "output_chain",
-                       "ble_connect"]
-BLE_GATT_TYPE      = em_ble_gatt.FRAME_BLE_GATT
+# ble_adverts_data is still announced, so an Echo with its Bluetooth proxy on
+# sends its batches on the data plane, where they are dropped: the proxy is
+# the Echo's own ESPHome device's now (EchoHome), and the control plane is
+# the liveness channel they must not ride.
+CONTROLLER_FEATURES = ["ble_adverts_data", "listen_session", "output_chain"]
 SPEAKER_FRAME_TYPE = 0x02
 SPEAKER_EOS_TYPE   = 0x03
 MIC_HEADER_LEN     = 3   # [type][seq_hi][seq_lo]
@@ -981,22 +976,6 @@ class Device:
         except Exception as e:
             log.warning(f"[{self.device_id}] Data send failed: {e}")
 
-    async def send_gatt(self, payload: bytes) -> bool:
-        """
-        One Bluetooth connection-bridge message to the device (#656). Returns
-        False when there is no data connection: unlike a speaker stream there
-        is nothing to ride out, the request fails and Home Assistant is told.
-        """
-        ws = self.data_ws
-        if ws is None or not self.ble_connect_capable:
-            return False
-        try:
-            await ws.send(bytes((BLE_GATT_TYPE,)) + payload)
-            return True
-        except Exception as e:
-            log.warning(f"[{self.device_id}] ble gatt send failed: {e}")
-            return False
-
     async def set_leds(self, leds: list, listening: bool | None = None):
         # The optional listening flag tells the device explicitly that this
         # frame is the listening ring (enables its direction overlay).
@@ -1087,15 +1066,6 @@ class Device:
         starts pairing from the dashboard, since the device cannot ask.
         """
         return "pairing" in (self.capabilities or [])
-
-    @property
-    def ble_connect_capable(self) -> bool:
-        """
-        Whether this firmware can hold Bluetooth LE connections for Home
-        Assistant (#656). Without it the proxy stays passive and the setting
-        is shown disabled with the reason.
-        """
-        return "ble_connect" in (self.capabilities or [])
 
     @property
     def sendspin_capable(self) -> bool:
@@ -1518,10 +1488,6 @@ class Device:
                 int(send_seconds * 1000), int(paced_seconds * 1000))
 
 
-async def _send_gatt(device_id: str, payload: bytes) -> bool:
-    """em_ble_proxy's way to a device's data plane, by id."""
-    device = em_state.devices.get(device_id)
-    return device is not None and await device.send_gatt(payload)
 
 def _reset_wake_model(model) -> "asyncio.Future":
     """Reset an openwakeword model off the event loop; await the result before
@@ -4711,8 +4677,6 @@ async def _on_stats(device: Device, msg: dict) -> None:
                 f"{_sh.get('errors')} errors ({_sh.get('lastErr') or '-'}) "
                 f"— comparison is running on a subset of the audio"
             )
-    if msg.get("ble"):
-        em_ble_proxy.update_stats(device_id, msg["ble"])
     # Ambient light straight through to HA's sensor entity.
     # Rides the existing ~30s stats tick — light does not
     # change fast enough to justify a channel of its own, and
@@ -4761,10 +4725,6 @@ async def _on_stats(device: Device, msg: dict) -> None:
         "device_id": device_id,
         "state":     {
             "stats": device.stats,
-            # Controller-side proxy view rides along so the
-            # dashboard's Bluetooth panel stays live without
-            # a full device refresh.
-            "bleProxy": em_ble_proxy.get_status(device_id),
             "sendspin": device.sendspin,
         },
     })
@@ -5091,15 +5051,6 @@ async def _on_listen_end(device: Device, msg: dict) -> None:
                  f"({msg.get('reason')})")
 
 
-async def _on_ble_adverts(device: Device, msg: dict) -> None:
-    device_id = device.device_id
-    # BLE proxy data path — batched adverts from the
-    # device's passive scanner, forwarded to HA.
-    em_ble_proxy.forward_adverts(
-        device_id, msg.get("adverts") or []
-    )
-
-
 async def _on_wifi_scan_result(device: Device, msg: dict) -> None:
     fut = device.wifi_scan_future
     if fut is not None and not fut.done():
@@ -5171,7 +5122,6 @@ CONTROL_HANDLERS = {
     "oww_wake":         _on_oww_wake,
     "listen_state":     _on_listen_state,
     "listen_end":       _on_listen_end,
-    "ble_adverts":      _on_ble_adverts,
     "wifi_scan_result": _on_wifi_scan_result,
     "log":              _on_log,
     "pair_request":     _on_pair_request,
@@ -5638,11 +5588,6 @@ async def handle_control(ws: WebSocketServerProtocol, secure: bool = False):
         # wake-word dropdown tracks dashboard changes across controller
         # restarts too.
         await esphome.update_oww_model(device_id, device.oww_model)
-        # BT proxy: mark the device online (brings its proxy listener up if
-        # enabled) and reconcile against current config — covers devices
-        # approved or toggled while they were offline.
-        await em_ble_proxy.device_connected(device_id, device.ble_connect_capable)
-        await em_ble_proxy.reconcile(device_id)
         await em_incubator.device_connected(device_id)
 
         # ── Main message loop ─────────────────────────────────────────────
@@ -5792,7 +5737,6 @@ async def _release_device_services(device) -> None:
         )
         await api.notify_device_disconnected(device.device_id)
         await esphome.device_disconnected(device.device_id)
-        await em_ble_proxy.device_disconnected(device.device_id)
         await em_incubator.device_disconnected(device.device_id)
         em_player.device_gone(device.device_id)
     except asyncio.CancelledError:
@@ -5900,9 +5844,6 @@ async def handle_data(ws: WebSocketServerProtocol, secure: bool = False):
             # #751: a redial means the old link is dead; left open it lasts
             # to the ping timeout. Playback carries on over this connection.
             em_tasks.spawn(replaced.close(code=1000, reason="replaced"))
-        # The connection bridge rides this plane: ask what the device holds
-        # now that there is somewhere for the answer to arrive.
-        em_tasks.spawn(em_ble_proxy.sync_slots(device.device_id))
         # #299: a fresh connection has by definition sent nothing yet — the
         # no-frames watchdog gives it FRESH_CONN_GRACE_S before treating
         # the silence as a zombie stream.
@@ -5928,20 +5869,7 @@ async def handle_data(ws: WebSocketServerProtocol, secure: bool = False):
                 # Checked before the mic-frame guards below, which would
                 # otherwise drop this on the header-length test.
                 if raw and raw[0] == BLE_ADVERTS_TYPE:
-                    try:
-                        body = json.loads(raw[1:])
-                    except Exception:
-                        log.warning(
-                            f"[{device.device_id}] malformed ble_adverts frame dropped"
-                        )
-                        continue
-                    em_ble_proxy.forward_adverts(
-                        device.device_id, body.get("adverts") or []
-                    )
-                    continue
-                if raw and raw[0] == BLE_GATT_TYPE:
-                    em_ble_proxy.gatt_from_device(device.device_id, raw[1:])
-                    continue
+                    continue  # the Echo's own ESPHome device is the proxy now
                 if raw and raw[0] == em_listen.FRAME_TYPE:
                     # Private-listening session audio. The router holds it
                     # until its wake arrives, and drops it once the session
@@ -6345,15 +6273,11 @@ async def main():
                 log.info("REQUIRE_DEVICE_TLS=1 — plain/tokenless device connections will be rejected")
 
             await esphome.start_esphome_servers(em_state.devices, SERVER_HOST)
-            # After the voice satellites — BT proxies reuse their zeroconf.
-            em_ble_proxy.set_gatt_sender(_send_gatt)
-            await em_ble_proxy.start_ble_proxy_servers(SERVER_HOST)
 
             log.info("EchoMuse Controller ready — waiting for devices")
             await _until_stopped()
 
     finally:
-        await em_ble_proxy.stop_ble_proxy_servers()
         await em_incubator.stop_all()
         await esphome.stop_esphome_servers()
         release_task.cancel()
