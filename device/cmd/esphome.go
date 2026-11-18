@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -35,11 +34,15 @@ import (
 // The switch is kept on the Echo (esphomeOnPath), so the server starts at
 // boot with no controller.
 //
-// Always encrypted (ESPHome's Noise transport), as a Voice PE is: the key is
-// made on the Echo the first time it is needed and kept there
-// (esphomeKeyPath), never changed (Home Assistant stores it: a new key would
-// lock its entry out), and handed out only on the controller's
-// esphome_key_request, for the dashboard to show an admin. Never logged.
+// Encrypted (ESPHome's Noise transport) with a key Home Assistant sets, as
+// it sets one on an ESPHome device with no key in its YAML: the Echo starts
+// with none, says so (api_encryption_provisionable), and HA, adding it,
+// generates a key and sends it over an encrypted connection under the
+// all-zero setup key (internal/esphome SetKeyStore). The Echo keeps it
+// (esphomeKeyPath) before using it, and from then on takes only that key;
+// HA clearing it (an empty key) makes it provisionable again. Never logged;
+// handed out only on the controller's esphome_key_request, for the
+// dashboard to show an admin while this is in development.
 //
 // The entities are the ones the Echo has: the action button's hold (every
 // board), ambient light where a sensor reads, the CPU and hottest thermal
@@ -86,41 +89,47 @@ const esphomeKeyPath = "/data/local/etc/echomuse/esphome.key"
 
 var esphomeKeyMu sync.Mutex
 
-// esphomeKey is the server's key, made and kept on first use. An error
-// when it cannot be kept: a key that changed at the next boot would lock
-// Home Assistant out, so the server does not start on one.
-func esphomeKey() ([]byte, string, error) {
+// loadESPHomeKey is the kept key, nil when there is none. An unreadable
+// one is copied aside (.bad) and read as none: HA, holding the old one, is
+// refused and asks for it again, and can set a new one.
+func loadESPHomeKey() []byte {
 	esphomeKeyMu.Lock()
 	defer esphomeKeyMu.Unlock()
-	if b, err := os.ReadFile(esphomeKeyPath); err == nil {
-		s := strings.TrimSpace(string(b))
-		if k, err := base64.StdEncoding.DecodeString(s); err == nil && len(k) == esphome.KeySize {
-			return k, s, nil
-		}
-		// Unreadable: kept aside rather than overwritten, and a new one made.
-		atomicfile.Write(esphomeKeyPath+".bad", b, 0o600)
-		log.Printf("[esphome] the saved key is unreadable: kept as %s.bad, a new one made", esphomeKeyPath)
-	}
-	k := make([]byte, esphome.KeySize)
-	if _, err := rand.Read(k); err != nil {
-		return nil, "", err
-	}
-	s := base64.StdEncoding.EncodeToString(k)
-	if err := atomicfile.Write(esphomeKeyPath, []byte(s+"\n"), 0o600); err != nil {
-		return nil, "", err
-	}
-	log.Printf("[esphome] encryption key made")
-	return k, s, nil
-}
-
-// esphomeKeyReply answers esphome_key_request.
-func esphomeKeyReply() map[string]any {
-	_, s, err := esphomeKey()
+	b, err := os.ReadFile(esphomeKeyPath)
 	if err != nil {
-		log.Printf("[esphome] no key: %v", err)
 		return nil
 	}
-	return map[string]any{"key": s}
+	if k, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(b))); err == nil && len(k) == esphome.KeySize {
+		return k
+	}
+	atomicfile.Write(esphomeKeyPath+".bad", b, 0o600)
+	os.Remove(esphomeKeyPath)
+	log.Printf("[esphome] the kept key is unreadable: copied to %s.bad, none in use", esphomeKeyPath)
+	return nil
+}
+
+// storeESPHomeKey keeps the key HA set (nil: removes it). The server uses a
+// key only once this has returned, so a key that could not be kept is never
+// in use, and HA is told it was not set.
+func storeESPHomeKey(psk []byte) error {
+	esphomeKeyMu.Lock()
+	defer esphomeKeyMu.Unlock()
+	if psk == nil {
+		if err := os.Remove(esphomeKeyPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return atomicfile.Write(esphomeKeyPath, []byte(base64.StdEncoding.EncodeToString(psk)+"\n"), 0o600)
+}
+
+// esphomeKeyReply answers esphome_key_request: the key in use, or none yet.
+func esphomeKeyReply() map[string]any {
+	k := loadESPHomeKey()
+	if k == nil {
+		return map[string]any{"error": "no key"}
+	}
+	return map[string]any{"key": base64.StdEncoding.EncodeToString(k)}
 }
 
 // setupESPHome builds the Echo's entities and identity; nothing listens
@@ -205,11 +214,6 @@ func applyESPHome(on bool) {
 	defer e.mu.Unlock()
 	switch {
 	case on && e.srv == nil:
-		key, _, err := esphomeKey()
-		if err != nil {
-			log.Printf("[esphome] not started, no key could be kept: %v", err)
-			return
-		}
 		if err := firewall.Open(esphome.DefaultPort); err != nil {
 			log.Printf("[esphome] could not open port %d: %v", esphome.DefaultPort, err)
 		}
@@ -220,11 +224,14 @@ func applyESPHome(on bool) {
 			return
 		}
 		e.srv = esphome.New(e.info, e.entries...)
-		e.srv.SetKey(key)
+		e.srv.SetKeyStore(storeESPHomeKey)
+		if k := loadESPHomeKey(); k != nil {
+			e.srv.SetKey(k)
+		}
 		e.stop = make(chan struct{})
 		go e.srv.Serve(ln)
 		go e.poll(e.stop)
-		log.Printf("[esphome] serving Home Assistant on %d as %s (%s)", esphome.DefaultPort, e.info.Name, e.info.MAC)
+		log.Printf("[esphome] serving Home Assistant on %d as %s (%s), key set: %v", esphome.DefaultPort, e.info.Name, e.info.MAC, e.srv.HasKey())
 	case !on && e.srv != nil:
 		close(e.stop)
 		e.srv.Close()

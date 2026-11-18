@@ -2,6 +2,7 @@ package esphome
 
 import (
 	"bufio"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -59,8 +60,12 @@ type DeviceInfo struct {
 // Server serves Home Assistant (and any other API client) the Echo's
 // entities. Safe for concurrent use.
 type Server struct {
-	info     DeviceInfo
-	psk      []byte // nil: plaintext
+	info DeviceInfo
+	// keyStore, set, makes the server provisionable (SetKeyStore).
+	keyStore func(psk []byte) error
+
+	keyMu    sync.Mutex
+	psk      []byte // nil: no key
 	entities []Entity
 	byKey    map[uint32]Entity
 
@@ -82,13 +87,107 @@ func New(info DeviceInfo, entities ...Entity) *Server {
 }
 
 // SetKey makes the server encrypted (ESPHome's Noise transport) with this
-// 32-byte pre-shared key, refusing plaintext clients. Before Serve.
+// 32-byte pre-shared key, refusing plaintext and the all-zero setup key.
 func (s *Server) SetKey(psk []byte) error {
 	if len(psk) != KeySize {
 		return fmt.Errorf("esphome: a key is %d bytes, not %d", KeySize, len(psk))
 	}
+	if allZero(psk) {
+		return errors.New("esphome: the all-zero key is no key")
+	}
+	s.keyMu.Lock()
 	s.psk = append([]byte(nil), psk...)
+	s.keyMu.Unlock()
 	return nil
+}
+
+// SetKeyStore lets Home Assistant set the key, as it does on an ESPHome
+// device with none in its YAML (HA's esphome manager.py): with no key the
+// server says api_encryption_provisionable, accepts plaintext and the
+// all-zero setup key, and takes HA's NoiseEncryptionSetKeyRequest over an
+// encrypted connection only. store keeps the key before it is used (nil
+// clears it); it must be durable, as HA holds the key from then on. Before
+// Serve.
+func (s *Server) SetKeyStore(store func(psk []byte) error) { s.keyStore = store }
+
+// HasKey reports whether a key is in use.
+func (s *Server) HasKey() bool {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+	return s.psk != nil
+}
+
+func (s *Server) key() []byte {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+	return s.psk
+}
+
+func allZero(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// setKey answers NoiseEncryptionSetKeyRequest, as ESPHome's firmware does
+// (api_connection.cpp send_noise_encryption_set_key_response_): an empty
+// key clears it, one that is not 32 bytes of base64 or is all zeros is
+// refused, and one that cannot be kept is refused. Over plaintext it is
+// refused too (ESPHome still takes it there, deprecated, until 2027.2;
+// HA uses the encrypted setup for a device that says provisionable).
+// After success the key is put to use and every client is told to
+// disconnect, so none from before the key survives.
+func (s *Server) setKey(c *conn, b64 []byte) bool {
+	if s.keyStore == nil {
+		log.Printf("[esphome] %s: a key was offered; this server's key cannot be set", c.c.RemoteAddr())
+		return false
+	}
+	if c.noise == nil {
+		log.Printf("[esphome] %s: a key offered in plaintext refused", c.c.RemoteAddr())
+		return false
+	}
+	var psk []byte
+	if len(b64) > 0 {
+		k, err := base64.StdEncoding.DecodeString(string(b64))
+		if err != nil || len(k) != KeySize {
+			log.Printf("[esphome] %s: a key of the wrong form refused", c.c.RemoteAddr())
+			return false
+		}
+		if allZero(k) {
+			log.Printf("[esphome] %s: the all-zero key refused", c.c.RemoteAddr())
+			return false
+		}
+		psk = k
+	}
+	if err := s.keyStore(psk); err != nil {
+		log.Printf("[esphome] the key could not be kept: %v", err)
+		return false
+	}
+	if psk == nil {
+		log.Printf("[esphome] key cleared by %s", c.c.RemoteAddr())
+	} else {
+		log.Printf("[esphome] key set by %s", c.c.RemoteAddr())
+	}
+	// After the response has gone, as ESPHome's 100 ms.
+	time.AfterFunc(100*time.Millisecond, func() {
+		s.keyMu.Lock()
+		s.psk = psk
+		s.keyMu.Unlock()
+		s.mu.Lock()
+		all := make([]*conn, 0, len(s.conns))
+		for c := range s.conns {
+			all = append(all, c)
+		}
+		s.mu.Unlock()
+		for _, c := range all {
+			c.reply(&api.DisconnectRequest{})
+			time.AfterFunc(100*time.Millisecond, c.close)
+		}
+	})
+	return true
 }
 
 // Serve accepts clients on ln until Close.
@@ -319,9 +418,22 @@ func (c *conn) run() {
 	defer c.s.wg.Done()
 	defer c.close()
 	r := bufio.NewReader(c.c)
-	if c.s.psk != nil {
-		c.c.SetReadDeadline(time.Now().Add(readIdle))
-		t, err := handshake(r, c.writeRaw, c.s.psk, c.s.info.Name, c.s.info.MAC)
+	c.c.SetReadDeadline(time.Now().Add(readIdle))
+	psk := c.s.key()
+	encrypted := psk != nil
+	if !encrypted && c.s.keyStore != nil {
+		// No key yet: a client that opens encrypted is setting one up, with
+		// the all-zero key.
+		first, err := r.Peek(1)
+		if err != nil {
+			return
+		}
+		if first[0] == noisePreamble {
+			encrypted, psk = true, make([]byte, KeySize)
+		}
+	}
+	if encrypted {
+		t, err := handshake(r, c.writeRaw, psk, c.s.info.Name, c.s.info.MAC)
 		if err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
 				log.Printf("[esphome] %s: %v", c.c.RemoteAddr(), err)
@@ -377,7 +489,11 @@ func (c *conn) handle(m proto.Message) bool {
 			Manufacturer: i.Manufacturer, Model: i.Model,
 			// A dot is required: HA splits project_name on it unconditionally
 			// (em_esphome.py, "session handoff finding #1").
-			ProjectName: i.ProjectName, ProjectVersion: i.ProjectVersion})
+			ProjectName: i.ProjectName, ProjectVersion: i.ProjectVersion,
+			ApiEncryptionSupported:     s.keyStore != nil || s.HasKey(),
+			ApiEncryptionProvisionable: s.keyStore != nil && !s.HasKey()})
+	case *api.NoiseEncryptionSetKeyRequest:
+		c.reply(&api.NoiseEncryptionSetKeyResponse{Success: s.setKey(c, m.Key)})
 	case *api.ListEntitiesRequest:
 		for _, e := range s.entities {
 			c.reply(e.Info())

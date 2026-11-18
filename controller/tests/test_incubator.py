@@ -910,4 +910,7 @@ def test_the_echos_own_esphome_server_keeps_the_controllers_entities():
     ids = dict((n, int(i)) for n, i in re.findall(r'"(\w+)":\s*(\d+),',
                                                   (dev / "internal/esphome/api/msgids.go").read_text()))
     ours = {cls.__name__: t for t, cls in reg.MESSAGE_TYPE_TO_CLASS.items()}
-    assert ids == ours
+    # The Echo's API is newer (aioesphomeapi 46.25.0, the controller's 45.3.1):
+    # every message this controller knows has the same id there, and none of
+    # the controller's is missing.
+    assert {n: ids.get(n) for n in ours} == ours

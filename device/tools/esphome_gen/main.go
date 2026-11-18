@@ -1,11 +1,19 @@
 // Command esphome_gen generates internal/esphome/api from ESPHome's native
 // API definitions as aioesphomeapi compiles them: the descriptors beside it
-// (descriptors/*.pb) are api.proto and api_options.proto exactly as the
-// controller vendors them (controller/esphome/vendor/api_pb2.py,
-// api_options_pb2.py, aioesphomeapi 45.3.1, MIT), extracted with
-// DESCRIPTOR.serialized_pb, so the Echo speaks the same protocol version the
-// controller already speaks to Home Assistant. No protoc: the descriptors go
-// straight to protoc-gen-go's own generator.
+// (descriptors/*.pb) are api.proto and api_options.proto as aioesphomeapi
+// 46.25.0 (MIT) compiles them, the version Home Assistant 2026.11 pins:
+// pulled out of its api_pb2.py and api_options_pb2.py by extract_pb.py,
+// which parses the AddSerializedFile literal and never imports the module
+// (sdist sha256 02bde168ad623e039a8284a2802e0b49fd05f6915261a45b3bff57657536de8b).
+// 45.3.1, the controller's vendored copy,
+// lacked api_encryption_provisionable, which HA reads to set a key itself.
+// No protoc: the descriptors go straight to protoc-gen-go's own generator.
+//
+// To move to another version: download its sdist, check its sha256, run
+//
+//	python3 -I tools/esphome_gen/extract_pb.py <pkg>/aioesphomeapi/api_pb2.py tools/esphome_gen/descriptors/api.pb
+//
+// (and api_options), update the pins below and regenerate.
 //
 //	go run ./tools/esphome_gen            (from device/)
 //
@@ -45,8 +53,8 @@ const (
 // pinned are the descriptors' sha256: a changed file is a protocol change,
 // to be made on purpose (update the controller's vendored copy with it).
 var pinned = map[string]string{
-	"api_options.pb": "7432a74b10aedc36",
-	"api.pb":         "d913e153081aa4b7",
+	"api_options.pb": "c5fcfdd21e545ba0",
+	"api.pb":         "d2af7462382cc1fd",
 }
 
 func load(name string) *descriptorpb.FileDescriptorProto {

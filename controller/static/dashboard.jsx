@@ -10626,7 +10626,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
           )}
           <Toggle label="Serve Home Assistant from the Echo (experimental)"
             sub={esphomeServerCapable
-              ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome), encrypted with the key below where the firmware has one. Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
+              ? "the Echo runs its own ESPHome API server on port 6053, so Home Assistant can add it by its address as a separate device (EchoHome). Encrypted: Home Assistant sets the key itself when it adds the Echo, as for any ESPHome device. Development: for now it shows the action button, ambient light, temperatures and the mute; the controller's device stays as it is"
               : "this Echo's firmware has no ESPHome server of its own (it lacks esphome_server)"}
             disabled={disabled || !esphomeServerCapable}
             value={config.esphomeServer === true}
@@ -10771,7 +10771,7 @@ function ESPHomeServerKey({ deviceId, isAdmin }) {
           <Pill small onClick={() => { setKey(null); setCopied(false); }}>Hide</Pill>
         </div>
       )}
-      {key && <div style={{ color: 'var(--muted)', fontSize: 'var(--fs-sm)' }}>Home Assistant asks for this when it adds the Echo (port 6053). Anyone with it can talk to this Echo.</div>}
+      {key && <div style={{ color: 'var(--muted)', fontSize: 'var(--fs-sm)' }}>The key Home Assistant set. Only needed if Home Assistant asks for it again. Anyone with it can talk to this Echo.</div>}
       {error && <div style={{ color: 'var(--error)' }}>{error}</div>}
     </div>
   );

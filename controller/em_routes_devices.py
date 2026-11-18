@@ -173,11 +173,12 @@ async def _get_sendspin_token(request: web.Request) -> web.Response:
 
 @auth.require_admin
 async def _get_esphome_key(request: web.Request) -> web.Response:
-    """GET /api/devices/{id}/esphome/key — the encryption key Home Assistant
-    asks for when it adds the Echo's own ESPHome server (esphome_noise).
+    """GET /api/devices/{id}/esphome/key — the encryption key of the Echo's
+    own ESPHome server (esphome_noise).
 
-    Made and kept on the Echo, asked of it each time and never stored or
-    logged here: anyone holding it can talk to the Echo. Admin only.
+    Home Assistant sets it when it adds the Echo; the Echo keeps it, and is
+    asked for it each time; never stored or logged here: anyone holding it
+    can talk to the Echo. Admin only.
     """
     device_id = request.match_info["id"]
     live = em_state.devices.get(device_id)
@@ -196,7 +197,7 @@ async def _get_esphome_key(request: web.Request) -> web.Response:
         if live.esphome_key_waiter is waiter:
             live.esphome_key_waiter = None
     if reply.get("error") or not reply.get("key"):
-        return em_http.error("no_key", "The Echo could not keep a key", 409)
+        return em_http.error("no_key", "No key yet: Home Assistant sets one when it adds the Echo", 409)
     return em_http.ok({"key": reply["key"]})
 
 

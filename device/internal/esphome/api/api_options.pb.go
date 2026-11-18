@@ -310,6 +310,22 @@ var file_api_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Tag:           "varint,50019,opt,name=mac_address,def=0",
 		Filename:      "api_options.proto",
 	},
+	{
+		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
+		ExtensionType: (*bool)(nil),
+		Field:         50020,
+		Name:          "track_presence",
+		Tag:           "varint,50020,opt,name=track_presence,def=0",
+		Filename:      "api_options.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
+		ExtensionType: (*bool)(nil),
+		Field:         50021,
+		Name:          "progmem",
+		Tag:           "varint,50021,opt,name=progmem,def=0",
+		Filename:      "api_options.proto",
+	},
 }
 
 // Extension fields to descriptorpb.MethodOptions.
@@ -370,6 +386,10 @@ var (
 	E_MaxDataLength = &file_api_options_proto_extTypes[22]
 	// optional bool mac_address = 50019;
 	E_MacAddress = &file_api_options_proto_extTypes[23]
+	// optional bool track_presence = 50020;
+	E_TrackPresence = &file_api_options_proto_extTypes[24]
+	// optional bool progmem = 50021;
+	E_Progmem = &file_api_options_proto_extTypes[25]
 )
 
 var File_api_options_proto protoreflect.FileDescriptor
@@ -406,7 +426,9 @@ const file_api_options_proto_rawDesc = "" +
 	"\x05force\x12\x1d.google.protobuf.FieldOptions\x18\xe0\x86\x03 \x01(\b:\x05false:2\n" +
 	"\tmax_value\x12\x1d.google.protobuf.FieldOptions\x18\xe1\x86\x03 \x01(\r:8\n" +
 	"\x0fmax_data_length\x12\x1d.google.protobuf.FieldOptions\x18\xe2\x86\x03 \x01(\r:;\n" +
-	"\vmac_address\x12\x1d.google.protobuf.FieldOptions\x18\xe3\x86\x03 \x01(\b:\x05falseB7Z5github.com/wilbowes/EchoMuse/internal/esphome/api;api"
+	"\vmac_address\x12\x1d.google.protobuf.FieldOptions\x18\xe3\x86\x03 \x01(\b:\x05false:>\n" +
+	"\x0etrack_presence\x12\x1d.google.protobuf.FieldOptions\x18\xe4\x86\x03 \x01(\b:\x05false:7\n" +
+	"\aprogmem\x12\x1d.google.protobuf.FieldOptions\x18\xe5\x86\x03 \x01(\b:\x05falseB7Z5github.com/wilbowes/EchoMuse/internal/esphome/api;api"
 
 var (
 	file_api_options_proto_rawDescOnce sync.Once
@@ -454,11 +476,13 @@ var file_api_options_proto_depIdxs = []int32{
 	4,  // 21: max_value:extendee -> google.protobuf.FieldOptions
 	4,  // 22: max_data_length:extendee -> google.protobuf.FieldOptions
 	4,  // 23: mac_address:extendee -> google.protobuf.FieldOptions
-	0,  // 24: source:type_name -> APISourceType
-	25, // [25:25] is the sub-list for method output_type
-	25, // [25:25] is the sub-list for method input_type
-	24, // [24:25] is the sub-list for extension type_name
-	0,  // [0:24] is the sub-list for extension extendee
+	4,  // 24: track_presence:extendee -> google.protobuf.FieldOptions
+	4,  // 25: progmem:extendee -> google.protobuf.FieldOptions
+	0,  // 26: source:type_name -> APISourceType
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	26, // [26:27] is the sub-list for extension type_name
+	0,  // [0:26] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
 }
 
@@ -474,7 +498,7 @@ func file_api_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_options_proto_rawDesc), len(file_api_options_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   1,
-			NumExtensions: 24,
+			NumExtensions: 26,
 			NumServices:   0,
 		},
 		GoTypes:           file_api_options_proto_goTypes,

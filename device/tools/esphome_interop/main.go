@@ -2,7 +2,10 @@
 // 127.0.0.1, for check.py to drive with aioesphomeapi (Home Assistant's own
 // ESPHome client): the proof that the Echo's server speaks what HA speaks.
 //
-//	go run ./tools/esphome_interop 16053 [base64 key]   (from device/; then check.py)
+//	go run ./tools/esphome_interop 16053 [base64 key | provision]   (from device/)
+//
+// then check.py (no key, or that key), or provision.py (provision: no key,
+// set by the client as Home Assistant sets it).
 package main
 
 import (
@@ -31,7 +34,12 @@ func main() {
 	s := esphome.New(esphome.DeviceInfo{Name: "echohome-interop", FriendlyName: "EchoHome interop",
 		MAC: "02:EC:00:00:00:99", Manufacturer: "EchoHome", Model: "biscuit",
 		ProjectName: "EchoHome.biscuit", ProjectVersion: "interop"}, btn, lux, muted)
-	if len(os.Args) > 2 {
+	if len(os.Args) > 2 && os.Args[2] == "provision" {
+		s.SetKeyStore(func(psk []byte) error {
+			log.Printf("kept a key of %d bytes", len(psk))
+			return nil
+		})
+	} else if len(os.Args) > 2 {
 		k, err := base64.StdEncoding.DecodeString(os.Args[2])
 		if err != nil {
 			log.Fatal(err)
