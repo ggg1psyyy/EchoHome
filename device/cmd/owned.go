@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+	"sync"
+	"time"
 
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
@@ -209,4 +211,30 @@ func esphomeMuteSwitch(bool) {
 func bleProxyOn() bool {
 	snap := config.Get().Snapshot()
 	return snap.BleProxyEnabled != nil && *snap.BleProxyEnabled
+}
+
+// The Echo's own volume, kept in the kept config (config.LastPath) as its
+// startupVolume, so a level changed with no controller comes back at the
+// next boot; the kept config is what seeds it first. Debounced: the buttons
+// step the level, and each step must not be a flash write.
+var keepVolume struct {
+	sync.Mutex
+	timer *time.Timer
+}
+
+func keepVolumeSoon(level int) {
+	if level <= 0 {
+		return // silent is never kept as the volume (em_output_mute's rule)
+	}
+	config.Get().Apply(config.ConfigMessage{StartupVolume: level})
+	keepVolume.Lock()
+	defer keepVolume.Unlock()
+	if keepVolume.timer != nil {
+		keepVolume.timer.Stop()
+	}
+	keepVolume.timer = time.AfterFunc(2*time.Second, func() {
+		if _, err := config.Get().SaveLast(config.LastPath); err != nil {
+			log.Printf("[config] volume not kept: %v", err)
+		}
+	})
 }

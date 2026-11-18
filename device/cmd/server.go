@@ -903,7 +903,8 @@ func main() {
 		controlClient.SendVolumeState(level)
 		sendspinVolumeChanged(level)
 		mediaVolumeChanged(level)
-		incubatorSaveSoon() // a standalone Echo keeps its own volume
+		keepVolumeSoon(level) // the kept config's startupVolume
+		incubatorSaveSoon()   // a standalone Echo keeps its own volume
 	})
 
 	// Volume set from controller (HA MediaPlayerCommandRequest forwarded down).
