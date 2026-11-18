@@ -927,6 +927,12 @@ func (c *ControlClient) connect(ctx context.Context, server *discovery.ServerInf
 				cfg := config.Get()
 				cfg.Apply(msg)
 				config.RecordReceived(raw)
+				// Kept, so the Echo boots with it when no controller is there.
+				if wrote, err := cfg.SaveLast(config.LastPath); err != nil {
+					log.Printf("[control] config not kept: %v", err)
+				} else if wrote {
+					log.Printf("[control] config kept for the next boot")
+				}
 				// Persisted here rather than through OnConfigApplied,
 				// because emOS's init reads the file and the firmware only
 				// ever writes it — there is no in-process consumer for a

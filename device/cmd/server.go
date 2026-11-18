@@ -714,7 +714,9 @@ func main() {
 	// Config applied — apply hardware changes to the mixer, AEC params to
 	// the canceller. AEC/BLE read the merged post-Apply snapshot rather than
 	// the (partial) message so unmentioned fields keep their values.
-	controlClient.OnConfigApplied(func(msg config.ConfigMessage) {
+	// applyConfig is a config push's effects: from the controller, or at boot
+	// from the one kept (config.LastPath) when no controller is there yet.
+	applyConfig := func(msg config.ConfigMessage) {
 		reconcileOwnedConfig() // first: a change made in HA stands against an older push
 		applyHardwareConfig(msg)
 		s.SetRemoteVolumeArc(config.Get().RemoteVolumeArcEnabled())
@@ -741,7 +743,8 @@ func main() {
 		applySendspinConfig(pcmSpeaker, controlClient, s, deviceID)
 		applyShadowConfig(dataClient, controlClient, pcmSpeaker, s)
 		syncListenState(dataClient, controlClient, false)
-	})
+	}
+	controlClient.OnConfigApplied(applyConfig)
 
 	// Wake sound on request (#120), for wakes outside a private-listening
 	// session; the controller sends it only once the wake has won
@@ -913,6 +916,16 @@ func main() {
 	// A standalone satellite starts from what it saved, before any
 	// controller is found: here, once the volume reaches the speaker
 	// (SetVolumeApply above), or its saved level would be silence.
+	// The config last given, before any controller: an Echo that runs on its
+	// own boots as it was set up, not with the firmware's defaults. With no
+	// controller yet, the Echo is what plays the audio, so its own output
+	// chain runs until a controller's ack says otherwise.
+	if last, ok := config.LoadLast(config.LastPath); ok {
+		config.Get().Apply(last)
+		applyConfig(last)
+		pcmSpeaker.SetOutputChainActive(true)
+		log.Printf("[config] the kept config applied")
+	}
 	startStandaloneIncubator(s)
 	applyOwnedAtBoot()
 
