@@ -1,45 +1,33 @@
-# EchoMuse Documentation
-
-User-facing documentation, written to be readable without an engineering
-background. Intended as the seed of a future wiki — screenshots and
-walkthroughs welcome.
+# EchoHome Documentation
 
 | Document | What it covers |
 |---|---|
-| [Quickstart](quickstart.md) | Zero to talking to your Dot: controller install, first-run setup, device approval, Home Assistant hookup, everyday use. |
-| [Configuration Guide](configuration.md) | Every dashboard setting explained in plain language — what it does, when to touch it, and how to tune it. Ends with [what leaves your network](configuration.md#what-leaves-your-network) — there is no telemetry, and the one outbound connection is named. |
-| [Listening and privacy](listening.md) | Exactly when audio leaves an Echo: detecting the wake word on the Echo (the default) or on the controller, what each Echo's status means, and what it is honest to claim. Also the specification the code is held to. |
-| [The Voice Pipeline, Explained](voice-pipeline.md) | How your voice travels from the microphones to Home Assistant and back, stage by stage, with the benefits and caveats of each design choice. |
-| [FAQ](faq.md) | Quick answers and workarounds for the things that come up most — rooting refusals, wizard failures, update problems, wake word tuning, privacy. Check here before filing. |
-| [User Acceptance Testing](uat.md) | A checklist for confirming EchoMuse does what it claims on your hardware, and how to report what doesn't. Includes the known faults not worth re-filing. |
-| [Using the Voice Incubator](voice-incubator.md) | Experimental: letting OHF-Voice's Voice Incubator app answer an Echo instead of Home Assistant's pipeline — setup, what works, what differs, and how to switch back. |
-| [Moving to the Home Assistant add-on](migrate-to-addon.md) | Migrating an existing Docker install to the add-on without losing your devices, settings or Home Assistant entities. Read the part about `tls/` before you start. |
+| [Quickstart](quickstart.md) | From an unlocked Echo to talking to it: the setup tool, the wizard, Home Assistant and the Voice Incubator app. |
+| [Voice Incubator](voice-incubator.md) | The Echo as the app's satellite: what works, privacy, and what to check when it does not answer. |
+| [Configuration](configuration.md) | The Echo's own settings in Home Assistant, the dashboard's, and the setup tool's options. Ends with [what leaves your network](configuration.md#what-leaves-your-network). |
+| [Listening and privacy](listening.md) | Exactly when audio leaves an Echo, and what each status means. Also the specification the code is held to. |
+| [FAQ](faq.md) | Rooting refusals, wizard failures, emOS, updates and audio. |
+| [Acceptance testing](uat.md) | The checks to run on hardware, with and without the setup tool. |
+| [Moving to the Home Assistant add-on](migrate-to-addon.md) | Moving a Docker install to the add-on without losing devices or settings. Read the part about `tls/` first. |
 
-Deeper technical references live elsewhere:
+Deeper references:
 
-- [support-bundle.md](support-bundle.md) — what a support bundle contains,
-  what it deliberately excludes, and how to check before you share one.
-- [rooting.md](rooting.md) — what a device needs before EchoMuse can use it.
-  It covers unlocking with firebreak, where EchoMuse picks up, and what the
-  wizard does for you. The exploit itself is R0rt1z2's work on XDA Forums.
-- [device-controller-interface.md](device-controller-interface.md) — the wire
-  contract a device binary implements: the three WebSocket planes, capability
-  negotiation, `/control` messages, `/data` frames, config push, link auth, and
-  the `crown` board profile. Read this before building bindings for a new board.
-- [boards.md](boards.md) — how the firmware detects its board and finds each
-  part by name, which files describe a board, and what to watch for when
-  trying the firmware on new hardware.
-- [audio-states.md](audio-states.md) — who owns the speaker and what is on the
-  wire: the two audio planes, ducking, flush semantics, and the open questions
-  about how voice, music, announcements and alarms interact.
-- [led-ring-states.md](led-ring-states.md) — the ring's state model: owner
-  priority, link availability, and the button/audio event tables.
-- [SETUP.md](../SETUP.md) — architecture reference: how the mic array, the
-  audio pipeline and the device/controller protocol actually work, plus
-  troubleshooting. Not an onboarding guide.
-- [JOURNAL.md](../JOURNAL.md) — the engineering journal: a long-form,
-  chronological record of what was built, what broke, and what we got wrong.
+- [rooting.md](rooting.md) — unlocking with firebreak, and what the wizard
+  does after it. The exploit is R0rt1z2's work on XDA Forums.
+- [support-bundle.md](support-bundle.md) — what a support bundle contains
+  and excludes.
+- [device-controller-interface.md](device-controller-interface.md) — the
+  setup link between the firmware and the setup tool: planes, capabilities,
+  messages, config push, link auth.
+- [config-keys.md](config-keys.md) — every pushed key, generated from the
+  code.
+- [boards.md](boards.md) — how the firmware finds each part by name, and how
+  to describe a new board.
 - [CLAUDE.md](../CLAUDE.md) — codebase orientation for developers (and AI
-  assistants).
-- [archived/](archived/) — documents kept as a record and no longer current.
-  The v2.2.0 controller design spec is there.
+  assistants); [history/](history/) holds the reasons behind its rules.
+
+Kept from EchoMuse for their hardware facts, with a banner saying what no
+longer applies: [audio-states.md](audio-states.md),
+[led-ring-states.md](led-ring-states.md), [SETUP.md](../SETUP.md), and the
+engineering journal [JOURNAL.md](../JOURNAL.md) (to 2026-10-25).
+[archived/](archived/) holds documents that are no longer current.

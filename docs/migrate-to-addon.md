@@ -1,6 +1,6 @@
 # Moving from the Docker container to the Home Assistant add-on
 
-You are running the EchoMuse controller as a standalone Docker container and
+You are running the setup tool (EchoHome, or EchoMuse before it) as a standalone Docker container and
 you want it to run as a Home Assistant add-on instead. This is how to do that
 without losing your devices, your settings, or the Home Assistant entities you
 have already built automations against.
@@ -24,9 +24,7 @@ database file. In a standard `docker-compose` install that is
 ```
 data/
 ├── echomuse.db      ← devices, settings, users, history
-├── tls/             ← the certificate authority your devices trust
-├── oww_models/      ← custom wake word models, if you trained any
-└── recordings/      ← saved utterances, if you turned that on
+└── tls/             ← the certificate authority your devices trust
 ```
 
 Copy **the whole directory**. Taking only the database is the most common way
@@ -87,16 +85,11 @@ screen and you will re-enter these by hand:
 | `SERVER_IP` | **Controller LAN IP address** |
 | `SERVER_HOST` | **Bind address** |
 | `MDNS_NAME` | **mDNS service name** |
-| `OWW_MODEL` | **Wake word model** |
-| `OWW_THRESHOLD` | **Wake word sensitivity** |
 | `DEVICE_APPROVAL` | **Device approval policy** |
 | `REQUIRE_DEVICE_TLS` | **Require encrypted device connections** |
-| `ESPHOME_PROJECT_VERSION` | **ESPHome project version** |
-| `EM_ESPHOME_PORT_BASE` | **ESPHome satellite base port** |
 | `DEBUG` | **Debug logging** |
 | `LOG_LEVELS` | **Per-area log levels** |
 | `EM_EXTRA_CA_CERT` | **Private CA certificate** |
-| `EM_TTS_WAIT_TIMEOUT` | **Reply wait (seconds)** |
 
 Four have no option, deliberately or otherwise:
 
@@ -142,10 +135,10 @@ new address when the old one has actually gone away.
 Add the repository (**Settings → Apps → Install App → ⋮ → Repositories → Add**):
 
 ```
-https://github.com/wilbowes/EchoMuse
+https://github.com/ggg1psyyy/EchoHome
 ```
 
-Install **EchoMuse**, then **start it once and stop it again**. That first
+Install **EchoHome (Early Access)**, then **start it once and stop it again**. That first
 start creates the storage directory you are about to copy into. Do not fill in
 options yet, and do not open the dashboard — if you let it run it will
 generate the CA you are about to replace. (No harm done if you do; you are

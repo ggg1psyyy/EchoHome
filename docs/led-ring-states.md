@@ -1,5 +1,11 @@
 # LED Ring State Model
 
+> **From EchoMuse, kept for reference.** This page describes EchoMuse,
+> where the controller drove the Echo's voice. In EchoHome the Echo is its
+> own Voice Incubator satellite ([voice-incubator.md](voice-incubator.md)); what is said
+> here about turns, the controller's wake word or its audio no longer
+> applies. The hardware facts still hold.
+
 The 12-LED ring (plus the discrete mute-button LED) is EchoMuse's entire user
 interface. There is no screen and no other indicator, so the ring carries the
 whole burden of telling someone what the device is doing.

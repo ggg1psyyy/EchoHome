@@ -1,5 +1,11 @@
 # Audio State Model
 
+> **From EchoMuse, kept for reference.** This page describes EchoMuse,
+> where the controller drove the Echo's voice. In EchoHome the Echo is its
+> own Voice Incubator satellite ([voice-incubator.md](voice-incubator.md)); what is said
+> here about turns, the controller's wake word or its audio no longer
+> applies. The hardware facts still hold.
+
 Who owns the speaker, what is on the wire, and what happens when two things
 want it at once.
 

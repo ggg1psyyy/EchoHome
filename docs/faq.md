@@ -3,9 +3,11 @@
 Quick answers and workarounds for the things that come up most. Where an
 answer has a longer version, it links to it.
 
-If your problem isn't here, the [UAT guide](uat.md) has a list of known open
-faults worth checking before you file, and
-[support-bundle.md](support-bundle.md) explains what to attach.
+Issue numbers link to EchoMuse's tracker, where most of these were worked
+out. If your problem isn't here, [support-bundle.md](support-bundle.md)
+explains what to attach to an EchoHome issue, and
+[Voice Incubator](voice-incubator.md#when-it-doesnt-answer) covers an Echo
+that does not answer.
 
 ---
 
@@ -326,15 +328,15 @@ Notes come from the tag annotation. If they're empty, that's ours to fix —
 please file it with the version you're on.
 
 ### The dashboard shows my device as Online but nothing works.
-Check **Device → Status → Voice assistant**. `Waiting for HA` means Home
-Assistant has never connected to that satellite — usually a stale HA config
-entry after a device was re-added. Delete the ESPHome entry in HA and
-re-discover it.
+Check **Device → Status → Voice assistant**. *Waiting for the Voice
+Incubator app* means the app has not connected to the Echo's satellite: is
+the app running, and can it reach the Echo on port 6055? See
+[Voice Incubator](voice-incubator.md#when-it-doesnt-answer).
 
 ### Where is my data?
 SQLite beside the controller — in `/data` for the add-on, in the mounted
 volume for the container. Back that directory up; it holds devices, users,
-config, activity history and the TLS CA.
+config, hourly stats and the TLS CA.
 
 ### Can I move the controller to a different IP?
 Yes. Devices find it over mDNS and the TLS certificate deliberately identifies
@@ -345,102 +347,7 @@ or tunnelled networks are in progress** —
 
 ---
 
-## Home Assistant
-
-### The "Set up voice satellite" dialog times out and needs Retry.
-**Known, and it's cosmetic** — press Retry and it completes. The jingle plays,
-the satellite is set up, and HA's dialog gives up before it hears back.
-[#219](https://github.com/wilbowes/EchoMuse/issues/219).
-
-### Home Assistant rejects my device: "Unexpected device found at …".
-An HA ESPHome config entry is keyed on host **and port**, and it's pointing at
-a port that now belongs to a different device — usually after deleting and
-re-adding devices, or switching release channels. **Delete the stale ESPHome
-entry in HA and re-discover.** Note that this gives the device new
-`entity_id`s, so automations referring to the old ones need updating.
-
-### Every announcement throws an error in HA's log.
-Fixed — update the controller. We were sending a media player state HA has no
-mapping for.
-
-### Can I use two different wake words for two different assistants?
-**Not yet, but Home Assistant's half already works.** HA picks a pipeline from
-the wake word phrase reported by the satellite, and we now report it. What's
-missing is running more than one wake word model at a time. Tracked as
-[#112](https://github.com/wilbowes/EchoMuse/issues/112).
-
-### Music Assistant behaves oddly.
-See [#210](https://github.com/wilbowes/EchoMuse/issues/210) — and please add
-your setup, that one needs more reports than it has.
-
-### The Echo shows up twice in Music Assistant.
-With **Sendspin player** on, Music Assistant lists the Echo once as its
-Sendspin player and once as its Home Assistant media player. Hide the Home
-Assistant one inside Music Assistant. Home Assistant keeps it for replies and
-announcements.
-
-### Replies fail with "Cannot connect to host homeassistant.local".
-**Set Home Assistant's local URL to its IP address.** The controller fetches
-reply audio from the address in that URL, and a `.local` name does not
-resolve on every network. It is under **Settings → System → Network → Home
-Assistant URL**.
-
-### The device isn't offered as a target for "start a conversation".
-**Update the controller.** `assist_satellite.start_conversation` and
-`assist_satellite.ask_question` are both supported, attention chime included.
-A device only appears as a target once it reports a working microphone, so if
-it is still missing, check the device is connected.
-
----
-
-## Voice, wake words and audio
-
-### It doesn't wake reliably.
-In order:
-
-1. **Config → Wake word → Sensitivity**, move toward Eager.
-2. **Config → Microphones → mic gain**, if the room is large or you're far
-   from the device.
-3. Try a different model. The stock openWakeWord models vary a lot in how well
-   they suit a given voice.
-
-If it never wakes at all but the action button works, the centre microphone
-may have failed: the wake word listens on that one alone. **Config →
-Microphones → Advanced → Wake word microphone** moves it to one of the six
-around the edge ([#705](https://github.com/wilbowes/EchoMuse/issues/705)).
-That is firmware v2.18.0 (Early Access from v2.18.0-ea.2).
-
-If it scores the wake word on the device, check the device's **Updates** tab.
-Where **On-device wake word** reads *Out of date* or *Not installed*, press
-the button beside it, then restart the device.
-
-If it still misses at normal speaking distance in a quiet room, that's worth a
-report with the model name and the distance.
-
-### It wakes when nobody said anything.
-Move Sensitivity toward Precise. If it fires with the TV on specifically,
-[#294](https://github.com/wilbowes/EchoMuse/issues/294) is the open work on
-that — say what was playing.
-
-### Can it play a sound when it hears the wake word?
-Yes, from controller 2.25.0 and firmware v2.17.0. In the Echo's **Config →
-Wake word** section it is in the right-hand column, below the Arbitration
-window slider, with Quiet, Medium and Loud levels. It is off by default. If
-the section is dimmed the Echo is following the fleet setting, so switch it to
-Device or change it under the fleet settings. The sound is built in and can't
-be replaced with your own.
-
-### Can I use my own wake word?
-Yes — [oww_forge](../oww_forge/README.md) trains one, and you install it in
-the dashboard under **Config → Wake word → + Custom model**. Prefer the
-published Docker image over building it yourself; the upstream pins that make
-it work are only preserved in a published artifact.
-
-### How do I hear what the device actually sent to speech-to-text?
-**Config → Microphones → Advanced → save utterances.** The audio then appears
-per-turn on the device's **Activity** tab. That is exactly the audio Whisper
-received, which makes it the right thing to listen to when transcription is
-wrong.
+## Audio
 
 ### The audio distorts when it's loud.
 Check **Config → Playback**: the limiter and bass guard should be on. If it
@@ -466,56 +373,6 @@ and corrected, which was most of it. What remains is that stock applies a
 substantial driver correction we don't yet —
 [#247](https://github.com/wilbowes/EchoMuse/issues/247).
 
-### Music pauses instead of ducking under a voice response.
-Ducking needs firmware that advertises audio mixing. Update the device
-firmware; if it still pauses, check Device → Status and report it.
-
-### Some commands take fifteen seconds to answer.
-Fixed in **2.23.0**; update the controller. It hit short commands like
-"stop", and speaking straight after the wake word, because Home Assistant's
-end-of-speech detection sometimes never started and waited out its own
-fifteen-second limit. If it still happens, report it with a support bundle.
-[#485](https://github.com/wilbowes/EchoMuse/issues/485).
-
-### A long answer starts speaking late.
-By default the Dot speaks once Home Assistant has the whole reply, so a long
-answer from a slow model starts late. Turn on **Config → Playback → Speak while
-the reply is written** and it starts at the first sentence instead. It needs a
-conversation agent and a text-to-speech engine that both stream, and a model
-slower than speech may pause between sentences, so if it comes out in fits and
-starts, turn it off again.
-
-### A slow conversation agent never gets to answer.
-The controller waits 30 seconds for Home Assistant's reply to begin and then
-ends the turn, which an agent that calls tools can overrun. From controller
-2.26.0 (Early Access from 2.26.0-ea.2) raise **Reply wait (seconds)** in the
-add-on's options, or `EM_TTS_WAIT_TIMEOUT` on the container, up to 120
-([#805](https://github.com/wilbowes/EchoMuse/issues/805)).
-
-### Long responses cut off part-way.
-Fixed; update the controller. If a long answer still stops early, a support
-bundle with the time it happened is the right report.
-[#324](https://github.com/wilbowes/EchoMuse/issues/324).
-
-### Can I interrupt it while it's talking?
-Yes — say the wake word again. Enable it under **Config → Wake word →
-Barge-in** if it isn't already.
-
-### Does it do timers?
-Yes — ask for one the way you'd expect, and it rings on the Echo itself.
-
-To stop it, press the action button, or say the wake word and then anything
-at all ("stop", "be quiet", in any language). The wake word pauses the ring
-and lights the listening ring; if you say nothing for four seconds the ring
-resumes. Any Echo that hears you can stop a timer ringing on another. A
-command spoken over a ringing timer stops the timer and is not sent to Home
-Assistant, so say it again once it is quiet.
-
-That is controller 2.26.0 (Early Access from 2.26.0-ea.1). Before it, a
-ringing timer stopped only on an English stop word such as "stop" or "cancel".
-
----
-
 ## Devices and the fleet
 
 ### A firmware update failed.
@@ -536,51 +393,11 @@ help, a support bundle plus the time it happened is the right report.
 Fixed — update the controller. A deleted device now drops its connection and
 comes back as pending.
 
-### I re-added a device and its voice port is missing.
-Same fix, same answer: update the controller.
-
-### Can Home Assistant stop a device listening, or tell whether its microphone is muted?
-Yes to both, with two separate controls.
-
-**Wake word** is the dropdown Home Assistant puts on every voice satellite.
-**No wake word** stops the device waking; picking the wake word turns it back
-on (either dropdown, including **Wake word 2**). In an automation, use
-`select.select_option` with `no_wake_word` or the wake word's name. The choice
-survives a controller restart. The microphone stays on, so
-`start_conversation` and `ask_question` still listen. On the default
-[Listening](listening.md) mode the Echo still hears its wake word and the
-controller closes that session at once. Until the close arrives (usually a
-fraction of a second, never more than 3 seconds) the Echo sends what follows
-the wake word.
-
-**Microphone Muted** (`binary_sensor`) is the physical mute button, read-only,
-because only the button can unmute it. Check it before
-`assist_satellite.ask_question`: a muted device captures nothing, and HA waits
-for an answer with no timeout.
-
-The two are independent: the button never changes the wake word setting. The
-media player's **mute** is different again. It silences the speaker only.
-
-### My device changed its Home Assistant entity IDs.
-That happens whenever a device is deleted and re-added — HA keys entities on
-identity, and a re-added device is a new one. There's no way to carry the old
-IDs across. Rename the entities in HA if you need the old names back.
-
 ### One device settings, or all of them?
 Config is scoped per section. A device follows the fleet for every section it
-doesn't override, so changing one device's Ring settings leaves its mic and
-wake word tracking fleet changes. **Device → Status → Config** tells you which
+doesn't override, so changing one device's Ring settings leaves its
+microphone and playback settings tracking fleet changes. **Device → Status → Config** tells you which
 it is.
-
-### Two devices both answer when I say the wake word.
-They shouldn't — arbitration picks one. **Config → Wake word → Arbitration
-window** widens the window devices are compared in. If both still answer,
-report it.
-
-If the wrong one answers, such as an Echo across the house instead of the one
-beside you: from controller 2.26.0 (Early Access from 2.26.0-ea.2) the Echo
-that heard you loudest answers. Before that it was the one that heard you
-first ([#747](https://github.com/wilbowes/EchoMuse/issues/747)).
 
 ### Can I swap a dead Echo for a new one and keep its history?
 Not yet — [#133](https://github.com/wilbowes/EchoMuse/issues/133).
@@ -609,29 +426,6 @@ affected hardware is genuinely useful.
 
 ## Privacy
 
-### Does EchoMuse phone home?
-**No.** No telemetry, no analytics, no crash reporting, no install counter.
-The consequence is stated plainly in
-[configuration.md](configuration.md#what-leaves-your-network): nobody,
-including the maintainers, knows how many people use it.
-
-### What does leave my network, then?
-One thing: the controller asks `api.github.com` once an hour what the newest
-release is, so the dashboard can tell you an update exists. Firmware is
-downloaded from GitHub when you choose to update. Set
-`update_check_interval` to `0` to stop even that.
-
-### Is my voice audio sent anywhere?
-Only after the wake word, by default. The Echo listens for it itself and
-sends nothing until it hears it; then what you say goes to your controller and
-your Home Assistant, over your LAN, until you stop speaking. Where it goes
-after that is whatever speech-to-text you configured in HA — that choice is
-yours, not ours.
-
-An Echo set to detect the wake word **on the controller** streams to the
-controller all the time instead, and the dashboard says which ones do. See
-[listening.md](listening.md).
-
 ### Is a support bundle safe to attach to a public issue?
 Yes, by design. It's an allowlist: no transcripts, no saved audio, no WiFi
 SSIDs, no IP addresses, no device labels you wrote, no credentials, no file
@@ -643,21 +437,20 @@ Yes, once the Echo is paired. Approving a new Echo pairs it. An Echo already
 on `plain ws` (its Status tab Link row) pairs when you hold its action button
 for 7 seconds (5 on firmware before v2.19.0) and then approve it in the
 dashboard; on firmware too old to ask,
-the Status tab offers **Pair** instead. **The ESPHome connection to Home Assistant is
-still plaintext**, including mic audio —
-[#341](https://github.com/wilbowes/EchoMuse/issues/341).
+the Status tab offers **Pair** instead. The Echo's ESPHome connection to Home
+Assistant is encrypted with a key Home Assistant sets when it adds the Echo.
+The Voice Incubator satellite port (6055) has no authentication, as the
+app's own satellites have none.
 
 ---
 
 ## Hardware and scope
 
-### Will this work on an Echo Dot Gen 3 / Show / Studio?
-Only Echo Dot Gen 2 ("biscuit") is supported today. Community ports are in
-progress for the Echo Show 8 ([#358](https://github.com/wilbowes/EchoMuse/pull/358)),
-the Echo Show 5 ([#36](https://github.com/wilbowes/EchoMuse/issues/36)) and
-the Echo 2 ([#687](https://github.com/wilbowes/EchoMuse/pull/687)), and
-@shortgame11 has EchoMuse running on an Echo Dot Gen 3 in a fork
-([#527](https://github.com/wilbowes/EchoMuse/issues/527)).
+### Will this work on an Echo Show or Studio?
+The Echo Dot 2nd gen (biscuit), the Echo 2nd gen (radar) and the Echo Dot
+3rd gen (donut) are supported. Community ports have been started in EchoMuse
+for the Echo Show 8 ([#358](https://github.com/wilbowes/EchoMuse/pull/358))
+and the Echo Show 5 ([#36](https://github.com/wilbowes/EchoMuse/issues/36)).
 Only the original Gen 3 has a known unlock: the refreshed Gen 3, the Echo Dot
 Gen 5 and the Echo Studio have none. Check XDA before buying one for this.
 Other boards are welcome — the Android-specific surface is about twenty call
@@ -669,12 +462,6 @@ i2c, evdev and sysfs that happens to run on Android because that's what
 shipped on the box. A change that puts an Amazon blob back in the audio path is going
 the wrong way, even when it sounds better.
 
-### Is there a video of it working?
-Yes — see [#193](https://github.com/wilbowes/EchoMuse/issues/193), which
-collects community recordings.
-
 ### I want to help. Where do I start?
-Issues labelled **`good first issue`** and **`ready`** are the ones with a
-settled design. Anything labelled `needs-design` or `needs-decision` is not
-ready to be built yet, however small it looks — check with us first so you
-don't write something we then have to decline.
+[CONTRIBUTING.md](../CONTRIBUTING.md) covers building from source and the
+tests.

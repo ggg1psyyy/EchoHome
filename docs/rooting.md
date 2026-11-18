@@ -648,5 +648,5 @@ controller.
 The feature-by-feature checklist that used to end this page described the
 firmware as it was at v2.7 and had gone out of date. What each part does now
 is in [configuration.md](configuration.md) and
-[voice-pipeline.md](voice-pipeline.md), and how it got there is in the
+[voice-incubator.md](voice-incubator.md), and how it got there is in the
 [journal](../JOURNAL.md).

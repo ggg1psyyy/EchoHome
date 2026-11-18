@@ -1,10 +1,13 @@
-# EchoMuse controller — deploy from the published image (no build needed).
+# EchoHome setup tool — deploy from the published image (no build needed).
 #
-#   mkdir echomuse && cd echomuse
-#   curl -O https://raw.githubusercontent.com/wilbowes/EchoMuse/main/controller/docker-compose.deploy.yml
-#   curl -o .env https://raw.githubusercontent.com/wilbowes/EchoMuse/main/controller/.env.example
-#   # edit .env — at minimum set SERVER_IP to this machine's LAN IP
+#   mkdir echohome && cd echohome
+#   curl -O https://raw.githubusercontent.com/ggg1psyyy/EchoHome/main/controller/docker-compose.deploy.yml
+#   curl -o .env https://raw.githubusercontent.com/ggg1psyyy/EchoHome/main/controller/.env.example
+#   # optional: set SERVER_IP in .env to this machine's LAN IP
 #   docker compose -f docker-compose.deploy.yml up -d
+#
+# :latest moves only with GA releases; for Early Access pin the tag
+# (echohome-controller:3.0.0-ea.1).
 #
 # Dashboard: http://<SERVER_IP>:8768
 #

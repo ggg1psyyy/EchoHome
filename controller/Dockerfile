@@ -3,8 +3,8 @@
 FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
 # Links the GHCR package page back to the repo (and lets the package inherit
 # the repo's public visibility once connected).
-LABEL org.opencontainers.image.source="https://github.com/wilbowes/EchoMuse" \
-      org.opencontainers.image.description="EchoMuse controller — Echo Dot Gen 2 open-source voice assistant satellite"
+LABEL org.opencontainers.image.source="https://github.com/ggg1psyyy/EchoHome" \
+      org.opencontainers.image.description="EchoHome setup tool: provisions, configures and updates rooted Amazon Echoes"
 WORKDIR /app
 # `upgrade` before `install`, and it is not cosmetic (#365). A Debian
 # security update reaches stable-security days to weeks before

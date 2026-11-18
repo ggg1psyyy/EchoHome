@@ -1,5 +1,11 @@
 # EchoMuse — architecture reference
 
+> **From EchoMuse, kept for reference.** This page describes EchoMuse,
+> where the controller drove the Echo's voice. In EchoHome the Echo is its
+> own Voice Incubator satellite ([voice-incubator.md](docs/voice-incubator.md)); what is said
+> here about turns, the controller's wake word or its audio no longer
+> applies. The hardware facts still hold.
+
 > **Looking for how to *set up* EchoMuse?** Start with the
 > **[Quickstart](docs/quickstart.md)**. This page is reference material about
 > how the hardware and pipeline actually work.
