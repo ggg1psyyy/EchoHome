@@ -36,10 +36,16 @@ type Manager struct {
 	// Device is the Echo's microphone and speaker for calls (nil: presence
 	// only).
 	Device Device
+	// Announce puts the satellite on the network over mDNS, as the app finds
+	// its satellites (`_voice-incubator._tcp`, TXT mac and protocol), and
+	// returns what withdraws it; nil announces nothing (the controller did,
+	// before incubator_mdns). Called once the satellite listens.
+	Announce func(name, mac string, port int) (withdraw func(), err error)
 
-	mu   sync.Mutex
-	s    *Server
-	want Settings
+	mu       sync.Mutex
+	s        *Server
+	want     Settings
+	withdraw func() // the mDNS announcement, while up
 }
 
 func (m *Manager) port(st Settings) int {
@@ -84,6 +90,15 @@ func (m *Manager) Apply(st Settings) {
 	}
 	m.s, m.want = s, st
 	log.Printf("[incubator] satellite listening on %d as %s", st.Port, st.Name)
+	if m.Announce != nil {
+		w, err := m.Announce(st.Name, st.MAC, s.Port())
+		if err != nil {
+			log.Printf("[incubator] mDNS announcement failed: %v", err)
+		} else {
+			m.withdraw = w
+			log.Printf("[incubator] announced as %s._voice-incubator._tcp", st.Name)
+		}
+	}
 }
 
 // LinkDown stops the satellite with the controller link; the controller's
@@ -99,6 +114,11 @@ func (m *Manager) stopLocked(why string) {
 		return
 	}
 	port := m.s.Port()
+	if m.withdraw != nil {
+		// Off the network first: an app finding it now would be refused.
+		m.withdraw()
+		m.withdraw = nil
+	}
 	m.s.Close()
 	m.s = nil
 	m.Firewall.Close(port)

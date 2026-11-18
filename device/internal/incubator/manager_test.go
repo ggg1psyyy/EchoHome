@@ -2,6 +2,7 @@ package incubator
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -206,5 +207,45 @@ func TestTheMonitorSwitchRestartsTheSatelliteBothWays(t *testing.T) {
 	_, _, h = hello()
 	if _, ok := h["monitor"]; ok {
 		t.Fatal("still offered after the switch went off")
+	}
+}
+
+// The Echo announces its own satellite once it listens, under the identity
+// it was given, and withdraws it before it stops (an app finding it then
+// would be refused): on a disable, a new identity, and link loss.
+func TestTheSatelliteIsAnnouncedWhileItListens(t *testing.T) {
+	m, _, _ := manager(t)
+	var mu sync.Mutex
+	var live []string
+	var log []string
+	m.Announce = func(name, mac string, port int) (func(), error) {
+		mu.Lock()
+		defer mu.Unlock()
+		// Called with the Manager's lock held, once the port listens.
+		c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			t.Errorf("announced before it listens: %v", err)
+		} else {
+			c.Close()
+		}
+		live = append(live, name)
+		log = append(log, "+"+name+" "+mac)
+		return func() {
+			mu.Lock()
+			defer mu.Unlock()
+			live = live[:0]
+			log = append(log, "-"+name)
+		}, nil
+	}
+	p := freePort(t)
+	m.Apply(Settings{Enabled: true, Name: "a", MAC: "02:ec:00:00:00:01", Port: p})
+	m.Apply(Settings{Enabled: true, Name: "a", MAC: "02:ec:00:00:00:01", Port: p}) // the same: kept
+	m.Apply(Settings{Enabled: true, Name: "b", MAC: "02:ec:00:00:00:01", Port: p}) // renamed
+	m.LinkDown()
+	mu.Lock()
+	defer mu.Unlock()
+	want := "[+a 02:ec:00:00:00:01 -a +b 02:ec:00:00:00:01 -b]"
+	if fmt.Sprint(log) != want || len(live) != 0 {
+		t.Fatalf("announcements %v (live %v), want %s", log, live, want)
 	}
 }

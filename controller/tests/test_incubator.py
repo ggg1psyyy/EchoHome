@@ -821,3 +821,16 @@ def test_the_monitor_switch_reaches_the_echo_through_reconcile(on_echo):
         await inc.reconcile(DEV)
         assert echo.sent[-1]["monitor"] is False
     asyncio.run(run())
+
+
+def test_an_echo_that_announces_itself_is_not_announced_for(on_echo):
+    """Firmware announcing incubator_mdns puts its own satellite on the
+    network; a second record from the controller would be a duplicate."""
+    echo = on_echo["echo"]
+    echo.capabilities = ["mic", "speaker", "incubator_satellite", inc.MDNS_CAPABILITY]
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=False)
+        assert on_echo["registered"] == []
+        assert inc.status_view(DEV)["listening"] is True
+    asyncio.run(run())

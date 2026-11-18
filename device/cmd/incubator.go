@@ -2,11 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/grandcat/zeroconf"
 	"github.com/wilbowes/EchoMuse/internal/bindings/speaker"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
@@ -254,6 +258,7 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 		Model:    "echomuse-" + board.IDOf(board.Current()),
 		Firmware: client.Version,
 		Device:   dev,
+		Announce: announceSatellite,
 	}
 	cc.OnIncubatorSatellite(func(m client.IncubatorSatellite) {
 		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port, Monitor: m.Monitor})
@@ -263,6 +268,44 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 			log.Println("[incubator] press with no satellite running — ignored")
 		}
 	})
+}
+
+// announceSatellite puts the Echo's own satellite on the network as the app
+// browses for it (voice_incubator discover.py): _voice-incubator._tcp, the
+// node name as the instance, TXT mac and protocol (PROTOCOL.md). The host
+// is the satellite's own name, "<name>-vi", as the controller announced it,
+// never the emOS hostname: Echoes share that, and two answering for one name
+// would send the app to the wrong Echo. Its addresses are the Echo's IPv4
+// ones; emOS admits the app's queries (sport 5353, init.c firewall()).
+func announceSatellite(name, mac string, port int) (func(), error) {
+	ips := localIPv4s()
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no IPv4 address to announce")
+	}
+	srv, err := zeroconf.RegisterProxy(name, "_voice-incubator._tcp", "local.", port,
+		name+"-vi", ips, []string{"mac=" + mac, "protocol=" + strconv.Itoa(incubator.Protocol)}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return srv.Shutdown, nil
+}
+
+// localIPv4s are the Echo's own IPv4 addresses on interfaces that are up.
+func localIPv4s() []string {
+	var out []string
+	ifs, _ := net.Interfaces()
+	for _, ifc := range ifs {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil {
+				out = append(out, n.IP.String())
+			}
+		}
+	}
+	return out
 }
 
 // incubatorStreamEnded takes the speaker's end-of-stream report when a

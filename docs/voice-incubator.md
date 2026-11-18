@@ -14,8 +14,8 @@ There are two ways to do it:
   behalf. Any firmware. The Echo keeps its own wake word, ring, buttons,
   barge-in and music, and the controller passes each question to the app.
 - **Voice Incubator, on the Echo**: the Echo's own firmware is the app's
-  satellite, and the app talks to the Echo directly; the controller only
-  announces it on the network. It needs firmware newer than v2.19.0 (the
+  satellite, the Echo announces itself on the network (mDNS), and the app
+  talks to the Echo directly. It needs firmware newer than v2.19.0 (the
   option is greyed out otherwise), and it does more: the app's own wake
   words, its ring, its questions back, and more (below).
 
@@ -32,7 +32,9 @@ in the audio itself and runs its own timers, alarms and announcements.
   both apps on one host that stays on the host, so it works even where mDNS
   does not cross your VLANs. Running the app on another machine needs mDNS
   between the two, and for **on the Echo** the app must also be able to
-  reach the Echo itself (TCP port 6055).
+  reach the Echo itself (TCP port 6055) and hear its mDNS: the Echo announces
+  itself, so the app and the Echo need mDNS between them, not only the app
+  and the controller.
 
 ## Switching an Echo over
 

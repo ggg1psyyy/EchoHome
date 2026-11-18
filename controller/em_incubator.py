@@ -96,10 +96,10 @@ SETTINGS = (BACKEND_HA, BACKEND_INCUBATOR, ON_ECHO)
 FIRMWARE_CAPABILITY = "incubator_satellite"
 CALLS_CAPABILITY = "incubator_calls"
 MONITOR_KEY = "incubatorMonitor"
-"""Per Echo, off by default: may the app listen live (its Test page, MONITOR,
-a continuous stream while it listens). Off is enforced on the Echo, which
-offers it only when told (incubator_satellite monitor)."""
+"""Per Echo, off by default: may the app listen live (Test page, MONITOR: a stream
+while it listens). Enforced on the Echo, which offers it only when told."""
 MONITOR_CAPABILITY = "incubator_monitor"
+MDNS_CAPABILITY = "incubator_mdns"  # the Echo announces its satellite itself
 """Firmware whose satellite takes button calls: the controller passes a voice
 press on (incubator_press) and the Echo decides what it means there -- stop
 a ringing timer, cancel its call, or start one -- as only it knows which."""
@@ -1092,10 +1092,10 @@ async def on_incubator_state(device, msg: dict) -> None:
             if state["port"] != rec.port:
                 await _unadvertise(rec)
             rec.port = state["port"]
-        if state["listening"]:
+        if state["listening"] and MDNS_CAPABILITY not in (getattr(device, "capabilities", None) or []):
             await _advertise(rec)
         else:
-            await _unadvertise(rec)
+            await _unadvertise(rec)  # not listening, or it announces itself
         if state["error"]:
             log.warning(f"[{device_id}] Incubator satellite on the Echo: {state['error']}")
     await em_events.push({"type": "device_update", "device_id": device_id,

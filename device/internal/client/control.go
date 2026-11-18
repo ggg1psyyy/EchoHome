@@ -1397,6 +1397,9 @@ func capabilities() []string {
 	// switched by sendspinEnabled. Whether it is running, and paired, is the
 	// sendspin status, for the aec_hw_ref reason.
 	//
+	// "incubator_mdns": its satellite announces itself over mDNS, so the
+	// controller does not announce it on its behalf.
+	//
 	// "incubator_satellite": this firmware can be a Voice Incubator satellite
 	// itself (internal/incubator), switched by the incubator_satellite
 	// message; whether it listens, and whether the app is connected, is
@@ -1416,7 +1419,7 @@ func capabilities() []string {
 		"oww_shadow", "oww_trigger", "button_hold", "audio_mix",
 		"aec_hw_ref", "oww_local_only", "output_chain", "wake_cue", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
-		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "ble_connect"}
+		"wake_word_off", "sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "ble_connect"}
 	if MicUnavailable() == "" {
 		caps = append(caps, "mic", "incubator_calls", "incubator_wake", "incubator_ring", "incubator_monitor")
 	}
