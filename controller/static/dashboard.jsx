@@ -509,6 +509,31 @@ function NumberField({ label, sub, value, min = 0, max = 100, unit = '',
   );
 }
 
+// copyText puts text on the clipboard. The Clipboard API exists only on a
+// secure page (HTTPS or localhost) and HA's ingress frame may withhold it,
+// so the dashboard served over plain HTTP, or inside HA, falls back to
+// execCommand('copy') on a hidden textarea, which still works from a click.
+// Resolves when copied, rejects when neither could.
+function copyText(text) {
+  const legacy = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy refused'));
+  };
+  if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).catch(legacy);
+  }
+  return legacy();
+}
+
 function Toggle({ label, sub, value, onChange, disabled = false }) {
   // minWidth: 0 on the flex container and label lets long label/sub text
   // shrink and wrap instead of forcing the row (and the switch with it)
@@ -9451,7 +9476,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
               {log.length > 0 && (
                 <Pill small onClick={() => {
                   const text = log.map(e => e.msg).join('\n');
-                  navigator.clipboard.writeText(text)
+                  copyText(text)
                     .then(() => addLog('(transcript copied to clipboard)'))
                     .catch(() => addLog('Clipboard blocked by the browser — select the text manually.', 'warn'));
                 }}>Copy log</Pill>
@@ -10681,7 +10706,7 @@ function BleProxyKey({ deviceId, status, isAdmin }) {
     }
   };
   const copy = () => {
-    navigator.clipboard.writeText(key).then(() => setCopied(true)).catch(() => {});
+    copyText(key).then(() => setCopied(true)).catch(() => setError('The browser would not copy it: select the key and copy it by hand'));
   };
 
   const on = !!(status && status.connections);
@@ -10733,7 +10758,7 @@ function ESPHomeServerKey({ deviceId, isAdmin }) {
     }
   };
   const copy = () => {
-    navigator.clipboard.writeText(key).then(() => setCopied(true)).catch(() => {});
+    copyText(key).then(() => setCopied(true)).catch(() => setError('The browser would not copy it: select the key and copy it by hand'));
   };
   if (!isAdmin) return null;
   return (
@@ -10775,7 +10800,7 @@ function SendspinPairing({ deviceId, status, isAdmin }) {
     }
   };
   const copy = () => {
-    navigator.clipboard.writeText(token).then(() => setCopied(true)).catch(() => {});
+    copyText(token).then(() => setCopied(true)).catch(() => setError('The browser would not copy it: select the token and copy it by hand'));
   };
 
   let line = 'Starting';
