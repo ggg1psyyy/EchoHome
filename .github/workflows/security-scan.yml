@@ -43,7 +43,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: ghcr.io/${{ github.repository_owner }}/echomuse-controller:latest
+          image-ref: ghcr.io/${{ github.repository_owner }}/echohome-controller:latest
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -57,7 +57,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: ghcr.io/${{ github.repository_owner }}/echomuse-controller:latest
+          image-ref: ghcr.io/${{ github.repository_owner }}/echohome-controller:latest
           format: sarif
           output: trivy-results.sarif
           severity: MEDIUM,HIGH,CRITICAL

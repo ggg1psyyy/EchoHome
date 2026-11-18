@@ -12,12 +12,12 @@
 # describe it: this directory has no Dockerfile and never builds,
 # it only pulls the tag named by `version:`.
 #
-name: "EchoMuse (Early Access)"
+name: "EchoHome (Early Access)"
 # Tracks the published controller image tag, which controller-release.yml
 # derives from the controller-v* tag (controller-v2.18.0 -> 2.18.0). Bump
 # both together: Supervisor pulls `image:version`, so a version with no
 # matching tag on GHCR fails to install.
-version: "2.28.0-ea.1"
+version: "3.0.0-ea.1"
 # Pull the published multi-arch image rather than building on the user's
 # machine. Without this Supervisor builds from this directory's Dockerfile,
 # which downloads a few hundred MB on whatever the user runs Home Assistant
@@ -33,10 +33,10 @@ version: "2.28.0-ea.1"
 # add-on changes before they reach main (Supervisor clones the default
 # branch), and "it compiles onnxruntime" made that loop look far more
 # expensive than it is. tools/make_dev_addon.sh packages one.
-image: "ghcr.io/wilbowes/echomuse-controller"
+image: "ghcr.io/ggg1psyyy/echohome-controller"
 slug: "controller-ea"
-description: "Early Access build of the EchoMuse controller — the next release, before it is general. Install this INSTEAD of the stable add-on, not alongside it: both use host networking and the same ports. Add-ons do not share storage, so switching channels starts with an empty database and a new certificate authority, and existing devices will not connect until the stable add-on's /data is copied across."
-url: "https://github.com/wilbowes/EchoMuse"
+description: "Early Access build of the EchoHome setup tool — the next release, before it is general. Install this INSTEAD of the stable add-on, not alongside it: both use host networking and the same ports. Add-ons do not share storage, so switching channels starts with an empty database and a new certificate authority, and existing devices will not connect until the stable add-on's /data is copied across."
+url: "https://github.com/ggg1psyyy/EchoHome"
 init: false
 arch:
   - aarch64
@@ -57,7 +57,7 @@ ingress_port: 8768
 # read-only until promoted.
 panel_admin: true
 panel_icon: mdi:microphone-message
-panel_title: EchoMuse EA
+panel_title: EchoHome EA
 environment:
   ECHOMUSE_HOME_ASSISTANT_INGRESS: "true"
   # /data is the add-on's own persistent storage, provided automatically by

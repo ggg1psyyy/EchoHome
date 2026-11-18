@@ -1,4 +1,4 @@
-# EchoMuse — Early Access
+# EchoHome — Early Access
 
 This is the **Early Access** channel: the next controller release,
 before it is general. It is the same program as the stable add-on
@@ -16,7 +16,7 @@ rather than from `require_device_tls` — so they will fail
 verification and will not connect at all until you copy the stable
 add-on's `/data` across, including all four files in `tls/`.
 
-Report anything you find against the EchoMuse repository, saying
+Report anything you find against the EchoHome repository, saying
 which channel you are on.
 
 ---

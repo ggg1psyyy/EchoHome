@@ -14,7 +14,7 @@
 
 services:
   echomuse-controller:
-    image: ghcr.io/wilbowes/echomuse-controller:latest
+    image: ghcr.io/ggg1psyyy/echohome-controller:latest
     container_name: echomuse-controller
     restart: unless-stopped
     network_mode: host

@@ -96,10 +96,10 @@ class Channel:
 EA = Channel(
     dirname="controller-ea",
     slug="controller-ea",
-    name="EchoMuse (Early Access)",
-    panel_title="EchoMuse EA",
+    name="EchoHome (Early Access)",
+    panel_title="EchoHome EA",
     blurb=(
-        "Early Access build of the EchoMuse controller — the next release, "
+        "Early Access build of the EchoHome setup tool — the next release, "
         "before it is general. Install this INSTEAD of the stable add-on, "
         "not alongside it: both use host networking and the same ports. "
         "Add-ons do not share storage, so switching channels starts with an "
@@ -108,7 +108,7 @@ EA = Channel(
         "across."
     ),
     docs_banner=(
-        "# EchoMuse — Early Access\n"
+        "# EchoHome — Early Access\n"
         "\n"
         "This is the **Early Access** channel: the next controller release,\n"
         "before it is general. It is the same program as the stable add-on\n"
@@ -126,7 +126,7 @@ EA = Channel(
         "verification and will not connect at all until you copy the stable\n"
         "add-on's `/data` across, including all four files in `tls/`.\n"
         "\n"
-        "Report anything you find against the EchoMuse repository, saying\n"
+        "Report anything you find against the EchoHome repository, saying\n"
         "which channel you are on.\n"
         "\n"
         "---\n"
