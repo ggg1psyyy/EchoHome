@@ -1676,6 +1676,14 @@ capacity, which bites well before any temperature reading looks alarming.
   86% idle) is Amazon kernel threads asleep in D state (`GCPU`, `fuse_log`,
   `entropy_thread`), counted in load, using no CPU.
 
+- 2026-11-18 (00LQ, emOS): **a Dot 2 on a PC's USB port alone resets in a
+  loop** — Windows shows "MT65xx Preloader" for a second and then loses it,
+  again and again, and the Echo never reaches WiFi. On its own supply it booted
+  at once, on the same firmware (v2.20.0-ea.1-79). The preloader's one-second
+  appearance is on EVERY boot and means nothing by itself; only its RETURN is a
+  loop. Rule out power before suspecting a firmware change: the server is
+  userspace, and emOS restarts or rolls it back without rebooting.
+
 ## Volume / mute persistence
 
 **Volume is applied in software, and the DAC stays at unity (2026-09-24).**
