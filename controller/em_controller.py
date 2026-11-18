@@ -488,7 +488,6 @@ class Device:
         self.noise_floor: float = 0.0
         # (MICPGA, digital gain): the gain a wake's level reading still
         # contains. Echoes that differ here are not compared by loudness.
-        self.adc_gains: tuple = (40, 88)
 
         self.barge_detected   = False
         # Clear while a barge's claim is undecided; see _await_barge_decision.
@@ -1459,25 +1458,6 @@ async def _on_stats(device: Device, msg: dict) -> None:
         # the hourly rollup averages numbers.
         "aecRef":        msg.get("aecRef"),
     }
-    # Shadow summary → hourly rollup. Present only while the
-    # device is scoring, so its presence is also the "was it
-    # looking" flag that stops a missing per-turn score from
-    # reading as a miss.
-    _sh = msg.get("owwShadow") or {}
-    device.shadow.active = bool(_sh)
-    if _sh and _sh.get("threshold"):
-        try:
-            device.shadow.threshold = float(_sh["threshold"])
-        except (TypeError, ValueError):
-            pass
-    if _sh:
-        if _sh.get("drops") or _sh.get("errors"):
-            log.warning(
-                f"[{device_id}] on-device wake word fell behind: "
-                f"{_sh.get('drops')} frames dropped, "
-                f"{_sh.get('errors')} errors ({_sh.get('lastErr') or '-'}) "
-                f"— comparison is running on a subset of the audio"
-            )
     # Fold into the persistent hourly rollup (CPU/RAM/storage/
     # RSSI trends) — one cheap upsert per ~30s report. The
     # last_seen refresh rides the same executor hop: a stats
@@ -1492,25 +1472,9 @@ async def _on_stats(device: Device, msg: dict) -> None:
     device.tcp_minutes.add(time.time(), _tcp.get("tcpDownSegs"),
                            _tcp.get("tcpDownRetrans"))
     _metrics = {**device.stats, **device.drain_rtt(), **_tcp}
-    def _persist_stats(_id=device_id, _s=_metrics, _shadow=_sh):
+    def _persist_stats(_id=device_id, _s=_metrics):
         db.record_device_stats(_id, _s)
         db.touch_device_seen(_id)
-        # Shadow counters ride the SAME executor hop rather
-        # than adding one: the whole point of summarising on
-        # the device is that on-device scoring costs the DB
-        # one upsert per 30s, not one per frame.
-        if _shadow:
-            db.bump_wake_counters(
-                _id,
-                dev_frames=int(_shadow.get("frames") or 0),
-                dev_drops=int(_shadow.get("drops") or 0),
-                dev_crossings=int(_shadow.get("crossings") or 0),
-                dev_max_score=float(_shadow.get("maxScore") or 0.0),
-                # v16: what a drop actually was — slowest
-                # inference vs longest frame gap.
-                dev_max_infer_ms=int(_shadow.get("maxInferMs") or 0),
-                dev_max_gap_ms=int(_shadow.get("maxGapMs") or 0),
-            )
     await loop.run_in_executor(None, _persist_stats)
     await em_events.push({
         "type":      "device_update",

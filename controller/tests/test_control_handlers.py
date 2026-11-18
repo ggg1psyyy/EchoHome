@@ -227,3 +227,25 @@ def test_the_privacy_line_reads_what_the_echo_reports(monkeypatch):
                                             "reason": "no_model"}))
     assert d.listen_view.state == em_controller.em_listen.STATE_DEGRADED
     assert d.listen_view.reason == "no_model"
+
+
+# ── stats: the handler runs end to end ──────────────────────────────────────
+
+def test_a_stats_report_is_handled(monkeypatch):
+    """The stats handler had no test, and an attribute it still read after
+    the strip took every report down with it (2026-11-18). Firmware from
+    before EchoHome still sends owwShadow; it is ignored."""
+    recorded = []
+    monkeypatch.setattr(em_controller.db, "record_device_stats",
+                        lambda i, s: recorded.append((i, dict(s))))
+    monkeypatch.setattr(em_controller.db, "touch_device_seen", lambda i: None)
+    pushed = []
+    async def push(ev):
+        pushed.append(ev)
+    monkeypatch.setattr(em_controller.em_events, "push", push)
+    d = _device()
+    for msg in ({"type": "stats", "cpuPct": 12.5},
+                {"type": "stats", "cpuPct": 9.0, "owwShadow": {"frames": 3, "threshold": 0.5}}):
+        _run(em_controller._on_stats(d, msg))
+    assert [r[1]["cpuPct"] for r in recorded] == [12.5, 9.0]
+    assert pushed and pushed[-1]["device_id"] == "dev1"

@@ -1,10 +1,10 @@
 {
  "files": {
-  "em_controller.py": 2483,
+  "em_controller.py": 2447,
   "em_db.py": 3414
  },
  "functions": {
-  "em_controller.Device.__init__": 176,
+  "em_controller.Device.__init__": 175,
   "em_controller.handle_control": 361,
   "em_db.record_device_stats": 206,
   "em_device_view.merge_device": 163,
