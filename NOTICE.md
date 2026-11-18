@@ -20,6 +20,11 @@ needs to travel with it.
 | ONNX Runtime C API header | `device/internal/wakeword/ort/include/` | MIT | Microsoft |
 | aioesphomeapi protocol buffers | `controller/esphome/vendor/` | MIT | Otto Winter |
 | Home Assistant Voice PE timer sound (`timer_finished.flac`) | `controller/sounds/` | CC BY 4.0 | Clayton Charles Tapp |
+| pffft (the echo canceller's FFT) | `device/internal/aec/src/pffft/` | FFTPACK licence (BSD-style), in its source headers | Julien Pommier; University Corporation for Atmospheric Research |
+| libopus 1.5.2 (Sendspin's decoder) | `device/internal/opus/libopus/` | BSD-3-Clause | Xiph.Org Foundation, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo |
+| Voice Incubator firmware's mixednet executor, model parser and wake word detector, ported to Go | `device/internal/mixednet/` | Apache-2.0 (`LICENSE` there); changed: ported from C++ | OHF-Voice (firmware-voice-incubator) |
+| ESPMicroSpeechFeatures (the wake word front end; TensorFlow Lite Micro's microfrontend), with KISS FFT | `device/internal/microfeatures/libmsf/` | Apache-2.0 (`LICENSE` there); KISS FFT BSD-3-Clause, in its source headers | The TensorFlow Authors; Kevin Ahrendt (microWakeWord); Mark Borgerding (KISS FFT) |
+| Wake word models and a test recording, as test data | `device/internal/mixednet/testdata/`, `device/internal/incubator/testdata/` | Apache-2.0 (the `README.md` there names each source) | OHF-Voice, Kevin Ahrendt (microWakeWord), ESPHome |
 
 Full licence texts sit beside the code, in `COPYING` or `*_LICENSE` files. Do
 not remove them — they are the attribution the licences require. The timer
@@ -35,6 +40,21 @@ travel with the work, and the container is where the work actually goes.
 
 The fork exists to carry a `GetAudioStream` defer-in-loop leak fix; see
 `device/CLAUDE.md` before repointing it upstream.
+
+## Go modules compiled into the device binary
+
+Fetched by `go` at build time (`device/go.mod`, pinned by `device/go.sum`) and
+linked into the firmware, so they travel with it. All permissive:
+
+| Module | Licence |
+|---|---|
+| `github.com/gorilla/websocket` | BSD-2-Clause |
+| `github.com/flynn/noise` | BSD-3-Clause |
+| `github.com/grandcat/zeroconf` (and its `github.com/miekg/dns`, BSD-3-Clause; `github.com/cenkalti/backoff`, MIT) | MIT |
+| `github.com/gvalkov/golang-evdev` | BSD-3-Clause |
+| `github.com/mewkiz/flac` (and its `mewkiz/pkg`, `mewpkg/term`) | Unlicense (public domain) |
+| `github.com/icza/bitio` (used by `mewkiz/flac`) | Apache-2.0 |
+| `golang.org/x/crypto`, `golang.org/x/sys`, `golang.org/x/net`, `golang.org/x/sync` | BSD-3-Clause |
 
 ## Installed at build or run time
 
