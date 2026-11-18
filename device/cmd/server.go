@@ -655,18 +655,19 @@ func main() {
 			controlClient.SendVolumeState(s.VolumeLevel())
 		}
 		s.StopAnim() // fresh controller session owns the ring from here
-		// A standalone satellite that outlived the link keeps its state:
-		// its ring (a spinner, the timers, the red monitoring pulse) would
-		// otherwise stop on its last frame.
-		if incubatorMgr != nil {
-			incubatorMgr.Repaint()
-		}
 		if muted {
 			// Orange pulse overwrote the red ring — restore it.
 			s.RestoreMuteRing()
 		} else {
 			s.SetLEDs(allLEDs(0, 0, 0), nil)
 			s.LEDModeDirection()
+		}
+		// A satellite keeps its state: its ring (a spinner, the timers, the
+		// red monitoring pulse, or idle, which is the LED Ring light when it
+		// is on) is painted again AFTER the clear above, or the clear wipes
+		// it (bench, 00LQ, 2026-11-18: dark after every restart).
+		if incubatorMgr != nil {
+			incubatorMgr.Repaint()
 		}
 		// Send an immediate stats snapshot so the dashboard populates on
 		// (re)connect rather than waiting up to 30s for the first tick.
