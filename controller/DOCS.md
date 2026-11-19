@@ -46,4 +46,4 @@ changing one. More in the project's docs:
 
 - [Quickstart](https://github.com/ggg1psyyy/EchoHome/blob/main/docs/quickstart.md)
 - [Configuration](https://github.com/ggg1psyyy/EchoHome/blob/main/docs/configuration.md)
-- [Rooting a device](https://github.com/ggg1psyyy/EchoHome/blob/main/docs/rooting.md)
+- [Rooting a device](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md) (EchoMuse's guide)

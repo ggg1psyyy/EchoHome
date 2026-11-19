@@ -10,10 +10,10 @@ From an Echo to a Voice Incubator satellite in Home Assistant. You need:
 
 ## 1. Unlock the Echo (once per Echo)
 
-[firebreak](rooting.md#unlocking-with-firebreak) runs R0rt1z2's amonet
+[firebreak](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md#unlocking-with-firebreak) runs R0rt1z2's amonet
 unlock from one command in about ten minutes. On the Dot 2nd gen either
 target works (`unlock fireos6`, the default, or `unlock fireos5`); the
-[rooting guide](rooting.md) explains the choice. **You do this at your own
+[rooting guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md) (EchoMuse's) explains the choice. **You do this at your own
 risk.**
 
 ## 2. Install the setup tool

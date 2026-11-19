@@ -17,18 +17,18 @@ that does not answer.
 **Either works.** firebreak's `unlock fireos5` leaves the Dot on FireOS 5,
 where you can install emOS or keep FireOS with root. `unlock fireos6`, the
 default, leaves it on FireOS 6, where EchoMuse offers emOS. An Echo 2nd gen
-has FireOS 6 only. [firebreak](rooting.md#unlocking-with-firebreak) moves a Dot
+has FireOS 6 only. [firebreak](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md#unlocking-with-firebreak) moves a Dot
 between them.
 
-More in [rooting](rooting.md).
+More in [EchoMuse's rooting guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md).
 
 ### The unlock won't run on my Mac.
-**Use [firebreak](rooting.md#unlocking-with-firebreak).** It runs on macOS,
+**Use [firebreak](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md#unlocking-with-firebreak).** It runs on macOS,
 Linux and Windows. Everything after it, including the
 provisioning wizard, runs from a Chromium-based browser on any OS.
 
 ### `brick.sh` refuses with "restricted on locked hw", or `fastbrick.sh` sits at "Sending payload...".
-**Use [firebreak](rooting.md#unlocking-with-firebreak) instead.** amonet's
+**Use [firebreak](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md#unlocking-with-firebreak) instead.** amonet's
 scripts pick the exploit image from the Dot's LK, which fastboot reports as
 `lk_build_desc`, and know only one FireOS 6 LK, `63cb91b-20221007_072309`.
 FireOS 6 4310, 4313 and 4315 ship `41fb3ce-20221007_151724`, which then gets

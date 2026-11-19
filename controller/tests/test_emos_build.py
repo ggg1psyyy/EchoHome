@@ -316,7 +316,7 @@ def test_a_stale_image_id_does_not_block_a_build():
     — a tool that repacks a ramdisk while preserving the header verbatim
     leaves one, and f1r30s does exactly that. Reproducing it is impossible by
     definition, and requiring it refused stock FireOS 5 + f1r30s, which is the
-    state docs/rooting.md tells users to be in (measured 2026-09-06).
+    state EchoMuse's docs/rooting.md tells users to be in (measured 2026-09-06).
 
     The id is a checksum over regions this build replaces outright, and pack()
     computes a fresh one for what it emits, so the reference's is not an input

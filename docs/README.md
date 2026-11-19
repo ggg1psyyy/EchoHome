@@ -12,8 +12,8 @@
 
 Deeper references:
 
-- [rooting.md](rooting.md) — unlocking with firebreak, and what the wizard
-  does after it. The exploit is R0rt1z2's work on XDA Forums.
+- [Rooting](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md) — unlocking with firebreak, and what the wizard does
+  after it: EchoMuse's guide. The exploit is R0rt1z2's work on XDA Forums.
 - [support-bundle.md](support-bundle.md) — what a support bundle contains
   and excludes.
 - [device-controller-interface.md](device-controller-interface.md) — the
@@ -26,12 +26,9 @@ Deeper references:
 - [CLAUDE.md](../CLAUDE.md) — codebase orientation for developers (and AI
   assistants); [history/](history/) holds the reasons behind its rules.
 
-Kept from EchoMuse for their hardware facts, with a banner saying what no
-longer applies: [audio-states.md](audio-states.md) and
-[led-ring-states.md](led-ring-states.md).
-
 EchoHome is built on [EchoMuse](https://github.com/wilbowes/EchoMuse) by Wil
 Bowes and the EchoMuse contributors. Its engineering journal, architecture
-reference, archived design documents and UAT runs are EchoMuse's, in its
+reference, audio and LED ring state models, archived design documents and UAT
+runs are EchoMuse's, in its
 repository; so is [emOS](https://github.com/wilbowes/EchoMuse/tree/main/emos),
 the userspace the Echo runs.

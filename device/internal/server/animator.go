@@ -54,7 +54,7 @@ type AnimSpec struct {
 	//
 	// Tunable from the dashboard because this is a *taste* parameter: the
 	// original fixed curve measured only ~23% perceived brightness
-	// variation on speech (see docs/led-ring-states.md), and finding a
+	// variation on speech (see EchoMuse's docs/led-ring-states.md), and finding a
 	// value that reads well in a real room takes several passes. Shipping
 	// them as config turns that loop into a page refresh instead of a
 	// firmware OTA per iteration.
@@ -67,7 +67,7 @@ type AnimSpec struct {
 }
 
 // meterDefaults are the shipped response curve. Derived in
-// docs/led-ring-states.md §"Why it's barely visible":
+// EchoMuse's docs/led-ring-states.md §"Why it's barely visible":
 //   - decay 0.30 → τ≈133ms, which tracks syllables (150-250ms). The old
 //     0.12 gave τ≈333ms and smoothed everything below phrase rate away,
 //     which is why the ring looked nearly static during speech.

@@ -798,7 +798,7 @@ def build_emos_image(reference: bytes, init_binary: bytes, version: str,
     # preserving the header verbatim leaves a stale id that is impossible to
     # reproduce by definition. That is what f1r30s does: measured 2026-09-06 on
     # a stock FireOS 5 + f1r30s image, the id was the ONLY difference, and
-    # refusing over it blocked the exact state docs/rooting.md tells users to
+    # refusing over it blocked the exact state EchoMuse's docs/rooting.md tells users to
     # be in.
     #
     # Everything else still has to match exactly, and that is the half that

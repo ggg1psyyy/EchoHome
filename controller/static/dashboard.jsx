@@ -4366,7 +4366,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
         + 'FireOS flow cannot work on this device — nothing has been written. Use the emOS flow '
         + 'instead, which runs on the FireOS 6 kernel this device has. Do not try to go back by '
         + 'flashing FireOS 5 or an older amonet: that means writing bootloaders by hand, which is '
-        + 'how an Echo gets hard-bricked. See the warning at the top of docs/rooting.md.');
+        + 'how an Echo gets hard-bricked. See the warning at the top of the EchoMuse rooting guide: https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md');
     }
     if (unlock.v2) {
       // The boot partition is about to be rewritten, and the escrow two steps

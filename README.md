@@ -52,7 +52,7 @@ described.
 ## Getting started
 
 1. **Unlock the Echo** with [firebreak](https://github.com/bboe/firebreak)
-   ([rooting guide](docs/rooting.md)). **You do this at your own risk**: a
+   ([EchoMuse's rooting guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md)). **You do this at your own risk**: a
    step gone wrong can soft-brick the Echo, and the XDA threads for
    [the Dot](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-dot-2nd-gen-2016-biscuit.4761416/)
    and [the Echo](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-2nd-gen-2017-radar.4801290/)
@@ -95,7 +95,7 @@ The [quickstart](docs/quickstart.md) walks through all four.
 | | |
 |---|---|
 | [Quickstart](docs/quickstart.md) | From an unlocked Echo to talking to it. |
-| [Rooting](docs/rooting.md) | Unlocking the Echo, and which target to use. |
+| [Rooting](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md) | Unlocking the Echo, and which target to use (EchoMuse's guide). |
 | [Voice Incubator](docs/voice-incubator.md) | The satellite: what works, privacy, troubleshooting. |
 | [Configuration](docs/configuration.md) | The setup tool's options and the Echo's settings. |
 | [Listening and privacy](docs/listening.md) | What the microphone does, in every state. |
