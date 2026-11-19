@@ -80,3 +80,35 @@ def duplicate_of(label: str, devices, device_id: str):
         if other_id != device_id and other and label_key(other) == key:
             return other
     return None
+
+
+# The Echo's DHCP hostname: a DNS label (RFC 1123 section 2.1: letters,
+# digits and hyphens, not starting or ending with one, at most 63 octets).
+HOSTNAME_MAX = 63
+SERIAL_DIGITS = 4
+
+
+def hostname(label: str, device_id: str) -> str:
+    """The name the Echo gives its DHCP server: its label made a DNS label,
+    then a hyphen and the last four characters of its serial ("Living Room",
+    a serial ending 00LQ: living-room-00lq). Case folded first (ß is ss),
+    accents dropped, every run of anything else one hyphen; a label with
+    nothing left is "echohome"."""
+    text = unicodedata.normalize("NFKD", (label or "").casefold())
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    suffix = re.sub(r"[^a-z0-9]", "", (device_id or "").lower())[-SERIAL_DIGITS:]
+    base = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    room = HOSTNAME_MAX - (len(suffix) + 1 if suffix else 0)
+    base = base[:room].rstrip("-") or "echohome"
+    return f"{base}-{suffix}" if suffix else base
+
+
+def hostname_clash(label: str, devices, device_id: str):
+    """The label of another device whose hostname `label` would repeat, or
+    None: different labels can make one hostname ("Living Room" and
+    "Living-Room" with the same last four characters)."""
+    mine = hostname(label, device_id)
+    for other_id, other in devices:
+        if other_id != device_id and other and hostname(other, other_id) == mine:
+            return other
+    return None

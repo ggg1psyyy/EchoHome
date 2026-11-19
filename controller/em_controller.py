@@ -65,6 +65,7 @@ import em_health
 import em_listen
 import em_esphome_mdns
 import em_incubator
+import em_labels
 import em_volume
 import em_loglevel
 
@@ -1295,12 +1296,11 @@ async def handle_control(ws: WebSocketServerProtocol, secure: bool = False):
         if bad_keys:
             log.warning(f"[control] {device_id}: stored config has values of "
                         f"the wrong type, not sent: {', '.join(bad_keys)}")
-        # The Sendspin player advertises itself to Music Assistant under the
-        # device's label, which the firmware does not otherwise know. Carried
-        # on the same push, so the player starts under the right name rather
-        # than restarting a moment later; a rename sends it alone.
-        if device.sendspin_capable and row["label"]:
-            config = {**config, "sendspinName": row["label"]}
+        # The label names the Sendspin player and the DHCP hostname
+        # (em_labels.hostname), on the same push; a rename sends them alone.
+        if row["label"]:
+            config = {**config, "dhcpHostname": em_labels.hostname(row["label"], device_id),
+                      **({"sendspinName": row["label"]} if device.sendspin_capable else {})}
         await device.send_control({"type": "config", **config})
         # Only firmware from before EchoHome acts on it; the privacy line
         # reads it against that firmware's "stream" report (em_listen).

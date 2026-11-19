@@ -103,10 +103,14 @@ async def _patch_device(request: web.Request) -> web.Response:
                        "state": {"label": label}})
     # Music Assistant lists the Sendspin player by this name; the device
     # restarts the player to re-advertise it.
+    # The DHCP hostname follows it (em_labels.hostname).
     live = em_state.devices.get(device_id)
-    if live is not None and getattr(live, "sendspin_capable", False):
+    if live is not None:
+        msg = {"type": "config", "dhcpHostname": em_labels.hostname(label, device_id)}
+        if getattr(live, "sendspin_capable", False):
+            msg["sendspinName"] = label
         with contextlib.suppress(Exception):
-            await live.send_control({"type": "config", "sendspinName": label})
+            await live.send_control(msg)
     return em_http.ok({"device_id": device_id, "label": label})
 
 
@@ -585,10 +589,11 @@ async def _require_unique_label(label: str, device_id: str) -> None:
     second one's entity_ids with _2.
     """
     rows = await asyncio.get_event_loop().run_in_executor(None, db.get_all_devices)
-    other = em_labels.duplicate_of(label, ((r["device_id"], r["label"]) for r in rows), device_id)
-    if other is not None:
-        raise web.HTTPConflict(
-            content_type="application/json",
-            body=json.dumps({"error": f'Another Echo is already called "{other}".',
-                             "code": "duplicate_label"}),
-        )
+    pairs = [(r["device_id"], r["label"]) for r in rows]
+    other = em_labels.duplicate_of(label, pairs, device_id)
+    clash = None if other is not None else em_labels.hostname_clash(label, pairs, device_id)
+    if other is not None or clash is not None:
+        msg = (f'Another Echo is already called "{other}".' if other is not None
+               else f'"{clash}" would have the same network name ({em_labels.hostname(label, device_id)}).')
+        raise web.HTTPConflict(content_type="application/json",
+                               body=json.dumps({"error": msg, "code": "duplicate_label"}))

@@ -142,3 +142,42 @@ def test_both_label_endpoints_refuse_duplicates():
     for handler in ("_patch_device", "_post_approve"):
         body = _sources.def_source(handler)
         assert "await _require_unique_label(label, device_id)" in body, handler
+
+
+# ─── The DHCP hostname (RFC 1123 section 2.1 labels) ────────────────────────
+
+_DNS_LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def test_the_hostname_is_the_label_then_the_last_four_of_the_serial():
+    assert em_labels.hostname("Kitchen", "G000AA00000000LQ") == "kitchen-00lq"
+    assert em_labels.hostname("Living Room", "G000BB0000000SE7") == "living-room-0se7"
+
+
+def test_every_hostname_is_a_dns_label():
+    """Letters, digits and hyphens, no hyphen first or last, at most 63:
+    from labels at every edge check_label allows."""
+    labels = ["Küche", "STRASSE", "Straße", "Echo #1", "  spaced  out  ", "--x--", "日本",
+              "🙂 Kitchen", "a" * 32, "Ｋｉｔｃｈｅｎ", "a.b_c/d", "-", "ÆØÅ", "x" * 200]
+    for label in labels:
+        name = em_labels.hostname(label, "G000AA00000000LQ")
+        assert _DNS_LABEL.match(name), (label, name)
+        assert name.endswith("-00lq"), (label, name)
+    assert em_labels.hostname("Küche", "G000AA00000000LQ") == "kuche-00lq"
+    assert em_labels.hostname("Straße", "G000AA00000000LQ") == "strasse-00lq"
+    assert em_labels.hostname("Echo #1", "G000AA00000000LQ") == "echo-1-00lq"
+    # Nothing usable left: the product's name.
+    assert em_labels.hostname("日本", "G000AA00000000LQ") == "echohome-00lq"
+    # The longest fits 63, the serial kept whole.
+    long = em_labels.hostname("x" * 200, "G000AA00000000LQ")
+    assert len(long) == 63 and long.endswith("-00lq")
+
+
+def test_a_label_whose_hostname_another_echo_has_is_refused():
+    devices = [("G000AA00000000LQ", "Living Room"), ("G000BB0000000SE7", "Kitchen")]
+    # A different label, the same hostname: the same last four characters.
+    assert em_labels.hostname_clash("Living-Room", devices, "G090XX99999900LQ") == "Living Room"
+    # The same text, another serial: a different hostname.
+    assert em_labels.hostname_clash("Living-Room", devices, "G090XX9999990ABC") is None
+    # Its own name is no clash.
+    assert em_labels.hostname_clash("Living-Room", devices, "G000AA00000000LQ") is None

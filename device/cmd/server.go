@@ -588,6 +588,7 @@ func main() {
 		esphomeBLEFollow()
 		esphomeFollowName()
 		applySendspinConfig(pcmSpeaker, controlClient, s, deviceID)
+		applyDHCPHostname()
 	}
 	controlClient.OnConfigApplied(func(msg config.ConfigMessage) {
 		sendspinPushed(msg.SendspinEnabled) // the dashboard's switch, before the Echo's settings go back over the push

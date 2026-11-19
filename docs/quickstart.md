@@ -80,7 +80,9 @@ The Echo then finds the setup tool on its own. Approve it in the dashboard
    mDNS does not cross VLANs, so a changed address would not reach Home
    Assistant. The Echo reports its WiFi chip's own MAC, the one in your
    router's leases, so the reservation and Home Assistant name the same
-   device.
+   device. It also gives DHCP a hostname, its label plus the last four
+   characters of its serial (`living-room-00lq`), which routers that put
+   DHCP names in their DNS make reachable by name.
 2. In the **Voice Incubator app**, add the Echo as a satellite; it is
    announced on the network as `echohome-<serial>`. Choose its wake words on
    the app's *Wake words* page.

@@ -31,13 +31,14 @@ UNLISTED = {
 }
 
 # ConfigMessage fields that are not config values. sendspinName is the
-# device's label, pushed beside the config rather than stored in it.
+# device's label, pushed beside the config rather than stored in it, and
+# dhcpHostname is made from it (em_labels.hostname).
 # wakeWordEnabled is HA's picker state (em_wakeword), stored and sent apart
 # from device config. incubatorRing is the scene's, as listeningAnim is
 # (em_scenes.ring_push).
 NOT_CONFIG = {"type", "hasBeamforming", "listeningAnim", "incubatorRing",
               "consolePassword", "consoleTimeoutMin", "sendspinName",
-              "wakeWordEnabled"}
+              "dhcpHostname", "wakeWordEnabled"}
 
 GO_KIND = {"int": T.INT, "float64": T.FLOAT, "bool": T.BOOL,
            "string": T.STR, "[]float64": T.FLOAT_LIST}

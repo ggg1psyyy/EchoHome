@@ -32,6 +32,16 @@ derived from the serial instead; after updating from it, delete the Echo's
 ESPHome entry in Home Assistant and add it again from **Discovered** (Home
 Assistant refuses a device whose MAC changed), once.
 
+The Echo gives your DHCP server a **hostname** made from its label on the
+dashboard and the last four characters of its serial: "Living Room" on
+G090…00LQ is `living-room-00lq` (lowercase, accents dropped, anything else
+a hyphen). Where your router puts DHCP names into its DNS, Home Assistant
+can reach the Echo by that name. Renaming the Echo renames it; a label
+whose hostname another Echo already has is refused. emOS's DHCP client
+sends no hostname of its own, so the firmware runs it through a small
+wrapper that adds one (redone at each start; Echoes whose emOS uses
+Amazon's `dhcpcd` instead send none).
+
 An Echo updated from firmware before EchoHome starts with these at their
 defaults, except the wake word microphone, which carries over from the
 dashboard. Which wake words it listens for is set in the Voice Incubator

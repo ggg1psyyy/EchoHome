@@ -127,6 +127,11 @@ type Device struct {
 	// device's label on the dashboard, which the firmware does not otherwise
 	// know. Empty falls back to one built from the serial.
 	SendspinName string
+	// DhcpHostname is the name the Echo gives its DHCP server: its label as
+	// a DNS label plus the last four characters of its serial (the
+	// controller's em_labels.hostname). Empty leaves emOS's DHCP client as
+	// it is.
+	DhcpHostname string
 
 	// ListeningAnim carries the controller's current listening-ring
 	// animation spec, raw JSON in the led_anim shape, so the device can
@@ -268,6 +273,9 @@ func (d *Device) Apply(msg ConfigMessage) {
 	}
 	if msg.SendspinName != "" {
 		d.SendspinName = msg.SendspinName
+	}
+	if msg.DhcpHostname != "" {
+		d.DhcpHostname = msg.DhcpHostname
 	}
 	if msg.ListeningAnim != nil {
 		d.ListeningAnim = msg.ListeningAnim
@@ -414,6 +422,7 @@ func (d *Device) Snapshot() ConfigMessage {
 		SendspinEnabled:     &sendspinEnabled,
 		SendspinUnpaired:    &sendspinUnpaired,
 		SendspinName:        d.SendspinName,
+		DhcpHostname:        d.DhcpHostname,
 		RemoteVolumeArc:     &remoteVolumeArc,
 		MuteRing:            &muteRing,
 		ListeningAnim:       d.ListeningAnim,
@@ -473,6 +482,7 @@ type ConfigMessage struct {
 	SendspinEnabled     *bool    `json:"sendspinEnabled,omitempty"`
 	SendspinUnpaired    *bool    `json:"sendspinUnpaired,omitempty"`
 	SendspinName        string   `json:"sendspinName,omitempty"`
+	DhcpHostname        string   `json:"dhcpHostname,omitempty"`
 	// VolumeButtonSound: a pointer so "off" is distinguishable from absent.
 	VolumeButtonSound *bool `json:"volumeButtonSound,omitempty"`
 	// RemoteVolumeArc: a pointer so "off" is distinguishable from absent.

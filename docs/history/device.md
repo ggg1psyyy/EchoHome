@@ -2089,3 +2089,15 @@ including why hashing is worth it when deleting the file defeats it, is in
   and brightness, on or off (the owner's ask, after trying the scene's
   reply colours): meter and drift alike; the meter keeps the scene's
   response curve. A colour change on the light repaints it at once.
+- 2026-11-19: the DHCP hostname without changing emOS. On 00LQ emOS runs
+  `/sbin/udhcpc -B -f -i wlan0 -s /tmp/udhcpc.sh` (init.c net_main,
+  `dhcp_fos6`), no hostname; `/sbin/udhcpc` is a symlink to busybox on the
+  rootfs RAM disk, which is writable; init (its net worker, the client's
+  parent) respawns the client when it exits (`dhc = -1`, then `spawn(dhcp)`
+  on the next 5 s turn with carrier). So the firmware swaps the symlink for
+  a wrapper adding `-x hostname:` and stops the client: every request and
+  renewal carries the name, where a second one-shot client would have left
+  renewals without it. emOS's hook acts on bound and renew only, so the
+  address is not flushed in the gap. The name is the label as a DNS label
+  plus the serial's last four (`em_labels.hostname`); a rename whose
+  hostname another Echo has is refused.

@@ -232,6 +232,18 @@ cmdline. **Non-printable ASCII is rejected.**
 **A POINTER**; **written only when the content changes**; **temp file +
 rename**.
 
+## The DHCP hostname (`internal/dhcpname`, `cmd/dhcpname.go`)
+
+emOS's init starts busybox udhcpc by path with no hostname and restarts it
+within ~5 s when it exits. The firmware replaces the `/sbin/udhcpc` symlink
+on the RAM-disk root with a wrapper adding `-x hostname:<dhcpHostname>`
+(the controller's `em_labels.hostname`, kept in the kept config) and stops
+the client so init restarts it through the wrapper. **The wrapper is run
+before it goes in, only a DNS label is ever written into it, and if no
+client comes back through it in 30 s the symlink is restored**: a DHCP
+client that never returns takes the Echo offline at its lease's end.
+Redone at each start; boards on Amazon's `dhcpcd` are left alone.
+
 ## Files the firmware keeps on the Echo
 
 All in `/data/local/etc/echomuse/` (a path emOS shares: never rename it):
