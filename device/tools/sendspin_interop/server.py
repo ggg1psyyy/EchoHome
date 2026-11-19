@@ -480,6 +480,33 @@ async def scenario_controller() -> None:
         await server.close()
 
 
+async def scenario_switched_off_and_on() -> None:
+    print("== switched off and on: a server that dialled the player redials it")
+    server = SendspinServer(asyncio.get_running_loop(), Identity.generate(), "interop-server",
+                            pairing_store=InMemoryServerPairingStore())
+    client = Client("-unpaired")
+    ready = await client.start("/tmp/offon.json")
+    cid = ready["clientId"]
+    try:
+        # As Music Assistant dials a manually entered address.
+        server.connect_to_client(URL, retry_initial_connection=True)
+        await until(lambda: (c := server.get_client(cid)) is not None and c.is_connected, 10, "never connected")
+        await server.trust_unpaired(cid)
+        await until(lambda: player_available(server, cid), 15, "never available")
+        await client.command("off")
+        await client.wait("off", 5)
+        await until(lambda: (c := server.get_client(cid)) is None or not c.is_connected, 10, "still connected after off")
+        await asyncio.sleep(3)
+        await client.command("on")
+        await client.wait("on", 5)
+        await until(lambda: (c := server.get_client(cid)) is not None and c.is_connected, 20,
+                    "the server never redialled the player switched back on")
+        print("   redialled")
+    finally:
+        await client.stop()
+        await server.close()
+
+
 async def stream_start(group):
     """A stream that keeps the group playing until stopped."""
     st = group.start_stream()
@@ -552,7 +579,7 @@ async def main() -> int:
     logging.basicConfig(level=logging.WARNING)
     failed = 0
     for sc in (scenario_pair_and_play, scenario_unpaired, scenario_live_buffer, scenario_opus,
-               scenario_controller):
+               scenario_controller, scenario_switched_off_and_on):
         try:
             await sc()
             print("   PASS")

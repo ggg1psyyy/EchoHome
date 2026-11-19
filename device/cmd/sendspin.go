@@ -128,10 +128,15 @@ func applySendspinConfig(spk *speaker.PcmSpeaker, cc *client.ControlClient, vol 
 	defer ss.mu.Unlock()
 	if ss.c != nil && (!on || name != ss.name) {
 		spk.SetMusicSource(nil)
-		reason := "user_request"
-		if on {
-			reason = "restart"
-		}
+		// "restart" when switched off too: it is the one goodbye after which
+		// a server that dialled the player dials it again (aiosendspin 9.1.1
+		// and 10.2.1, should_retry_server_initiated_connection), with a
+		// backoff of up to 5 min, so the player comes back when switched on.
+		// After "user_request" it never did: across VLANs, where Music
+		// Assistant dials a manually entered address only when its provider
+		// starts, the Echo stayed gone until Music Assistant restarted (00LQ,
+		// 2026-11-19). The player stays listed, unavailable, meanwhile.
+		reason := "restart"
 		ss.c.Stop(reason)
 		ss.c = nil
 		log.Printf("[sendspin] player stopped (%s)", reason)

@@ -100,6 +100,24 @@ func main() {
 				}
 				cur.Store(n)
 				emit(map[string]any{"event": "relinked"})
+			case "off", "on":
+				// Home Assistant's switch: the player stopped as the firmware
+				// does ("restart"), or a new one started on the same store.
+				if sc.Text() == "off" {
+					cur.Load().Stop("restart")
+					emit(map[string]any{"event": "off"})
+					continue
+				}
+				n, err := sendspin.New(cfg)
+				if err == nil {
+					err = n.Start()
+				}
+				if err != nil {
+					emit(map[string]any{"event": "error", "error": err.Error()})
+					continue
+				}
+				cur.Store(n)
+				emit(map[string]any{"event": "on"})
 			case "external on":
 				cur.Load().SetExternal(true)
 			case "external off":

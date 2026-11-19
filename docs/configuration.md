@@ -248,7 +248,9 @@ player** switch in Home Assistant (on the Echo's own ESPHome device) turns
 the player off and on. That switch refuses to turn on until the Echo is
 paired, or the setup tool allows playing without pairing. The two switches
 set the same thing, and the last change wins; the setup tool's shows the
-value it last set.
+value it last set. Switched off, the Echo stays listed in Music Assistant as
+unavailable; switched on again, Music Assistant reconnects within a few
+seconds, or up to 5 minutes after a long time off.
 
 The token pairs the Echo with a server, so treat it like a password. Anyone
 who has it can pair with that Echo. Pairing is remembered on both sides, so it

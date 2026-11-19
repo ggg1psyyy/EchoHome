@@ -2049,3 +2049,13 @@ including why hashing is worth it when deleting the file defeats it, is in
   (keys 30, 31, never released, not reused). Tested on 00LQ with Music
   Assistant across VLANs by "Manual IP addresses for discovery" in its
   Sendspin provider: playback, and the button's pause and resume.
+- 2026-11-19: switched off, the player says goodbye "restart", not
+  "user_request". Across VLANs Music Assistant dials the address entered
+  under "Manual IP addresses for discovery" only when its Sendspin provider
+  starts (music_assistant providers/sendspin/provider.py, `connect_to_client`
+  with `retry_initial_connection`), and after a dialled connection ends it
+  dials again only after "restart" (aiosendspin 9.1.1 and 10.2.1,
+  `should_retry_server_initiated_connection`; "shutdown" does not either,
+  tried). With "user_request" 00LQ switched off and on in HA stayed gone
+  until Music Assistant restarted. Proven by the interop's "switched off
+  and on" scenario against both versions. Backoff doubles to 300 s.
