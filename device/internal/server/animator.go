@@ -46,6 +46,9 @@ type AnimSpec struct {
 	Timers       []TimerArc `json:"-"`
 	TimerScaleMs int        `json:"-"`
 	TimersPaused bool       `json:"-"`
+	// Source "music": the meter follows the music plane's level, not the
+	// voice's (the ring while music plays). Device-local.
+	Source string `json:"-"`
 
 	// ── meter-only response curve ────────────────────────────────────────
 	// Pointer-typed so 0 is expressible and "absent" is distinguishable
@@ -217,6 +220,10 @@ func (s *Server) getAudioLevel() float64 {
 	return math.Float64frombits(s.audioLevel.Load())
 }
 
+// SetMusicLevel gives the meter the music plane's level, for a spec with
+// Source "music". Set once at start-up, before any animation.
+func (s *Server) SetMusicLevel(f func() float64) { s.musicLevel = f }
+
 // runPulse throbs the palette sinusoidally between 15% and 100% brightness
 // over PeriodMs (default 2s) until replaced or TTL-expired.
 func (s *Server) runPulse(gen int, spec AnimSpec) {
@@ -266,6 +273,10 @@ func (s *Server) runMeter(gen int, spec AnimSpec) {
 	}
 	base := paletteFrame(spec.Colors)
 	attack, decay, floor, gamma, ref, curve := resolveMeter(spec)
+	levelOf := s.getAudioLevel
+	if spec.Source == "music" && s.musicLevel != nil {
+		levelOf = s.musicLevel
+	}
 	span := 1.0 - floor
 	env := 0.0
 	ticker := time.NewTicker(40 * time.Millisecond)
@@ -283,7 +294,7 @@ func (s *Server) runMeter(gen int, spec AnimSpec) {
 		}
 		// Input curve: normalise the speaker RMS against ref, then apply
 		// curve (<1 lifts quiet detail so consonants register).
-		level := math.Pow(math.Min(1, s.getAudioLevel()/ref), curve)
+		level := math.Pow(math.Min(1, levelOf()/ref), curve)
 		if level > env {
 			env += attack * (level - env) // fast attack
 		} else {

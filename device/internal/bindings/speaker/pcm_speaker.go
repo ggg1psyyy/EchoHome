@@ -147,6 +147,11 @@ type PcmSpeaker struct {
 	// and non-blocking: it runs on the ALSA pump goroutine.
 	levelTap func(rms float64)
 
+	// musicLevel is the music plane's RMS of the period last pumped (float64
+	// bits; 0 with none): the ring's music meter, which must follow the
+	// music and not the voice, the levelTap's.
+	musicLevel atomic.Uint64
+
 	// statsCb, when set, receives one StreamStats once per completed
 	// stream — at EOS consume in silenceLoop, flush included. Unlike echoTap
 	// it fires at most once per response, so a setter (OnStreamStats) is
@@ -615,6 +620,11 @@ func (p *PcmSpeaker) silenceLoop() {
 		if voice != nil && p.levelTap != nil {
 			level = periodRMS(voice)
 		}
+		var musicRMS float64
+		if music != nil {
+			musicRMS = periodRMS(music)
+		}
+		p.musicLevel.Store(math.Float64bits(musicRMS))
 
 		var out []byte
 		if p.stock.Load() {
@@ -1014,6 +1024,9 @@ func (p *PcmSpeaker) Close() {
 // is mono duplicated L=R and the LED meter needs ~2 significant digits at
 // ~23Hz, so 512 of 2048 frames is plenty at a quarter of the cost. Runs on
 // the ALSA pump goroutine: no allocation, integer accumulate.
+// MusicLevel is the music plane's RMS (0..1) as it is written now.
+func (p *PcmSpeaker) MusicLevel() float64 { return math.Float64frombits(p.musicLevel.Load()) }
+
 func periodRMS(period []byte) float64 {
 	if len(period) < 4 {
 		return 0

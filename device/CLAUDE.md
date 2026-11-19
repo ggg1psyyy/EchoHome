@@ -95,8 +95,9 @@ on it and follows a changed IP by it. Messages are generated from aioesphomeapi'
 (`tools/esphome_gen`). **Entity keys are append-only**: media player 1, event
 2, ambient 3, mic muted 4, CPU 5, hottest zone 6, Software Mute 20, mute ring
 21, remote volume arc 22, live listening 23, LED Ring 24, start call 25,
-multi-tap 26, Bluetooth proxy 27, wake word mic 28, Sendspin player 29
-(30 and 31 were on a development build only: not reused). **Timers read Go's
+multi-tap 26, Bluetooth proxy 27, wake word mic 28, Sendspin player 29,
+ring while music plays 32 (30 and 31 were on a development build only: not
+reused). **Timers read Go's
 monotonic clock**, never the wall clock HA's time may step.
 
 ### The Echo's own settings (`internal/owned`, `cmd/owned.go`)

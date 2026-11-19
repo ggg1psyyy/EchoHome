@@ -168,6 +168,7 @@ func main() {
 	}
 
 	s := server.NewServer(buttonController, micIn, pcmSpeaker)
+	s.SetMusicLevel(pcmSpeaker.MusicLevel) // the ring while music plays
 	srvPtr.Store(s)
 
 	// Local duck at the device's own wake crossing, confirmed or released by
@@ -711,6 +712,7 @@ func main() {
 	}
 	startStandaloneIncubator(s)
 	applyOwnedAtBoot()
+	go watchMusicRing()
 
 	// Heap-profile dump on SIGUSR1 — the ~1MB/h leak hunt (2026-07-17).
 	// The device accepts no inbound connections, so instead of an HTTP pprof

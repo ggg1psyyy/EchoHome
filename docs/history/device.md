@@ -2059,3 +2059,13 @@ including why hashing is worth it when deleting the file defeats it, is in
   tried). With "user_request" 00LQ switched off and on in HA stayed gone
   until Music Assistant restarted. Proven by the interop's "switched off
   and on" scenario against both versions. Backoff doubles to 300 s.
+- 2026-11-19: the ring while music plays, the owner's ask: a select (32,
+  "Ring while music plays", kept on the Echo as an index into an
+  append-only list: Off, Level meter, Colour drift) so more can follow. It
+  takes the idle ring in place of the LED Ring light while HA's media
+  player plays or a Sendspin stream is active (polled every 250 ms,
+  `watchMusicRing`), under everything the satellite shows. The meter is the
+  scene's reply meter with `Source: "music"`: the speaker's levelTap is the
+  voice plane's alone by design, so the music plane's RMS is measured
+  beside it (`PcmSpeaker.MusicLevel`, before mixing) and the animator reads
+  that instead.

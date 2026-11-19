@@ -67,6 +67,9 @@ type Server struct {
 	// audioLevel holds the live speaker RMS as float64 bits — written by
 	// the speaker's ALSA pump via SetAudioLevel, read by the meter anim.
 	audioLevel atomic.Uint64
+	// musicLevel, when set, is the music plane's level, which a meter with
+	// Source "music" follows (SetMusicLevel).
+	musicLevel func() float64
 
 	// volumeSeeded is true once the device has an authoritative volume this
 	// run: seeded from the controller's stored startupVolume on the first

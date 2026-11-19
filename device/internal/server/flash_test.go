@@ -1,7 +1,9 @@
 package server
 
 import (
+	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,4 +79,26 @@ func TestFlashOnAMutedConnectedDeviceReturnsToRed(t *testing.T) {
 	if got := ring.last(); got.R != 180 || got.G != 0 {
 		t.Fatalf("muted device did not return to the red ring: %+v", got)
 	}
+}
+
+// A meter with Source "music" follows the music plane's level, not the
+// voice's: the ring while music plays.
+func TestAMusicMeterFollowsTheMusicNotTheVoice(t *testing.T) {
+	ring := &recordingRing{}
+	s := testServer(ring)
+	var music atomic.Uint64
+	s.SetMusicLevel(func() float64 { return math.Float64frombits(music.Load()) })
+	s.SetAudioLevel(1) // a loud reply on the voice plane: not what it follows
+	zero := 0.0
+	s.StartAnim(AnimSpec{Pattern: "meter", Source: "music", Colors: [][3]uint8{{200, 200, 200}}, Floor: &zero})
+	time.Sleep(200 * time.Millisecond)
+	if got := ring.last(); got.R > 5 {
+		t.Fatalf("silent music, yet the ring is lit by the voice: %+v", got)
+	}
+	music.Store(math.Float64bits(0.5))
+	time.Sleep(300 * time.Millisecond)
+	if got := ring.last(); got.R < 100 {
+		t.Fatalf("loud music, yet the ring is dim: %+v", got)
+	}
+	s.StartAnim(AnimSpec{Pattern: "off"})
 }

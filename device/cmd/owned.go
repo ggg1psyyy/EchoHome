@@ -93,6 +93,7 @@ func setupOwned(s *server.Server, muteRingCapable bool) []esphome.Entity {
 	if client.MicUnavailable() == "" {
 		out = append(out, wakeMicEntity())
 	}
+	out = append(out, musicRingEntity())
 	return out
 }
 

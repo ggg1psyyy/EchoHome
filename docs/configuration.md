@@ -10,7 +10,8 @@ whether the Echo applies it: [config-keys.md](config-keys.md).
 On the Echo's ESPHome device page. The device carries the Echo's name on the
 dashboard (renaming it there renames it in Home Assistant, unless you named
 it in Home Assistant yourself). Each setting is kept **on the Echo** and
-survives reboots with no controller; the dashboard has no control for them.
+survives reboots with no controller; the dashboard has no control for them,
+Sendspin's player aside.
 
 | Entity | What it does |
 |---|---|
@@ -21,6 +22,8 @@ survives reboots with no controller; the dashboard has no control for them.
 | **Voice Incubator live listening** (switch) | Lets the Voice Incubator app's Test page listen outside a call. Off by default; the ring pulses red while it listens. |
 | **Bluetooth proxy** (switch) | A passive ESPHome Bluetooth proxy (advertisements only, no connections). Scanning costs some of the Echo's WiFi; the scan stands aside during calls. |
 | **Wake word microphone** (select) | Which microphone the satellite hears on: the default (the centre one on a Dot 2), or one of the edge microphones, for an Echo whose centre microphone has failed. |
+| **Sendspin player** (switch) | Makes the Echo a Sendspin player for Music Assistant. Pair it in the setup tool first ([Sendspin](#sendspin-early-access)); until then it refuses to turn on. |
+| **Ring while music plays** (select) | What the ring shows while music plays (Home Assistant's or a Sendspin group's), in place of the LED Ring light: **Off**, a **Level meter** that follows the music in the ring scene's reply colours, or a slow **Colour drift**. Calls, the volume arc and the mute ring still come first; in night mode it is dim and amber. |
 
 The device's MAC is the Echo's WiFi chip's, as an ESPHome device reports
 its own: the address in your router's DHCP leases, which Home Assistant

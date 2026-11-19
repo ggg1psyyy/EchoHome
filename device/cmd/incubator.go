@@ -130,9 +130,13 @@ func (e *echoParts) Show(v incubator.RingView) {
 		if r == incubator.RingThinking && v.Speaker != nil {
 			spec = speakerSpin(spec, *v.Speaker)
 		}
-		// Dark between calls: the LED Ring light, if it is on (cmd/ledring.go).
+		// Dark between calls: the ring while music plays, if chosen
+		// (cmd/musicring.go), else the LED Ring light, if it is on
+		// (cmd/ledring.go).
 		if r == incubator.RingOff {
-			if idle, ok := ledRingIdle(); ok {
+			if music, ok := musicRingSpec(specs); ok {
+				spec = music
+			} else if idle, ok := ledRingIdle(); ok {
 				spec = idle
 			}
 		}
