@@ -21,6 +21,7 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
+	"github.com/wilbowes/EchoMuse/internal/platform"
 	"github.com/wilbowes/EchoMuse/internal/server"
 	"github.com/wilbowes/EchoMuse/pkg/board"
 )
@@ -84,6 +85,53 @@ type esphomeEcho struct {
 }
 
 var esphomeOnEcho *esphomeEcho
+
+// esphomeMACPath keeps the WiFi MAC the ESPHome device reports, once found.
+const esphomeMACPath = "/data/local/etc/echomuse/esphome.mac"
+
+// esphomeMAC is the MAC the Echo's ESPHome device reports, as a real ESPHome
+// device reports its WiFi chip's: Home Assistant keys the device on it and
+// matches DHCP leases and a router integration's devices against it, which
+// is how it follows a changed address with no mDNS. The chip's factory
+// address (platform.WiFiMAC), kept on the Echo once found so a boot that
+// cannot read it yet reports the same one; with none ever found, the
+// address derived from the serial that firmware before 2026-11-19 used for
+// every Echo (locally administered, 02:EC, sha256 of "echohome:"+serial),
+// which no DHCP lease can match. That derivation dates from the controller's
+// emulated ESPHome devices, which lived on the controller's host and had no
+// chip of their own.
+func esphomeMAC(serial string) string {
+	kept := strings.TrimSpace(readFileString(esphomeMACPath))
+	if mac := platform.WiFiMAC(""); mac != "" {
+		if mac != kept {
+			if err := atomicfile.Write(esphomeMACPath, []byte(mac+"\n"), 0o644); err != nil {
+				log.Printf("[esphome] WiFi MAC not kept: %v", err)
+			}
+		}
+		return mac
+	}
+	if kept != "" {
+		log.Printf("[esphome] WiFi MAC not readable now: the kept one")
+		return kept
+	}
+	log.Printf("[esphome] no WiFi MAC found: one derived from the serial")
+	sum := sha256.Sum256([]byte("echohome:" + serial))
+	return fmt.Sprintf("02:EC:%02X:%02X:%02X:%02X", sum[0], sum[1], sum[2], sum[3])
+}
+
+// echoMAC is esphomeMAC, found once per run: the ESPHome device and the
+// satellite carry the same one, as Voice Incubator matches a satellite to
+// its ESPHome device (and so its media player) by MAC (voice_incubator
+// hass.py, device_media_player).
+var echoMAC = sync.OnceValue(func() string { return esphomeMAC(client.GetSerialNo()) })
+
+func readFileString(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
 
 // esphomeKeyPath is the server's key, base64 as Home Assistant takes it.
 const esphomeKeyPath = "/data/local/etc/echomuse/esphome.key"
@@ -170,12 +218,11 @@ func setupESPHome(cc *client.ControlClient, s *server.Server, spk *speaker.PcmSp
 	if len(short) > 12 {
 		short = short[len(short)-12:]
 	}
-	sum := sha256.Sum256([]byte("echohome:" + serial))
 	id := board.IDOf(board.Current())
 	e := &esphomeEcho{cc: cc, info: esphome.DeviceInfo{
 		Name:         "echohome-" + short,
 		FriendlyName: "EchoHome " + strings.ToUpper(short[max(0, len(short)-4):]),
-		MAC:          fmt.Sprintf("02:EC:%02X:%02X:%02X:%02X", sum[0], sum[1], sum[2], sum[3]),
+		MAC:          echoMAC(),
 		Manufacturer: "EchoHome",
 		Model:        id,
 		// A dot is required: HA splits project_name on it.

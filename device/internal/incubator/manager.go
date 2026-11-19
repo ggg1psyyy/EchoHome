@@ -89,7 +89,7 @@ func (m *Manager) Apply(st Settings) {
 	if err != nil {
 		m.Firewall.Close(st.Port)
 		log.Printf("[incubator] satellite not started: %v", err)
-		m.Send(State{Listening: false, Port: st.Port, Error: err.Error()})
+		m.Send(State{Listening: false, Port: st.Port, Error: err.Error(), MAC: st.MAC})
 		return
 	}
 	m.s, m.want = s, st

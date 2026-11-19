@@ -1940,3 +1940,26 @@ including why hashing is worth it when deleting the file defeats it, is in
   double and rounding once (`msf_math.h`, by `-include`, vendored sources
   untouched): all 963 table entries equal the reference under 2.41, 2.39
   and 2.36, and the test fails on 2.36 without it.
+
+## The Echo's ESPHome device (`internal/esphome`, `cmd/esphome.go`)
+
+- 2026-11-19: the device reports its WiFi chip's factory MAC
+  (`platform.WiFiMAC`: a wireless interface, `addr_assign_type` 0, a
+  globally unique unicast address; the default route's first), kept in
+  `esphome.mac`. Until then it reported `02:EC` + sha256("echohome:" +
+  serial), a scheme from the controller's emulated ESPHome devices, which
+  lived on the controller's host and had no chip. That address can never
+  match a DHCP lease, so Home Assistant's dhcp integration
+  (`registered_devices`, by the device registry's MAC connection) could
+  not follow an Echo's changed IP. Real ESPHome devices follow a changed
+  IP by mDNS (own subnet), by DHCP/router-integration matching on the real
+  MAC, or by DNS when the router registers the DHCP hostname; HA's ESPHome
+  integration discovers new devices only by mDNS and MQTT
+  (`esphome/discover/#`). Measured: the router's DNS has no name for 00LQ
+  (reverse lookup NXDOMAIN): emOS's `udhcpc` is started without
+  `-x hostname:`, so no hostname reaches the router. The satellite takes
+  the same MAC (Voice Incubator matches a satellite to its ESPHome device's
+  media player by MAC, `hass.py` `device_media_player`) and reports it in
+  `incubator_state`, so the controller's record across VLANs carries it.
+  Ruled out: unicast mDNS to the HA host (a dozen sockets on its UDP 5353;
+  Linux hands a unicast datagram to one of them).

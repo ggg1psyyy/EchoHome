@@ -331,6 +331,17 @@ async def on_incubator_state(device, msg: dict) -> None:
                 log.info(f"[{device_id}] incubator_state listening, not asked to: ignored")
             return
         rec.state = state
+        # The MAC the Echo's satellite announces (its WiFi chip's, the one
+        # its ESPHome device reports): the record here must carry the same,
+        # or the app sees two satellites. Firmware that does not say keeps
+        # the stored one.
+        try:
+            mac = proto.normalise_mac(st["mac"]) if st.get("mac") else None
+        except ValueError:
+            mac = None
+        if mac and mac != rec.mac:
+            await _unadvertise(rec)
+            rec.mac = mac
         if isinstance(state["port"], int) and 0 < state["port"] < 65536:
             if state["port"] != rec.port:
                 await _unadvertise(rec)

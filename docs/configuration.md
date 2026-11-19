@@ -22,6 +22,13 @@ survives reboots with no controller; the dashboard has no control for them.
 | **Bluetooth proxy** (switch) | A passive ESPHome Bluetooth proxy (advertisements only, no connections). Scanning costs some of the Echo's WiFi; the scan stands aside during calls. |
 | **Wake word microphone** (select) | Which microphone the satellite hears on: the default (the centre one on a Dot 2), or one of the edge microphones, for an Echo whose centre microphone has failed. |
 
+The device's MAC is the Echo's WiFi chip's, as an ESPHome device reports
+its own: the address in your router's DHCP leases, which Home Assistant
+matches to follow a changed IP. Firmware before 3.0.0-ea.2 reported one
+derived from the serial instead; after updating from it, delete the Echo's
+ESPHome entry in Home Assistant and add it again from **Discovered** (Home
+Assistant refuses a device whose MAC changed), once.
+
 An Echo updated from firmware before EchoHome starts with these at their
 defaults, except the wake word microphone, which carries over from the
 dashboard. Which wake words it listens for is set in the Voice Incubator

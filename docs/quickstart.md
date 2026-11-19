@@ -74,6 +74,13 @@ The Echo then finds the setup tool on its own. Approve it in the dashboard
    found across VLANs as long as the setup tool runs and Home Assistant can
    reach the Echo on port 6053. Not listed? Add **ESPHome** by hand with the
    Echo's address and port 6053.
+
+   **Give each Echo a DHCP reservation in your router** if Home Assistant is
+   on another network (VLAN) than the Echo, as for any ESPHome device there:
+   mDNS does not cross VLANs, so a changed address would not reach Home
+   Assistant. The Echo reports its WiFi chip's own MAC, the one in your
+   router's leases, so the reservation and Home Assistant name the same
+   device.
 2. In the **Voice Incubator app**, add the Echo as a satellite; it is
    announced on the network as `echomuse-<serial>`. Choose its wake words on
    the app's *Wake words* page.

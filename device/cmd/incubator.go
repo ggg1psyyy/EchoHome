@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -274,7 +275,7 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 	cc.OnIncubatorSatellite(func(m client.IncubatorSatellite) {
 		// Always standalone (EchoHome): the satellite is kept on the Echo
 		// and outlives the controller, whatever the controller's switch says.
-		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: m.MAC, Port: m.Port,
+		incubatorMgr.Apply(incubator.Settings{Enabled: m.Enabled, Name: m.Name, MAC: satelliteMAC(m.MAC), Port: m.Port,
 			Monitor: reconcileOwnedMonitor(m.Monitor), Standalone: m.Enabled})
 		if m.Enabled {
 			incubatorSave()
@@ -355,7 +356,9 @@ func startStandaloneIncubator(srv *server.Server) {
 		srv.SeedVolume(*saved.Volume)
 	}
 	log.Printf("[incubator] starting the saved standalone satellite as %s", saved.Name)
-	incubatorMgr.Apply(saved.Settings())
+	st := saved.Settings()
+	st.MAC = satelliteMAC(st.MAC)
+	incubatorMgr.Apply(st)
 }
 
 // incubatorHoldMs is a hold, not a tap: the controller's BUTTON_HOLD_MS
@@ -378,6 +381,18 @@ func incubatorLocalPress(heldMs int) {
 	if !incubatorMgr.Press() {
 		log.Println("[incubator] press with no satellite running — ignored")
 	}
+}
+
+// satelliteMAC is the MAC the satellite announces and says in HELLO: the
+// Echo's own (echoMAC, its WiFi chip's), the one its ESPHome device reports,
+// so the app links the two. The controller's, from the message or the saved
+// copy, only where the Echo has none of its own: the controller's record
+// predates the Echo's ESPHome device and names no chip.
+func satelliteMAC(pushed string) string {
+	if mac := strings.ToLower(echoMAC()); mac != "" && !strings.HasPrefix(mac, "02:ec:") {
+		return mac
+	}
+	return pushed
 }
 
 // announceSatellite puts the Echo's own satellite on the network as the app

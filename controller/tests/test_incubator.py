@@ -436,3 +436,23 @@ def test_a_deleted_echo_loses_its_record_and_its_announcement(on_echo):
         assert len(on_echo["echo"].sent) == sent, "nothing is sent to a deleted Echo"
         assert inc.backend_of(DEV) == inc.BACKEND_HA
     asyncio.run(run())
+
+
+def test_the_record_takes_the_mac_the_echos_satellite_announces(on_echo):
+    """The Echo's satellite announces its WiFi chip's MAC (the one its ESPHome
+    device reports); the record here must carry the same, or the app keys two
+    satellites. A report without one, or with one that is not a MAC, keeps
+    the stored one."""
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(on_echo["echo"], listening=True, port=6055)
+        (first,) = on_echo["registered"]
+        assert first.properties[b"mac"] == b"02:ec:12:34:56:78"
+        await _state(on_echo["echo"], listening=True, port=6055, mac="FC:A1:83:12:34:56")
+        assert len(on_echo["unregistered"]) == 1 and len(on_echo["registered"]) == 2
+        assert on_echo["registered"][1].properties[b"mac"] == b"fc:a1:83:12:34:56"
+        await _state(on_echo["echo"], listening=True, port=6055, mac="fc:a1:83:12:34:56")
+        await _state(on_echo["echo"], listening=True, port=6055, mac="not a mac")
+        await _state(on_echo["echo"], listening=True, port=6055)
+        assert len(on_echo["registered"]) == 2, "re-announced with nothing changed"
+    asyncio.run(run())

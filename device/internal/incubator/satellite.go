@@ -46,6 +46,10 @@ type State struct {
 	// (its Test page listening live).
 	Monitored bool   `json:"monitored,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// MAC is the one the satellite announces and says in HELLO, so the
+	// controller's record of it (across VLANs) carries the same: the app
+	// keys a satellite on it.
+	MAC string `json:"mac,omitempty"`
 }
 
 // keepAlive matters: an app host that loses power sends no FIN, and the
@@ -113,6 +117,7 @@ func (s *Server) Resend() {
 // leave in the order the changes happened: a closing connection's
 // "disconnected" can never arrive after the next one's "connected".
 func (s *Server) setLocked(st State) {
+	st.MAC = s.cfg.MAC
 	s.state = st
 	if s.onState != nil {
 		s.onState(st)

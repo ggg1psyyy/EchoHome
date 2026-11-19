@@ -89,7 +89,9 @@ satellite (`incubatorStreamEnded`: its ring and duck end there). Its
 
 The native API on 6053, **always on from boot**, plaintext until Home
 Assistant provisions a key (`api_encryption_provisionable`, `esphome.key`),
-then Noise. Messages are generated from aioesphomeapi's descriptors
+then Noise. **Its MAC is the WiFi chip's** (`platform.WiFiMAC`, kept in
+`esphome.mac`), shared with the satellite: Home Assistant keys the device
+on it and follows a changed IP by it. Messages are generated from aioesphomeapi's descriptors
 (`tools/esphome_gen`). **Entity keys are append-only**: media player 1, event
 2, ambient 3, mic muted 4, CPU 5, hottest zone 6, Software Mute 20, mute ring
 21, remote volume arc 22, live listening 23, LED Ring 24, start call 25,
@@ -230,7 +232,7 @@ rename**.
 All in `/data/local/etc/echomuse/` (a path emOS shares: never rename it):
 `config.json` (kept config), `settings.json` (owned settings), `state.json`
 (mute), `incubator.json` (standalone satellite), `ledring.json`,
-`esphome.key`, `sendspin.json`, `controller.json`, `ca.pem`, `token`,
+`esphome.key`, `esphome.mac`, `sendspin.json`, `controller.json`, `ca.pem`, `token`,
 `console.pw`, `console.timeout`, `wifi_pending`, `aec_echo_path.v3.bin`.
 
 ## cgo dependency
