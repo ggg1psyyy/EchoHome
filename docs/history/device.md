@@ -87,6 +87,18 @@ and the only visible sign was a wall of paragraphs. Fixing it afterwards means
 (`gh release edit` has no `--notes-file`), and re-appending GitHub's generated
 commit list by hand, since the PATCH replaces the whole body.
 
+- 2026-11-19: the compiler's Go moved from the image's 1.24.0 to 1.26.11
+  (Dependabot's x/crypto 0.59 / x/sys 0.50 need `go 1.26`). Go 1.25 and 1.26
+  change nothing for linux/android arm (their release notes' Ports). Tested
+  before the move: the firmware built by the image with 1.26.11 swapped in is
+  the same kind of binary (ELF 32-bit ARM, Android 22, /system/bin/linker),
+  vet and every Go test passed under 1.26 with -race, and on 00LQ (emOS) it
+  ran with no restart, a satellite call, the wake word, the button, both
+  mutes, HA media, the ring and the Bluetooth proxy working. Not on
+  hardware yet: Sendspin. On emOS the firmware runs against the FireOS
+  system partition's bionic and linker, so a FireOS Echo's runtime is the
+  one tested. Note: CI's govulncheck step cannot fail the job (`|| true`).
+
 ## The microphone path (the satellite's)
 
 Playback has a second plane: music rides `0x04`/`0x05` into its own buffer and

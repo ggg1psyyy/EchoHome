@@ -32,9 +32,9 @@ go test ./internal/... ./pkg/...                  # host, pure-Go logic only
   (WriteFrames blocks signals around `pcm_write`, #707). It also carries
   `GetAudioStreamChunked` (fork #4, #1139). **Merge fork PRs with a merge
   commit, never squash**.
-- **The compiler base (`compiler/Dockerfile`, Go 1.24.0, NDK 21.4.7075529) is
-  pinned by DIGEST and must stay so**; **moving the pin needs a real device in
-  the loop**.
+- **The compiler base (`compiler/Dockerfile`: NDK 21.4.7075529, with Go
+  1.26.11 swapped in, sha256-checked) is pinned by DIGEST and must stay so**;
+  **moving the pin, or its Go, needs a real device in the loop**.
 - `compile.sh` embeds the version via `-ldflags "-X .../client.Version=..."`;
   dirty trees get `YYYYMMDD-HHMM-dev`.
 - **Release**: a `v*` tag runs `release.yml`. **Tag with `git tag -a

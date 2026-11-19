@@ -222,7 +222,7 @@ jobs:
       - name: Install govulncheck
         # GOTOOLCHAIN=auto for the INSTALL only, so Go fetches whatever
         # toolchain the tool needs to compile itself. golang.org/x/vuln raised
-        # its minimum to Go 1.25 at v1.2.0, and this runner is pinned to the
+        # its minimum to Go 1.25 at v1.2.0, and this runner was pinned to the
         # firmware's 1.24.0 via device/go.mod — so `@latest` started failing
         # on every run, on a check whose scan step already carries `|| true`
         # and cannot fail the job. Pure noise: red emails for a check that
