@@ -1959,7 +1959,21 @@ checking the release's attestation before use (firmware does not either).
 `POST /api/emos/upload` takes a locally built `emos-payload.zip`, as Local
 Build does for firmware.
 
-## Provisioning wizard (`dashboard.jsx`, `_WIZARD_STEPS`)
+## Provisioning wizard (`dashboard.jsx`, `_EMOS_STEPS`)
+
+- 2026-11-19: EchoHome supports emOS only; the FireOS flow went. It had been
+  hidden behind `?flow=fireos` since 2026-11-15. Gone with it: its 13 steps
+  (`_WIZARD_STEPS`, `_STEP_MODE`, `CONNECT_STEPS`) and every handler and helper
+  only it reached (boot patching and `patchBootCmdline`, Magisk and its root
+  database, f1r30s, Alexa and debloat, its adb WiFi, `waitForFramework`),
+  found by what the emOS flow no longer reaches, not by the word FireOS. The
+  emOS flow still uses FireOS as donor (the system partition, the kernel,
+  amonet verdicts, TWRP), so those stay. Also gone: the debloat payload and
+  its three routes, the Magisk DB route, the Maintenance panel. A device that
+  positively reports `fireos` is shown as unsupported and refused OTA and
+  payload pushes (`em_platform.unsupported`); an absent `base_os` keeps the
+  old behaviour. Both Echoes in the fleet report `emos`. Not proven on
+  hardware: a full wizard run, which needs an Echo to reprovision.
 
 The WebUSB/ADB wizard that takes a stock Dot to a fielded device. Four rules,
 each of which has already been broken once and each of which fails *silently*

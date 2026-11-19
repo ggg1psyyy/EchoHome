@@ -17,6 +17,7 @@ import em_state
 
 class Live:
     android_userspace = False
+    unsupported = None
 
 
 def _run(coro):

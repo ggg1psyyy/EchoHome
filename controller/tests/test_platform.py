@@ -142,35 +142,6 @@ def _api_src():
     return (ROOT / "controller" / "em_api.py").read_text()
 
 
-def test_debloat_endpoint_refuses_server_side():
-    """
-    The Re-apply debloat endpoint refuses a non-Android device itself.
-
-    Greying the control out in the dashboard protects nothing — it is a plain
-    POST with a session token, so anyone with the network tab can call it, and
-    the cost is not a no-op: the write lands nowhere, TRANSFER_OK never comes,
-    and the transfer holds that device's shell lock for its whole timeout.
-    """
-    body = _sources.def_source("_post_debloat")
-    assert "android_userspace" in body, \
-        "_post_debloat does not check the base OS"
-
-
-def test_dashboard_uses_the_servers_answer_not_its_own():
-    """
-    The dashboard gates on `androidUserspace`, the derived value the API
-    sends, rather than re-deriving the rule from baseOs.
-
-    Two copies of one rule is one that can disagree with the endpoint that
-    actually refuses — the same failure CONFIG_SECTIONS is mirrored to avoid.
-    """
-    jsx = (ROOT / "controller" / "static" / "dashboard.jsx").read_text()
-    assert "androidUserspace" in jsx
-    assert "'Re-apply debloat'" in jsx
-    assert "androidUserspace" in src_near(jsx, "'Re-apply debloat'"), \
-        "the debloat control is not gated on androidUserspace"
-
-
 def src_near(text: str, needle: str, radius: int = 900) -> str:
     i = text.index(needle)
     return text[max(0, i - radius): i + radius]
@@ -249,3 +220,27 @@ def test_a_base64_that_does_not_decode_is_not_used(tmp_path):
 
 def test_no_decoder_is_reported_as_none(tmp_path):
     assert _probe(tmp_path, {}) == "DECODER:none"
+
+
+def test_only_a_positive_fireos_is_unsupported():
+    """EchoHome supports emOS only. A device that says FireOS is shown and not
+    served; one that says nothing, or something unknown, keeps today's
+    behaviour, since firmware too old to report its base must not lose a
+    control (CLAUDE.md: absence of base_os must NOT disable a control)."""
+    import em_platform as P
+    assert P.unsupported(P.FIREOS) == P.UNSUPPORTED_REASON
+    for base in (P.EMOS, P.UNKNOWN, None, "", "linux", "FIREOS"):
+        assert P.unsupported(base) is None, base
+    assert "emOS" in P.UNSUPPORTED_REASON and "reprovision" in P.UNSUPPORTED_REASON
+
+
+def test_every_path_that_acts_on_an_echo_refuses_an_unsupported_one():
+    """A FireOS Echo gets no firmware update (the OTA itself, and deploy-all,
+    which says why it skipped it) and no payload push (the connect
+    reconcile returns before any step)."""
+    ota = _sources.def_source("em_ota._run_update_locked")
+    assert "if live.unsupported:" in ota and "_update_failed(device_id, live.unsupported)" in ota
+    deploy = _sources.def_source("_post_deploy_all")
+    assert 'if live.unsupported:' in deploy and '"reason": "unsupported"' in deploy
+    rec = _sources.def_source("on_connect")
+    assert rec.index("if live.unsupported:") < rec.index("_reconcile_payloads(")

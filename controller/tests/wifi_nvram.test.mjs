@@ -120,14 +120,10 @@ check("it reads the symbol by name", fn.includes("'stWifiCfgDefault')"));
 check("it reads the record back before claiming success",
   fn.indexOf("await c.pull(REC)") > 0
   && fn.indexOf("await c.pull(REC)") < fn.indexOf("written from this device"));
-const emosSwitch = src.slice(src.indexOf("if (isEmos) switch (STEPS[stepIdx].id)"),
-                             src.indexOf("else switch (stepIdx)"));
-const fireSwitch = src.slice(src.indexOf("else switch (stepIdx)"),
-                             src.indexOf("else switch (stepIdx)") + 1500);
-check("the emOS flow runs it before installing EchoMuse",
-  /ensureWifiNvram\(c\);\s*\n\s*await runInstallEchoMuse/.test(emosSwitch));
-check("the FireOS flow does not — nvram_daemon owns the file there",
-  !fireSwitch.includes("ensureWifiNvram"));
+const stepSwitch = src.slice(src.indexOf("switch (STEPS[stepIdx].id)"),
+                             src.indexOf("if (abandoned()) return;", src.indexOf("switch (STEPS[stepIdx].id)")));
+check("the wizard runs it before installing EchoMuse",
+  /ensureWifiNvram\(c\);\s*\n\s*await runInstallEchoMuse/.test(stepSwitch));
 
 if (failures) {
   console.error(`\n${failures} failure(s)`);

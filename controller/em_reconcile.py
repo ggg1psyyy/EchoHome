@@ -1,9 +1,9 @@
 """
 What a device has installed, brought back in line when it connects.
 
-A device arriving is the one moment we know what it has: its wake word
-assets, start script, controller address list and (on Android) the debloat
-payload are checked here, debounced per device. An emOS device's previous
+A device arriving is the one moment we know what it has: its start script
+and controller address list are checked here, debounced per device (a FireOS
+Echo, which EchoHome does not support, gets nothing). An emOS device's previous
 boot is examined for a crash first, and its update trial confirmed, neither
 debounced.
 """
@@ -147,6 +147,11 @@ async def on_connect(device_id: str, live) -> None:
     that crashed and came back inside the window is exactly the one to look
     at, and the on-device marker already makes a repeat check one round trip.
     """
+    # A FireOS Echo is not served (em_platform.unsupported): its payloads
+    # assume emOS's layout, and its owner is told to reprovision.
+    if live.unsupported:
+        log.warning(f"[api] [{device_id}] {live.unsupported}")
+        return
     if not live.android_userspace:
         try:
             await _collect_crash_log(live, device_id)
@@ -174,14 +179,6 @@ async def _reconcile_payloads(device_id: str, live) -> bool:
         ("start script", lambda: em_payloads.sync_start_script(live, device_id)),
         ("controller address", lambda: em_payloads.sync_endpoints(live, device_id)),
     ]
-    # The debloat payload is Android-only: a pm-hide list and a Magisk
-    # service.d script. emOS has neither a package manager nor Magisk, so
-    # pushing it there spends a shell round trip to run `pm hide` against
-    # nothing and leave a boot script no init will read. Gated on the device
-    # having POSITIVELY said it is on emOS — see Device.android_userspace for
-    # why absence keeps today's behaviour.
-    if live.android_userspace:
-        steps.append(("debloat", lambda: em_payloads.sync_debloat(live, device_id)))
     finished = True
     for name, make in steps:
         # Re-read each time, and compare IDENTITY rather than presence: these
@@ -194,8 +191,8 @@ async def _reconcile_payloads(device_id: str, live) -> bool:
                      f"stopping before {name}")
             return False
         try:
-            # Only an explicit False is a failure: start script and debloat
-            # return nothing, and raise when they fail.
+            # Only an explicit False is a failure: the start script returns
+            # nothing, and raises when it fails.
             if await make() is False:
                 finished = False
         except Exception as e:

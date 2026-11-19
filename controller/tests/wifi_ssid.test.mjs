@@ -33,7 +33,7 @@ function liftFunction(name) {
 }
 
 const names = ["_wpaUnescape", "_bytesHex", "_hexBytes", "_ssidText",
-               "_ssidProblem", "_pskProblem", "_confSsid", "_wpaPsk"];
+               "_ssidProblem", "_pskProblem", "_wpaPsk"];
 const m = await import("data:text/javascript;base64," + Buffer.from(
   names.map(liftFunction).join("\n") + `\nexport { ${names.join(", ")} };`
 ).toString("base64"));
@@ -75,16 +75,6 @@ for (const p of ["short", "p".repeat(64), "has\nnewline", "café-pass"]) {
   check(`passphrase refused: ${JSON.stringify(p)}`, !!m._pskProblem(p));
 }
 
-// ── the conf line: quoted when it can be, hex when not ──
-for (const [name, want] of [
-  ['Bob\'s "Home"', 'ssid="Bob\'s "Home""'], ["back\\slash", 'ssid="back\\slash"'],
-  ["Café 🏠", 'ssid="Café 🏠"'], [" padded ", 'ssid=" padded "'],
-  ["tab\there", "ssid=7461620968657265"],
-]) {
-  check(`conf line for ${JSON.stringify(name)}`, m._confSsid(enc(name)) === want, m._confSsid(enc(name)));
-}
-check("conf line for non-UTF-8 bytes is hex", m._confSsid(Uint8Array.from([0xff, 0xfe])) === "ssid=fffe");
-
 // ── the PSK: IEEE 802.11i-2004 Annex H.4 test vectors ──
 check("IEEE vector 1", await m._wpaPsk("password", enc("IEEE"))
   === "f42c6fc52df0ebef9ebb4b90b38a5f902e83fe1b135a70e23aed762e9710a12e");
@@ -98,10 +88,6 @@ check("a 64-hex input is already the PSK", await m._wpaPsk("AB".repeat(32), enc(
 
 // ── the call sites ──
 const slice = (from, len) => src.slice(src.indexOf(from), src.indexOf(from) + len);
-const fire = slice("async function runConfigWifi", 12000);
-check("FireOS flow writes the SSID through _confSsid", fire.includes("const ssidConf = _confSsid(ssidB)")
-  && fire.includes("`\\t${ssidConf}`"));
-check("FireOS flow verifies the line it wrote", (fire.match(/includes\(ssidConf\)/g) || []).length === 2);
 const emos = slice("async function runEmosWifi", 3500);
 check("emOS flow sends only hex to the console", /setNet\('ssid', ssidHex\)/.test(emos)
   && /setNet\('psk', pskHex\)/.test(emos));

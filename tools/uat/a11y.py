@@ -45,8 +45,8 @@ def run(out: str) -> dict:
         p.wait_for_timeout(1500)
         home = p.url
         views["dashboard"] = scan(p)
-        # Every attached Echo: a FireOS and an emOS device show different
-        # controls (debloat, console password), so one is not a sample of all.
+        # Every attached Echo: devices can show different controls (the
+        # console password on emOS), so one is not a sample of all.
         for sn in st.get("serials") or []:
             short = sn[-4:]
             p.get_by_text(f"UAT {short}", exact=True).first.click()

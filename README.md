@@ -46,7 +46,8 @@ nothing of the room.
 ## Supported hardware
 
 The Echo Dot 2nd gen (biscuit), the Echo 2nd gen (radar) and the Echo Dot 3rd
-gen (donut), unlocked first. [EchoMuse's board guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/boards.md) says how a new one is
+gen (donut), unlocked first, on emOS (the setup wizard installs it). FireOS
+is not supported. [EchoMuse's board guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/boards.md) says how a new one is
 described.
 
 ## Getting started
@@ -86,8 +87,7 @@ The [quickstart](docs/quickstart.md) walks through all four.
 
 ## Known issues
 
-- Both 3.5 mm jack channels can be silent on emOS (EchoMuse #999); on FireOS
-  unplugging can stall the microphone (EchoMuse #117, #141).
+- Both 3.5 mm jack channels can be silent on emOS (EchoMuse #999).
 - emOS on FireOS 6 cannot join WPA3 networks; use WPA2 (EchoMuse #536).
 
 ## Documentation

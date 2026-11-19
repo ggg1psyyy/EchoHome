@@ -29,7 +29,7 @@ const mid = lift("_middleEllipsis");
 let failed = 0;
 const check = (name, cond) => { if (!cond) { failed++; console.error(`FAIL: ${name}`); } };
 check("emos reads emOS", label("emos") === "emOS");
-check("fireos reads FireOS 5", label("fireos") === "FireOS 5");
+check("fireos says it is not supported", label("fireos") === "FireOS 5 (not supported)");
 check("null shows nothing", label(null) === null);
 check("undefined shows nothing", label(undefined) === null);
 check("an unknown value shows nothing, not a guess", label("linux") === null);

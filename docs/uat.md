@@ -26,7 +26,7 @@ number.
 ## B — With the setup tool stopped
 
 Stop the add-on (or the container), then reboot the Echo (`kill -TERM 1`
-from the emOS console, which has no `reboot`; on FireOS pull the power).
+from the emOS console, which has no `reboot`).
 Everything here must work with nothing but Home Assistant and the app.
 
 1. **Wake word and a call**: say a wake word, ask something, hear the reply.

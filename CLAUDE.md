@@ -161,8 +161,10 @@ updated):
   (`ble_adverts_data`, `listen_session` — both only for firmware from before
   EchoHome). Adding a message is safe unnegotiated; MOVING one never is.
 - **A static boot property rides REGISTER, not the stats tick, and is
-  persisted.** `base_os` (schema v21): absence means Android for payload
-  gating, but must NOT disable a control.
+  persisted.** `base_os` (schema v21). **EchoHome supports emOS only**: a
+  positive `fireos` is shown as unsupported and gets no firmware OTA and no
+  payload push (`em_platform.unsupported`); absence keeps old behaviour and
+  must NOT disable a control.
 - The controller sets the device clock via `time_ms` on the `ack`, stepped
   only past 30s; HA's `GetTimeRequest` sets it with no controller.
 - **Degrade to old behaviour, never to a wrong answer.** Unknown fields and

@@ -1,17 +1,14 @@
-// Tests for _pmVerdict() in dashboard.jsx — what the wizard concludes from a
-// `pm disable` / `pm hide` reply.
+// Tests for the wizard's mode checks in dashboard.jsx: which mode a device's
+// ADB banner says it is in (_bannerMode), which mode each step needs
+// (_EMOS_STEPS), and which errors are a disconnect rather than a provisioning
+// failure (_isDisconnectError).
 //
-//     node controller/tests/pm_verdict.test.mjs
+//     node controller/tests/wizard_mode.test.mjs
 //
-// Source extraction rather than import, for the reason wifi_scan.test.mjs
-// gives: the dashboard compiles to a single classic script with no module
-// boundary, so the alternative is a second copy that drifts.
-//
-// The distinction under test is between pm REFUSING a call and pm ANSWERING
-// that the package is not installed. Counting only successes made those two
-// identical, so a device whose image genuinely lacks the Alexa packages was
-// told the package manager had rejected every call and to wait longer and
-// retry, which can never help — and the wizard could never be completed (#91).
+// Source extraction rather than import: the dashboard compiles to a single
+// classic script with no module boundary, so the alternative is a second copy
+// that drifts. (Until 2026-11-19 this lived in pm_verdict.test.mjs beside the
+// FireOS flow's package-manager checks, which went with that flow.)
 
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
@@ -40,59 +37,12 @@ function liftArrow(name) {
   throw new Error(`could not find the end of ${name}`);
 }
 
-const { _pmVerdict, _pmNotReady } = await import(
-  "data:text/javascript;base64," + Buffer.from(
-    liftArrow("_pmVerdict") + "\n" + liftArrow("_pmNotReady")
-    + "\nexport { _pmVerdict, _pmNotReady };"
-  ).toString("base64"));
-
 let failures = 0;
 function check(name, cond, detail) {
   if (cond) return;
   failures++;
   console.error(`FAIL: ${name}${detail ? `\n      ${detail}` : ""}`);
 }
-
-// Real output, from a successful run on 2026-08-08.
-check("a disabled package is a success",
-  _pmVerdict("Package amazon.speech.sim new state: disabled") === "disabled");
-check("a hidden package is a success",
-  _pmVerdict("Package com.amazon.whad new hidden state: true") === "disabled");
-
-// Real output from #91. pm answered; the package is not installed.
-const UNKNOWN =
-  "Error: java.lang.IllegalArgumentException: Unknown package: com.amazon.echo.csm.oobe";
-check("an unknown package is absent, not a rejection",
-  _pmVerdict(UNKNOWN) === "absent", _pmVerdict(UNKNOWN));
-
-// The two shapes of pm not being ready. Both must count as rejections, since
-// waiting and retrying IS the right advice for them.
-for (const out of [
-  "Error: Could not access the Package Manager. Is the system running?",
-  "java.lang.NullPointerException: Attempt to invoke interface method "
-  + "'int java.util.ArrayList.size()' on a null object reference",
-]) {
-  check(`not-ready is a rejection: ${out.slice(0, 40)}`,
-        _pmVerdict(out) === "rejected", _pmVerdict(out));
-  check(`_pmNotReady still matches: ${out.slice(0, 40)}`, _pmNotReady(out));
-}
-
-// Anything unrecognised is treated as the BAD case on purpose: the cost of
-// being wrong is continuing to WiFi with the Alexa stack live.
-for (const out of ["", "Killed", "segfault", "Permission denied"]) {
-  check(`unrecognised output is a rejection: ${out || "(empty)"}`,
-        _pmVerdict(out) === "rejected", _pmVerdict(out));
-}
-
-// An absent package must not be mistaken for not-ready, or the retry path
-// fires eleven times against a device that answered correctly every time.
-check("absent is not confused with not-ready", !_pmNotReady(UNKNOWN));
-
-if (failures) {
-  console.error(`\n${failures} check(s) failed.`);
-  process.exit(1);
-}
-console.log("pm_verdict: all checks passed.");
 
 // ─── Step mode / banner classification ────────────────────────────────────────
 //
@@ -121,11 +71,19 @@ function liftFunctionDecl(name) {
   return src.slice(start, i + 1);
 }
 
-const { _bannerMode, _STEP_MODE } = await import(
+function liftConstArray(name) {
+  const start = src.indexOf(`const ${name} = [`);
+  if (start < 0) throw new Error(`dashboard.jsx no longer defines ${name}`);
+  const end = src.indexOf("\n];", start);
+  return src.slice(start, end + 3);
+}
+
+const { _bannerMode, _EMOS_STEPS } = await import(
   "data:text/javascript;base64," + Buffer.from(
-    liftFunctionDecl("_bannerMode") + "\n" + liftConstObject("_STEP_MODE")
-    + "\nexport { _bannerMode, _STEP_MODE };"
+    liftFunctionDecl("_bannerMode") + "\n" + liftConstArray("_EMOS_STEPS")
+    + "\nexport { _bannerMode, _EMOS_STEPS };"
   ).toString("base64"));
+const mode = id => (_EMOS_STEPS.find(s => s.id === id) || {}).mode;
 
 // Real banners, from provisioning transcripts.
 check("TWRP is recognised", _bannerMode("omni_biscuit") === "twrp",
@@ -143,16 +101,17 @@ check("an unknown banner is not guessed at",
 check("an empty banner is not guessed at", _bannerMode("") === "unknown");
 check("a missing banner is not guessed at", _bannerMode(undefined) === "unknown");
 
-// The boot-image step must be a TWRP step. If this ever flips, the wizard
-// would invite a write to boot_b.
-check("patch boot image is a TWRP step", _STEP_MODE[2] === "twrp", _STEP_MODE[2]);
-check("connect device is an Android step", _STEP_MODE[0] === "android");
-check("verify root is an Android step", _STEP_MODE[7] === "android");
-
+// Every step that writes the boot partition or reads it must run in TWRP: in
+// Android /dev/block/other-boot is amonet's unlock payload, not a kernel.
+for (const id of ["escrow_boot", "install_em", "build_emos", "flash_emos"]) {
+  check(`${id} is a TWRP step`, mode(id) === "twrp", String(mode(id)));
+}
+check("connect device starts in Android", mode("connect_android") === "android");
+check("the console steps run over serial",
+  mode("reboot_watch") === "serial" && mode("wifi_register") === "serial");
 // Every step must have a mode, or the check silently does nothing for it.
-for (let i = 0; i <= 12; i++) {
-  check(`step ${i} has a mode`, _STEP_MODE[i] === "twrp" || _STEP_MODE[i] === "android",
-        String(_STEP_MODE[i]));
+for (const s of _EMOS_STEPS) {
+  check(`${s.id} has a mode`, ["android", "twrp", "serial"].includes(s.mode), String(s.mode));
 }
 
 // ─── Disconnect-shaped errors ─────────────────────────────────────────────────
@@ -193,3 +152,9 @@ for (const msg of [
 
 check("a missing message does not throw", _isDisconnectError(undefined) === false);
 check("an error with no message does not throw", _isDisconnectError({}) === false);
+
+if (failures) {
+  console.error(`\n${failures} failure(s)`);
+  process.exit(1);
+}
+console.log("wizard_mode: all checks passed.");

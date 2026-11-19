@@ -605,9 +605,9 @@ class Device:
         The userspace the device booted: "emos", "fireos", or None.
 
         None means the firmware is too old to report it, NOT FireOS. The
-        distinction is the whole point of the field: `android_userspace`
-        below acts on it, and reading absence as Android would keep pushing
-        the debloat payload at an emOS device that has no package manager.
+        distinction is the whole point of the field: `unsupported` below
+        acts only on a positive "fireos", and `android_userspace` only lets a
+        positive "emos" have the emOS-only steps.
 
         Set from the REGISTER message, not the stats tick. It rode the stats
         report for exactly one commit, which put it 30 seconds too late for
@@ -627,6 +627,11 @@ class Device:
         reach them without aiohttp.
         """
         return em_platform.android_userspace(self.base_os)
+
+    @property
+    def unsupported(self):
+        """Why this Echo is not served (a positive FireOS), or None."""
+        return em_platform.unsupported(self.base_os)
 
     async def send_led_anim(self, anim: dict):
         """
@@ -1302,7 +1307,7 @@ async def handle_control(ws: WebSocketServerProtocol, secure: bool = False):
         device.oww_on_device = em_listen.effective_mode(
             config.get("owwOnDevice"), device.oww_trigger_capable,
         )
-        # Start script, controller address and debloat, reconciled against what
+        # Start script and controller address, reconciled against what
         # the device actually has — see em_reconcile.on_connect for why the
         # arrival is the trigger. Background: shell round trips and possibly a
         # multi-megabyte push, none of which the handshake should wait on.

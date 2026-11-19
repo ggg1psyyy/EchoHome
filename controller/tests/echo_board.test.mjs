@@ -52,9 +52,11 @@ check("Spot (rook)", _echoBoard("AEORK", "rook_puffin"), "");
 check("an unread identity", _echoBoard("", ""), "");
 check("a codename merely containing radar", _echoBoard("", "radar_puffin_x"), "");
 
-// Radar and donut run emOS only: the FireOS flow refuses both, by name.
-const emosOnly = src.slice(src.indexOf("const emosOnly = {"), src.indexOf("\n    }\n", src.indexOf("const emosOnly = {")));
-check("the FireOS flow refuses radar", /radar:/.test(emosOnly) && /!isEmos/.test(emosOnly), true);
+// Radar and donut have no amonet-biscuit generations: the unlock check is
+// biscuit's alone, and they skip it, by name.
+const emosOnly = src.slice(src.indexOf("const emosOnly = {"), src.indexOf("_unlockVerdict(", src.indexOf("const emosOnly = {")));
+check("radar and donut skip biscuit's unlock check",
+  /radar:/.test(emosOnly) && /donut:/.test(emosOnly) && /emosOnly\[board\] \? \{ v2: false/.test(emosOnly), true);
 check("the FireOS flow refuses donut", /donut:/.test(emosOnly), true);
 check("and skips amonet-biscuit's unlock check for both",
       /const unlock = emosOnly\[board\]/.test(src), true);

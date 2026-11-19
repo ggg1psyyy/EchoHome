@@ -1,6 +1,6 @@
 """
 The provisioning wizard's routes: the files it installs on an Echo (start
-script, debloat pair, Magisk DB, firmware, wake word assets, the emOS init),
+script, firmware, the emOS init),
 building an emOS image from the device's own boot image, and the diagnostics
 it collects when a step fails. Link credentials and the controller address
 list are with the link routes.
@@ -12,11 +12,7 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
-import sqlite3 as _sqlite3
-import tempfile
 import time
-from pathlib import Path
 
 from aiohttp import web
 
@@ -35,9 +31,6 @@ log = logging.getLogger("echomuse.api")
 
 def register(app: web.Application) -> None:
     app.router.add_get("/api/provision/start_script", _get_provision_start_script)
-    app.router.add_get("/api/provision/debloat_script",   _get_provision_debloat_script)
-    app.router.add_get("/api/provision/debloat_packages", _get_provision_debloat_packages)
-    app.router.add_get("/api/provision/magisk_db",    _get_provision_magisk_db)
     app.router.add_get("/api/provision/latest_binary", _get_provision_latest_binary)
     app.router.add_post("/api/provision/diagnostics",     _post_provision_diagnostics)
     app.router.add_get("/api/provision/emos_init",     _get_provision_emos_init)
@@ -62,33 +55,6 @@ async def _get_provision_start_script(request: web.Request) -> web.Response:
         content_type='text/plain',
         headers={'Content-Disposition': 'attachment; filename="start_server.sh"'},
     )
-
-
-@auth.require_admin
-async def _get_provision_debloat_script(request: web.Request) -> web.Response:
-    """GET /api/provision/debloat_script — the Magisk service.d boot script
-    that re-stops init-launched daemons each boot (Debloat wizard step)."""
-    return web.Response(
-        text=_read_payload("echomuse-debloat.sh"),
-        content_type='text/plain',
-        headers={'Content-Disposition': 'attachment; filename="echomuse-debloat.sh"'},
-    )
-
-
-@auth.require_admin
-async def _get_provision_debloat_packages(request: web.Request) -> web.Response:
-    """GET /api/provision/debloat_packages — the pm-hide package list as JSON.
-
-    Parsed server-side (comments/blank lines stripped) so the wizard never
-    has to understand the file format and list edits ship without a
-    dashboard rebuild.
-    """
-    packages = [
-        line.strip()
-        for line in _read_payload("debloat_packages.txt").splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ]
-    return em_http.ok({"packages": packages})
 
 
 @auth.require_admin
@@ -121,69 +87,6 @@ async def _get_provision_latest_binary(request: web.Request) -> web.Response:
             'Content-Disposition': 'attachment; filename="server"',
             'X-Release-Version': release["version"],
         },
-    )
-
-
-@auth.require_admin
-async def _get_provision_magisk_db(request: web.Request) -> web.Response:
-    """GET /api/provision/magisk_db — generates a pre-seeded Magisk grant DB.
-
-    Grants uid 2000 (adb shell) and uid 0 (root) unconditional su access so
-    the screenless Echo Dot never shows a grant dialog.
-    """
-    def _build_db() -> bytes:
-        fd, path = tempfile.mkstemp(suffix='.db')
-        os.close(fd)
-        try:
-            con = _sqlite3.connect(path)
-            # Schema confirmed against a real Magisk v17.3 device dump
-            # (sqlite> .schema on a working /data/adb/magisk.db) — NOT
-            # guessed. magiskd queries settings and strings on every su
-            # request regardless of whether anything's stored in them;
-            # the previous version of this function only created
-            # `policies` (and with the wrong columns — no package_name in
-            # the real schema, PRIMARY KEY is uid alone). Missing
-            # settings/strings meant every single su call hit
-            # "sqlite3_exec: no such table" on each of those two tables
-            # and got hard-rejected — which looked like a hang from the
-            # wizard side because su was taking up to ~60s per rejection
-            # cycle, far longer than the wizard's retry loop accounted for.
-            con.execute(
-                "CREATE TABLE policies ("
-                "  uid INT,"
-                "  policy INT,"
-                "  until INT,"
-                "  logging INT,"
-                "  notification INT,"
-                "  PRIMARY KEY(uid)"
-                ")"
-            )
-            con.execute(
-                "CREATE TABLE settings (key TEXT, value INT, PRIMARY KEY(key))"
-            )
-            con.execute(
-                "CREATE TABLE strings (key TEXT, value TEXT, PRIMARY KEY(key))"
-            )
-            con.execute(
-                "CREATE TABLE denylist (package_name TEXT, process TEXT, "
-                "PRIMARY KEY(package_name, process))"
-            )
-            # policy=2 → always grant. Matches the confirmed real schema:
-            # uid, policy, until, logging, notification — no package_name.
-            con.execute("INSERT INTO policies (uid, policy, until, logging, notification) VALUES (2000, 2, 0, 1, 1)")
-            con.execute("INSERT INTO policies (uid, policy, until, logging, notification) VALUES (0, 2, 0, 1, 1)")
-            con.commit()
-            con.close()
-            return Path(path).read_bytes()
-        finally:
-            os.unlink(path)
-
-    loop = asyncio.get_event_loop()
-    data = await loop.run_in_executor(None, _build_db)
-    return web.Response(
-        body=data,
-        content_type='application/octet-stream',
-        headers={'Content-Disposition': 'attachment; filename="magisk.db"'},
     )
 
 

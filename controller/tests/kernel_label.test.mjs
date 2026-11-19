@@ -46,7 +46,7 @@ check("x86_64", emos("x86_64"), "emOS (64-bit)");
 check("i686", emos("i686"), "emOS (32-bit)");
 check("unknown arch passes through", emos("riscv64"), "emOS (riscv64)");
 check("no kernel reported", emos(undefined), "emOS");
-check("FireOS gets no arch", _osLabel({ baseOs: "fireos", kernelArch: "armv8l" }), "FireOS 5");
+check("FireOS gets no arch, and says it is not supported", _osLabel({ baseOs: "fireos", kernelArch: "armv8l" }), "FireOS 5 (not supported)");
 
 if (failures) {
   console.error(`\n${failures} failure(s)`);

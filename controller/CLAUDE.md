@@ -146,8 +146,10 @@ A/B slots: `/data/local/bin/server` → `server_a`/`server_b`;
 - **Updates are serialised controller-wide** (`em_ota.queue`): fetch inside
   the lock, release in a `finally`, failures do not stop the queue.
 - **The shell lock is released only by its owner** (`em_shell.owners`).
-- **Android-only payloads gate on `Device.android_userspace`** (False only on
-  a positive `base_os: emos`) at all three call sites.
+- **A FireOS Echo is shown, not served** (`Device.unsupported`, only on a
+  positive `base_os: fireos`): the OTA refuses it, deploy-all skips it, the
+  connect reconcile pushes it nothing. emOS-only steps (the crash log, the
+  emOS update) need a positive `emos` (`android_userspace` False).
 - **md5 decides success**: write `{dest}.part`, rename on match; a failed
   verify never reaches `ln -sf`. **Never delete the destination before
   sending.** Free space via `parse_free_mb`; unreadable = carry on.
@@ -156,7 +158,7 @@ A/B slots: `/data/local/bin/server` → `server_a`/`server_b`;
 - **The running version is refused** on a single update (`already_running`).
 - Payloads live only in `controller/device_payloads/`, each with an update
   path. **All payloads reconcile on connect** (`em_reconcile.on_connect`:
-  start script, controller address, debloat on Android), each step caught
+  start script, controller address), each step caught
   alone, debounced 15 min, retried after a minute on an unfinished run.
 
 ## emOS update (`em_emos_update.py`, #573)
@@ -175,19 +177,16 @@ on mismatch. **Trial mark** `/data/emos/update.pending`: written before the
 flash, removed on re-registration; init rolls back after three unconfirmed
 boots. GA skips `emos-v*-ea.N`; order by `version_key`, never list order.
 
-## Provisioning wizard (`dashboard.jsx`, `_WIZARD_STEPS`)
+## Provisioning wizard (`dashboard.jsx`, `_EMOS_STEPS`)
 
 **Irreversible territory: boot partitions on hardware nobody is watching.
 Every rule here was broken once, silently.**
 
 - The failure panel shows the reason (`_stepFailureReason`) and offers only
   what can help.
-- The finishing reboot belongs to the last step. **No step reports success
-  having done nothing.** Steps are addressed by id (`_E`) and position: the
-  FireOS flow's last step, once the wake word assets, keeps its place and id
-  as "Finish and Reboot".
-- `waitForFramework` polls `sys.boot_completed` and `pm path android`, 10 min,
-  throws. **Expect 163s** for a post-unlock first boot.
+- **The wizard is emOS only** (`_EMOS_STEPS`; the FireOS flow, `?flow=fireos`,
+  went 2026-11-19). The finishing reboot belongs to the last step. **No step
+  reports success having done nothing.** Steps are addressed by id (`_E`).
 - **A lost device makes a step hang**: the USB `disconnect` listener and an
   epoch counter end it — never a `shell` timeout. `_STEP_MODE` is enforced at
   every step.

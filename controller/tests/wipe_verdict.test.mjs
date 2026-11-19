@@ -92,15 +92,14 @@ check("runWipeData decides with _wipeVerdict", /_wipeVerdict\(probe\)/.test(runn
 const calls = src.match(/runConnectTwrp\(\);\s*\n\s*if \(wipeData\) await runWipeData\(c\);/g) || [];
 check("exactly one flow runs the wipe straight after Connect to TWRP", calls.length === 1,
   `found ${calls.length}`);
-const emosSwitch = src.slice(src.indexOf("if (isEmos) switch (STEPS[stepIdx].id)"),
-                             src.indexOf("else switch (stepIdx)"));
-check("that flow is emOS", /if \(wipeData\) await runWipeData\(c\)/.test(emosSwitch));
+const stepSwitch = src.slice(src.indexOf("switch (STEPS[stepIdx].id)"),
+                             src.indexOf("if (abandoned()) return;", src.indexOf("switch (STEPS[stepIdx].id)")));
+check("it is the wizard's step switch", /if \(wipeData\) await runWipeData\(c\)/.test(stepSwitch));
 check("runWipeData is called from nowhere else",
   (src.match(/await runWipeData\(/g) || []).length === 1);
-// No flow picker since 2026-11-15; the FireOS flow (?flow=fireos) never
-// draws the toggle, so it cannot be set there.
-check("the option is offered only in the emOS flow",
-  /step === 0 && !flowLocked && isEmos && \(/.test(src));
+// The option is drawn on the first step only, before anything has run.
+check("the option is offered on the first step, before anything runs",
+  /step === 0 && !flowLocked && \(/.test(src));
 check("the option defaults to off", /useState\(false\);\s*$/m.test(
   src.slice(src.indexOf("const [wipeData, setWipeData]"),
             src.indexOf("const [wipeData, setWipeData]") + 60)));

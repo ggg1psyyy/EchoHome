@@ -14,5 +14,5 @@ Fixes #
 - [ ] This comes from an issue, a fault I hit or a device I own (linked or described above).
 - [ ] I understand what this change does and why.
 - [ ] It is one change, and the description above is short.
-- [ ] Tested on: <!-- which Echo and base (FireOS 5, emOS 32-bit, emOS 64-bit), or "not tested on hardware" -->
+- [ ] Tested on: <!-- which Echo and emOS kernel (32-bit or 64-bit), or "not tested on hardware" -->
 - [ ] `CLAUDE.md` files, `CHANGELOG.md`, `controller-ea/` and version pins are left out.

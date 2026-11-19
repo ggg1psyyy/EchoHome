@@ -226,38 +226,6 @@ def test_every_device_payload_has_an_update_path():
         )
 
 
-def test_debloat_sync_reconciles_both_halves():
-    """
-    The debloat is a boot script AND a pm-hide list. Round 2 added a *package*,
-    so a sync that only refreshed the script would have looked like it worked
-    and changed nothing on any device.
-    """
-    from pathlib import Path
-    fn = _sources.def_source("sync_debloat")
-
-    assert "echomuse-debloat.sh" in fn, "the boot script half must be synced"
-    assert "debloat_packages()" in fn, "the pm-hide half must be reconciled"
-    assert "pm hide" in fn, "drifted packages must actually be hidden"
-    # Rename-based replacement: the running shell keeps the old inode.
-    assert "mv " in fn and ".new" in fn, \
-        "the script must be replaced by rename, not written in place"
-    # md5 both before (skip when in sync) and after (verify the transfer).
-    assert fn.count("md5") >= 2, "sync must md5-compare and md5-verify"
-
-
-def test_debloat_reachable_without_an_ota():
-    """
-    The OTA-time sync cannot reach a device already on the latest firmware —
-    which is the exact case that exposed the gap. A manual trigger is required,
-    not a nicety.
-    """
-    # all_code() is unparsed, which writes every string single-quoted.
-    assert "'/api/devices/{id}/debloat'" in _sources.all_code(), \
-        "no manual debloat endpoint registered"
-    jsx = (CONTROLLER / "static" / "dashboard.jsx").read_text()
-    assert "/debloat`" in jsx, "the dashboard must be able to trigger it"
-
-
 def test_stale_release_cache_is_not_returned_when_it_has_aged_out():
     """
     _get_cached_release used to fire a refresh into the background and return
@@ -1282,7 +1250,7 @@ def test_the_reconcile_runs_the_payloads_sequentially():
     """
     fn = _strip_prose(_sources.def_source("em_reconcile._reconcile_payloads"))
 
-    for step in ("em_payloads.sync_start_script", "em_payloads.sync_endpoints", "em_payloads.sync_debloat"):
+    for step in ("em_payloads.sync_start_script", "em_payloads.sync_endpoints"):
         assert step in fn, f"{step} must run on connect"
     assert "asyncio.gather" not in fn, (
         "the payloads share one shell plane — run them in order"
@@ -1361,7 +1329,7 @@ def test_the_payload_syncs_tell_a_missing_file_from_a_silent_device():
     seconds after connect) produces a push attempt and a user-visible "out of
     date" event that is not true.
     """
-    for name in ("sync_start_script", "sync_debloat"):
+    for name in ("sync_start_script",):
         fn = _strip_prose(_sources.def_source(name))
         assert "em_shell.OK_MARK" in fn, (
             f"{name} must be able to tell a missing file from a silent device"
@@ -1490,31 +1458,6 @@ def test_the_emos_flow_escrows_before_it_flashes():
     # And the install lands on /data before the partition write, which is what
     # lets it survive the flash.
     assert ids.index("install_em") < ids.index("flash_emos")
-
-
-def test_the_fireos_flow_escrows_before_it_patches():
-    """
-    #468: the FireOS flow wrote the boot partition with no copy of the original
-    in the operator's hands. The escrow sits inside runPatchBoot, so ordering
-    WITHIN the function is the guard: stored and downloaded before the first
-    shell call that writes a partition. Matched on shell calls rather than on
-    "of=", for the reason the flash test gives.
-    """
-    src = _jsx()
-    fn = src[src.index("async function runPatchBoot"):]
-    fn = fn[:fn.index("\n  async function runInstallMagisk")]
-    writes = [i for i, line in enumerate(fn.splitlines())
-              if "c.shell(" in line and "of=${boot.target}" in line]
-    assert writes, "runPatchBoot's flash was not found; update this test"
-    lines = fn.splitlines()
-    for marker in ("setEmosRef(", "setEmosTarget(", "_downloadBytes("):
-        at = next((i for i, l in enumerate(lines) if marker in l), None)
-        assert at is not None, f"runPatchBoot must escrow via {marker}"
-        assert at < writes[0], f"{marker} must come before the partition write"
-
-    # And the restore is offered on the TWRP steps that follow the escrow.
-    assert "(isEmos ? (step === _E.flash_emos || step === _E.reboot_watch) : (step >= 2 && step <= 4))" in src, (
-        "the FireOS flow must offer the restore on a failed TWRP step")
 
 
 def test_base_os_survives_the_device_going_offline():
@@ -1877,110 +1820,6 @@ def test_the_wifi_tools_go_only_into_a_32_bit_image():
         assert f'"{name}"' in tools, f"{name} missing from SBIN_ASSETS"
 
 
-def test_a_v2_device_is_refused_by_the_fireos_flow_and_accepted_by_emos():
-    """
-    FireOS 5 does not boot on v2's bootloaders, so the FireOS flow must still
-    refuse. emOS must not — it now runs on FireOS 6's kernel, the only FireOS v2
-    boots, and its escrow-build-flash sequence is not FireOS-5-specific.
-
-    Both directions pinned: refuse in emOS and the feature is unreachable behind
-    a message blaming the device; accept in FireOS and somebody flashes a boot
-    image that cannot boot.
-    """
-    jsx = (CONTROLLER / "static" / "dashboard.jsx").read_text()
-    fn = _js_fn_body(jsx, "runConnectAndroid")
-
-    assert "unlock.v2 && !isEmos" in fn, (
-        "the hard refusal must be gated on NOT being the emOS flow — emOS "
-        "supports the FireOS 6 kernel a v2 device has")
-    # The FireOS refusal still closes the connection and writes nothing.
-    assert "setAdb(null)" in fn and "hard-bricked" in fn, (
-        "the FireOS refusal must still stop the flow and warn against flashing "
-        "bootloaders by hand")
-    # And a v2 device reaching the emOS flow is told so, loudly, while it can
-    # still be stopped — the escrow is what makes the write recoverable.
-    assert "Escrow Boot Image step is the way back" in fn, (
-        "a v2 device on the emOS flow must be told the escrow is the way back, "
-        "before anything is written")
-
-    # The release gate is flow-aware too, and names what it accepts rather than
-    # accepting everything that is not 5.x: an unexpected release is still a
-    # wrong device, which is the whole point of the check.
-    assert "isEmos ? ['5.', '7.'] : ['5.']" in fn, (
-        "the emOS flow must accept Android 5.x and 7.x (FireOS 6 is 7.1) and "
-        "the FireOS flow only 5.x")
-
-
-def test_every_debloat_push_asks_which_userspace_the_device_booted():
-    """
-    The debloat payload is Android-only — a pm-hide list and a Magisk
-    service.d script — and emOS has neither a package manager nor Magisk.
-
-    `em_payloads.sync_debloat` has THREE call sites and for a while only two of them
-    asked. `em_reconcile.on_connect` gates on `live.android_userspace` and
-    `_post_debloat` refuses with `not_android`, but the OTA path in
-    `_run_update_locked` called it unconditionally. Found on EFF, 2026-09-07,
-    at its first OTA after being moved to emOS: the transfer targeted
-    `/sbin/.core/img/.core/service.d/` on a device with no Magisk daemon to
-    have created it.
-
-    That cost only a wasted shell round trip, because the destination
-    directory probe caught it — but the probe is the backstop, not the gate.
-    Without it this is the 240s stall measured on the same device on
-    2026-09-04, where TRANSFER_OK never arrives and the transfer holds the
-    device's shell lock for its full timeout, twice.
-
-    Asserted per call site rather than by counting, so a fourth one has to
-    answer the question too.
-    """
-    # Parsed, not grepped, so _strip_prose is neither needed nor wanted: an
-    # AST contains no comments at all, and stripping them first breaks the
-    # parse on any line whose prose was load-bearing to the syntax. Every
-    # module, so a call site that moves out of em_api is still asked.
-    def gated(node) -> bool:
-        """True when `android_userspace` is tested anywhere above this call."""
-        for anc in ancestors.get(node, ()):
-            if isinstance(anc, ast.If) and "android_userspace" in ast.dump(anc.test):
-                return True
-        return False
-
-    ancestors: dict = {}
-    calls = []
-    for path in _sources.MODULES:
-        tree = _sources.tree(path)
-        for parent in ast.walk(tree):
-            for child in ast.iter_child_nodes(parent):
-                ancestors[child] = (parent,) + ancestors.get(parent, ())
-        calls += [
-            n for n in ast.walk(tree)
-            if isinstance(n, ast.Call)
-            and getattr(n.func, "attr", getattr(n.func, "id", None)) == "sync_debloat"
-        ]
-    assert len(calls) >= 3, (
-        f"expected at least three sync_debloat call sites, found {len(calls)} — "
-        "if one was removed, update this test rather than deleting it"
-    )
-
-    ungated = [n.lineno for n in calls if not gated(n)]
-    # _post_debloat guards by returning `not_android` BEFORE reaching the call,
-    # so its call site has no enclosing `if` and is exempt by name.
-    enclosing = {
-        n.lineno: next(
-            (a.name for a in ancestors.get(n, ())
-             if isinstance(a, (ast.AsyncFunctionDef, ast.FunctionDef))),
-            "?",
-        )
-        for n in calls
-    }
-    ungated = [ln for ln in ungated if enclosing[ln] != "_post_debloat"]
-    assert not ungated, (
-        "these sync_debloat call sites do not check android_userspace: "
-        + ", ".join(f"line {ln} in {enclosing[ln]}()" for ln in ungated)
-        + " — an emOS device has no package manager to hide packages from and "
-          "no Magisk daemon to have created the service.d directory."
-    )
-
-
 def test_the_bundle_stamp_has_exactly_one_definition():
     """
     A stale-tab check is worthless if the two ends derive the stamp
@@ -2035,26 +1874,6 @@ def test_the_stale_bundle_check_does_not_refresh_the_displayed_version():
         "has to keep naming the controller this page was loaded against")
 
 
-def test_the_fireos_flow_refuses_an_emos_boot_image_before_it_writes():
-    """
-    Patching an emOS boot image with Magisk bootloops the device — reported and
-    reproduced on hardware 2026-09-20. Step 1's FireOS 5 check cannot catch it
-    and is not wrong: emOS mounts FireOS's /system, so build.prop reports 5.1.1
-    and the device passes by that test's own logic.
-
-    The ORDERING is the assertion, as it is for the OTA's md5: a refusal that
-    happens after the pull and patch is a refusal that has already spent the
-    device's boot slot.
-    """
-    src = _jsx()
-    fn = src[src.index("async function runPatchBoot"):]
-    fn = fn[:fn.index("\n  async function ", 1)]
-    assert "isOurBootImage(" in fn, (
-        "runPatchBoot must check whose image is in the slot before patching it")
-    assert fn.index("isOurBootImage(") < fn.index("of=/tmp/work/boot.img"), (
-        "the emOS check must precede the pull, or the refusal comes too late")
-
-
 def test_the_image_keeps_its_data_on_the_mounted_directory():
     """
     #629: with no .env, DB_PATH fell back to the relative "echomuse.db", which
@@ -2088,13 +1907,20 @@ def test_every_emos_panel_button_runs_its_own_step_by_id():
     from pathlib import Path
     jsx = (Path(__file__).resolve().parent.parent / "static" / "dashboard.jsx").read_text()
     marks = list(re.finditer(
-        r"\{(?:!isEmos && step === \d+|isEmos && step === _E\.(\w+)|\(isEmos \?)", jsx))
+        r"\{(?:step === _E\.(\w+)|\(step === _E\.)", jsx))
     assert marks, "no wizard panels found; update this test"
     emos = [(m, marks[i + 1].start() if i + 1 < len(marks) else len(jsx))
             for i, m in enumerate(marks) if m.group(1)]
     assert len(emos) >= 5, f"expected the emOS panels, found {[m.group(1) for m, _ in emos]}"
-    for m, end in emos:
-        region = jsx[m.start():end]
+    for m, _ in emos:
+        # The panel's own block: from its `{` to the matching `}`.
+        depth, k = 0, m.start()
+        while True:
+            depth += {"{": 1, "}": -1}.get(jsx[k], 0)
+            if depth == 0:
+                break
+            k += 1
+        region = jsx[m.start():k + 1]
         args = re.findall(r"runStep\(([^,)]*)", region)
         for a in args:
             assert a.strip() == f"_E.{m.group(1)}", (

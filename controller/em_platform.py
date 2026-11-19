@@ -1,15 +1,15 @@
 """
 Which userspace a device booted on, and what follows from it.
 
-The firmware runs on two bases and will for as long as the fleet runs FireOS:
-Amazon's Android 5.1 userspace, and emOS, which replaces it with our own init
-on the same kernel. The device reports which one it booted as `baseOs` on the
-stats message (device/internal/platform), and this module holds the decisions
-the controller makes off the back of it.
+EchoHome supports emOS only (2026-11-19). The device reports its base as
+`base_os` on REGISTER (device/internal/platform): `emos`, `fireos`, or
+`unknown`. A positive `fireos` is shown and not served (`unsupported`); an
+absent or unknown base keeps today's behaviour, since firmware too old to say
+must not lose a control. emOS still mounts the FireOS system partition, so
+"FireOS" also names the kernel and donor userspace beneath emOS elsewhere.
 
-Pure and dependency-free, for the reason `em_linkauth.decide` and
-`em_button.decide` are: the rule below is one comparison and getting it
-backwards is silent, so it belongs somewhere a test can reach without
+Pure and dependency-free: the rules are one comparison each and getting them
+backwards is silent, so they belong somewhere a test can reach without
 aiohttp.
 """
 
@@ -29,27 +29,36 @@ REGISTER_KEY = "base_os"
 
 def android_userspace(base_os) -> bool:
     """
-    Whether Android-only payloads mean anything on this device.
+    Whether this device may be on Android (anything but a positive emOS).
 
     True for everything except a device that has POSITIVELY said `emos`.
     Firmware too old to report the field, a device that has not sent stats
     yet, and any value we do not recognise all keep today's behaviour.
 
-    That asymmetry is deliberate and is the whole content of this function.
-    The project's rule is to degrade to old behaviour rather than to a wrong
-    answer, and the two ways of being wrong here are not equal:
-
-    - Treating an Android device as emOS skips the debloat, leaving a device
-      slightly fatter than intended. Recoverable, invisible, cheap.
-    - Treating an emOS device as Android runs `pm hide` against a system with
-      no package manager and writes a Magisk service.d script no init will
-      ever read. It wastes a shell round trip per reconnect and reports
-      success at having done nothing.
-
-    So absence resolves toward Android, which is where every device was
-    before emOS existed.
+    That asymmetry is deliberate: an unrecognised device keeps the behaviour
+    it had, and only a positive emOS gets the emOS-only steps (the crash log,
+    the emOS update), which would act on paths no other base has.
     """
     return base_os != EMOS
+
+
+# Why a FireOS Echo is shown but not served (2026-11-19): EchoHome supports
+# emOS only. Its wizard installs emOS; FireOS was EchoMuse's other base.
+UNSUPPORTED_REASON = ("FireOS is not supported by EchoHome: reprovision this "
+                      "Echo with emOS (the setup wizard).")
+
+
+def unsupported(base_os):
+    """
+    Why this Echo is not served, or None.
+
+    Only a POSITIVE `fireos` is unsupported: firmware too old to report its
+    base, or a value we do not know, keeps today's behaviour, for the reason
+    android_userspace gives (degrade to old behaviour, and an absent field
+    must not disable a control). Such an Echo is shown, named FireOS, and
+    refused firmware updates and payload pushes, which assume emOS's layout.
+    """
+    return UNSUPPORTED_REASON if base_os == FIREOS else None
 
 
 def label(base_os) -> str:

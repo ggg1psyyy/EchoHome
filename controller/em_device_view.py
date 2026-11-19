@@ -271,6 +271,7 @@ def merge_device(row, boot: dict | None = None) -> dict:
         # actually refuses. Defaults True with no device, so a disconnected
         # device shows the control as it always did.
         "androidUserspace": getattr(live, "android_userspace", True) if live else True,
+        "unsupported": getattr(live, "unsupported", None) if live else None,
         # Gates the tap-as-event toggle — see em_button.decide.
         # Whether the device found its ambient light sensor. Reported so the
         # dashboard can tell "no sensor" apart from "sensor present, no reading
