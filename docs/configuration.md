@@ -252,7 +252,7 @@ To set it up:
    Assistant finds it on the network within a few seconds, listed under the
    Echo's name. Where mDNS does not cross your VLANs, add the Echo's address
    under Music Assistant's Sendspin provider, **Manual IP addresses for
-   discovery**.
+   discovery** (its DNS name works there too, where your router puts DHCP names in its DNS: `living-room-00lq.<your domain>`).
 2. Press **Show pairing token** under the switch, then **Copy**.
 3. In Music Assistant, open the player and pair it with the token.
 

@@ -81,8 +81,10 @@ The Echo then finds the setup tool on its own. Approve it in the dashboard
    Assistant. The Echo reports its WiFi chip's own MAC, the one in your
    router's leases, so the reservation and Home Assistant name the same
    device. It also gives DHCP a hostname, its label plus the last four
-   characters of its serial (`living-room-00lq`), which routers that put
-   DHCP names in their DNS make reachable by name.
+   characters of its serial (`living-room-00lq`). Where your router puts
+   DHCP names in its DNS, use that name instead of an address (in Home
+   Assistant's ESPHome entry, and Music Assistant's Sendspin provider), and
+   no reservation is needed.
 2. In the **Voice Incubator app**, add the Echo as a satellite; it is
    announced on the network as `echohome-<serial>`. Choose its wake words on
    the app's *Wake words* page.
