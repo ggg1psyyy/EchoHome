@@ -115,6 +115,9 @@ state above, questions back, mute, music ducked through the answer, live
 listening on and off, a dropped link, a cold boot with the setup tool
 stopped. The three wake words cost the Echo a few percent of its CPU.
 
+Since then, on 00LQ: the spinner in a recognized speaker's color, voice
+enrolment, and the button pausing Home Assistant's music.
+
 Not tested: "stop" over an answer, a Home Assistant voice, pausing a
-Sendspin group with the button, speaker identification, several Echoes hearing the same wake
-word, the app on another machine than Home Assistant.
+Sendspin group with the button, several Echoes hearing the same wake word,
+the app on another machine than Home Assistant.
