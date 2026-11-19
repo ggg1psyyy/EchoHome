@@ -2026,6 +2026,15 @@ including why hashing is worth it when deleting the file defeats it, is in
   hears the app's connect tone and then silence until the answer. Until
   this, `intercom` was simply never built; no decision against it is on
   record.
+- 2026-11-19: a standalone satellite serves with or without its app
+  connected. With the controller stopped, the app (0.3.2, across VLANs) lost
+  the Echo: the controller's mDNS goodbye made it drop the session
+  (discover.py: Removed ends it), and after a reboot only the Echo's own
+  record existed, on its VLAN. `Serving` required the app connected, so the
+  Echo then fell back to "no controller": the orange pulse, and the volume
+  and action buttons inert. Now a running standalone satellite is enough.
+  Upstream 0d6df75 (after 0.3.2) keeps a session through an mDNS removal
+  and reconnects to the last address.
 
 ## The Echo's ESPHome device (`internal/esphome`, `cmd/esphome.go`)
 

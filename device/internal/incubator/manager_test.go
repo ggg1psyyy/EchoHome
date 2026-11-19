@@ -275,6 +275,12 @@ func TestAStandaloneSatelliteOutlivesTheControllerLink(t *testing.T) {
 	if m.Want() != set {
 		t.Fatalf("Want %+v", m.Want())
 	}
+	// The app gone: still serving, the Echo of use without it.
+	c.Close()
+	waitFor(t, "the app gone", func() bool { return !m.server().State().AppConnected })
+	if !m.Serving() {
+		t.Fatal("a standalone satellite whose app went is not serving")
+	}
 	m.Apply(Settings{Enabled: true, Name: "n", MAC: "m", Port: p}) // standalone off
 	m.LinkDown()
 	if m.Running() {

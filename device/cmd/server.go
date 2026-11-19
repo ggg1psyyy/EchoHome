@@ -350,10 +350,10 @@ func main() {
 		pulseCancel context.CancelFunc
 		pulseKind   string
 	)
-	// A standalone satellite with its app connected (cmd/incubator.go) is an
-	// Echo of use with no controller: while it serves, the link rings stand
-	// aside and the buttons are not gated (the action button then goes to
-	// the satellite, below); they come back the moment it stops serving.
+	// A standalone satellite (cmd/incubator.go) is an Echo of use with no
+	// controller, its app connected or not: while it runs, the link rings
+	// stand aside and the buttons are not gated (the action button then goes
+	// to the satellite, below); they come back the moment it stops.
 	// linkMu orders the link callbacks and the satellite's changes.
 	var (
 		linkMu   sync.Mutex

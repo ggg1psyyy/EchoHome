@@ -136,13 +136,14 @@ func (m *Manager) Want() Settings {
 	return m.want
 }
 
-// Serving says whether a standalone satellite has its app connected: the
-// Echo then needs no controller to be of use.
+// Serving says whether a standalone satellite runs: the Echo then needs no
+// controller to be of use, with or without its app connected right now (the
+// app may be restarting, or unable to see it across VLANs with the
+// controller stopped), so the buttons stay live and no link ring shows.
 func (m *Manager) Serving() bool {
 	m.mu.Lock()
-	s, standalone := m.s, m.want.Standalone
-	m.mu.Unlock()
-	return s != nil && standalone && s.State().AppConnected
+	defer m.mu.Unlock()
+	return m.s != nil && m.want.Standalone
 }
 
 func (m *Manager) stopLocked(why string) {
