@@ -194,6 +194,16 @@ func (s *Server) hello() HelloInfo {
 		h.MaxPool = true
 		h.Listen = true // a HANGUP with listen opens the answer's call
 		h.Monitor = s.cfg.Monitor
+		// Its second capture while monitored (AUDIO_MONITOR_AEC) is what the
+		// app enrolls a voice and records wake word samples from, and it asks
+		// for it by this flag. The Echo has one capture, already
+		// echo-cancelled with a fixed gain and no AGC, which is what that
+		// stream is for, so it sends the same frames twice, only while
+		// monitored: offered with monitoring, behind the same live listening
+		// switch. Calls send no second capture (AUDIO_IN_AEC): the app falls
+		// back to the first for speaker identification and the wake word
+		// check, and here the two would be identical.
+		h.MonitorAEC = s.cfg.Monitor
 	}
 	return h
 }

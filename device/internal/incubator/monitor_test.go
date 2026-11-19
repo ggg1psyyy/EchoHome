@@ -37,7 +37,9 @@ func (a *app) next(want Message, skip ...Message) []byte {
 		}
 		ok := false
 		for _, s := range skip {
-			ok = ok || m == s
+			// A monitored chunk is two frames, AUDIO_MONITOR then its
+			// second capture: skipping one skips both.
+			ok = ok || m == s || (s == AudioMonitor && m == AudioMonitorAEC)
 		}
 		if !ok {
 			a.t.Fatalf("got %#x, want %#x", m, want)
@@ -66,11 +68,19 @@ func TestHelloOffersMonitoringOnlyWhenAllowed(t *testing.T) {
 	if _, ok := off["monitor"]; ok {
 		t.Error("HELLO offers monitoring though it is not allowed")
 	}
+	if _, ok := off["monitor_aec"]; ok {
+		t.Error("HELLO offers the second capture though monitoring is not allowed")
+	}
 	_, _, _, _, on := connectMonitorApp(t, true)
 	if on["monitor"] != true {
 		t.Errorf("HELLO monitor = %v with it allowed", on["monitor"])
 	}
-	for _, k := range []string{"intercom", "monitor_aec", "aec"} {
+	// Enrollment asks for the second capture by monitor_aec; calls carry
+	// none, so `aec` (AUDIO_IN_AEC) is never said.
+	if on["monitor_aec"] != true {
+		t.Errorf("HELLO monitor_aec = %v with monitoring allowed", on["monitor_aec"])
+	}
+	for _, k := range []string{"intercom", "aec"} {
 		if _, ok := on[k]; ok {
 			t.Errorf("HELLO says %s", k)
 		}
@@ -107,6 +117,10 @@ func TestMonitoringStreamsTheMicrophoneAndSaysSoFirst(t *testing.T) {
 	}
 	if !bytes.Equal(got, chunk) {
 		t.Fatal("AUDIO_MONITOR is not the microphone's")
+	}
+	// Its second capture follows, the same frame: what enrollment collects.
+	if aec := a.next(AudioMonitorAEC); !bytes.Equal(aec, chunk) {
+		t.Fatal("AUDIO_MONITOR_AEC is not the same frame")
 	}
 	var r map[string]any
 	json.Unmarshal(a.next(WakeReport, AudioMonitor), &r)

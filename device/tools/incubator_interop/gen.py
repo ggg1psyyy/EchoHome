@@ -32,7 +32,8 @@ while pos < len(data):
     payload = data[pos + p.HEADER.size : pos + p.HEADER.size + n]
     pos += p.HEADER.size + n
     entry = {"type": p.Message(t).name, "length": n}
-    if p.Message(t) in (p.Message.AUDIO_IN, p.Message.AUDIO_IN_AEC):
+    if p.Message(t) in (p.Message.AUDIO_IN, p.Message.AUDIO_IN_AEC,
+                        p.Message.AUDIO_MONITOR, p.Message.AUDIO_MONITOR_AEC):
         entry["sha256"] = hashlib.sha256(payload).hexdigest()
     elif n:
         obj = json.loads(payload)

@@ -169,6 +169,7 @@ func goFrames() []byte {
 	h := NewHello("echomuse-0123456789ab", "02:ec:01:23:45:67")
 	h.Model, h.Firmware, h.PrerollMs, h.OutputBuffer = "echo-dot-2", "v9.9.9", 1500, 131072
 	h.WakeFormat, h.ModelSlots, h.FeatureSize, h.MaxPool, h.StopWord, h.Listen = "mixednet", 6, 40, true, true, true
+	h.Monitor, h.MonitorAEC = true, true // live listening on: monitoring and its second capture
 	WriteJSON(&b, Hello, h)
 	WriteJSON(&b, Hello, NewHello("echomuse-bare", "02:ec:00:00:00:00")) // nothing implemented yet
 	prob, top, cut := 235, 255, 217
@@ -179,6 +180,8 @@ func goFrames() []byte {
 		pcm[i] = byte(i * 7)
 	}
 	WriteAudio(&b, AudioIn, pcm)
+	WriteAudio(&b, AudioMonitor, pcm)
+	WriteAudio(&b, AudioMonitorAEC, pcm)
 	WriteJSON(&b, CallEnd, CallEndInfo{Reason: "cancelled"})
 	WriteJSON(&b, Status, StatusInfo{FreeBytes: 1, QueuedBytes: 2, QueuedMs: 3, SpeakerBusy: true})
 	WriteFrame(&b, PlaybackDrained, nil)
@@ -214,18 +217,19 @@ func TestTheAppReadsWhatGoSends(t *testing.T) {
 		t.Fatal(err)
 	}
 	// What the app made of the Go frames, by its own parser.
-	if len(view) != 10 || view[0].Type != "HELLO" || view[4].Type != "AUDIO_IN" || view[7].Type != "PLAYBACK_DRAINED" {
+	if len(view) != 12 || view[0].Type != "HELLO" || view[4].Type != "AUDIO_IN" ||
+		view[5].Type != "AUDIO_MONITOR" || view[6].Type != "AUDIO_MONITOR_AEC" || view[9].Type != "PLAYBACK_DRAINED" {
 		t.Fatalf("the app read %d frames: %+v", len(view), view)
 	}
 	full, bare := view[0].Hello, view[1].Hello
 	for k, want := range map[string]any{"protocol": 2.0, "model": "echo-dot-2", "firmware": "v9.9.9",
 		"wake_format": "mixednet", "model_slots": 6.0, "max_pool": true, "stop_word": true, "listen": true,
-		"aec": false, "monitor": false, "intercom": false} {
+		"aec": false, "monitor": true, "monitor_aec": true, "intercom": false} {
 		if full[k] != want {
 			t.Errorf("the app read %s = %v from the full HELLO, want %v", k, full[k], want)
 		}
 	}
-	for k, want := range map[string]any{"protocol": 2.0, "aec": false, "wake_format": nil, "model": nil, "listen": false} {
+	for k, want := range map[string]any{"protocol": 2.0, "aec": false, "monitor_aec": false, "wake_format": nil, "model": nil, "listen": false} {
 		if bare[k] != want {
 			t.Errorf("the app read %s = %v from a bare HELLO, want %v", k, bare[k], want)
 		}

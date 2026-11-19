@@ -29,8 +29,9 @@ import (
 
 // monitorQueue is how many frames may wait for the socket: past it they are
 // dropped and counted, never blocking the worker (and the detector behind it)
-// on an app that stalls.
-const monitorQueue = 32
+// on an app that stalls. 64: each chunk is two frames (AUDIO_MONITOR and
+// AUDIO_MONITOR_AEC), the same time's worth the queue held at 32 before.
+const monitorQueue = 64
 
 type outFrame struct {
 	m Message
@@ -155,6 +156,9 @@ func (s *session) monitorFrame(p []byte) {
 // audio; after it, the report. The detections it made are in found.
 func (s *session) monitorAudio(pcm []byte) {
 	s.monitorPush(AudioMonitor, pcm)
+	// The second capture (HELLO monitor_aec): the same frame, which on an
+	// Echo is the echo-cancelled one. Neither frame is changed after this.
+	s.monitorPush(AudioMonitorAEC, pcm)
 }
 
 // monitorReport sends WAKE_REPORT: each model's peak and window since the

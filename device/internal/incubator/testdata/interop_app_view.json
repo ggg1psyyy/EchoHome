@@ -10,8 +10,8 @@
    "max_pool": true,
    "model": "echo-dot-2",
    "model_slots": 6,
-   "monitor": false,
-   "monitor_aec": false,
+   "monitor": true,
+   "monitor_aec": true,
    "name": "echomuse-0123456789ab",
    "protocol": 2,
    "stop_word": true,
@@ -27,6 +27,8 @@
    "max_pool": true,
    "model": "echo-dot-2",
    "model_slots": 6,
+   "monitor": true,
+   "monitor_aec": true,
    "name": "echomuse-0123456789ab",
    "output_buffer_bytes": 131072,
    "preroll_ms": 1500,
@@ -35,7 +37,7 @@
    "stop_word": true,
    "wake_format": "mixednet"
   },
-  "length": 319,
+  "length": 353,
   "type": "HELLO"
  },
  {
@@ -91,6 +93,16 @@
   "length": 4096,
   "sha256": "d010f6d76d0eb4dce5d5b5b34014a8a157ec4380a66c24d7d455a9bf652db14a",
   "type": "AUDIO_IN"
+ },
+ {
+  "length": 4096,
+  "sha256": "d010f6d76d0eb4dce5d5b5b34014a8a157ec4380a66c24d7d455a9bf652db14a",
+  "type": "AUDIO_MONITOR"
+ },
+ {
+  "length": 4096,
+  "sha256": "d010f6d76d0eb4dce5d5b5b34014a8a157ec4380a66c24d7d455a9bf652db14a",
+  "type": "AUDIO_MONITOR_AEC"
  },
  {
   "json": {

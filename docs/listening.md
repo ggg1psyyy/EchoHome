@@ -145,10 +145,14 @@ live", under the voice backend; firmware announcing `incubator_monitor`).
 - A wake word heard meanwhile is shown on the page, never answered.
 - The app passes it to the page in the browser and keeps none of it
   (voice_incubator `server.py` `_live`, `web.py`'s live socket, at
-  `3a6d7e7a`). Its speaker enrollment and wake word recording, which do
-  keep audio, need a second capture this Echo does not send, and the app
-  refuses both for it. The intercom (the microphone to another room) is not
-  offered.
+  `3a6d7e7a`). Its speaker enrollment and wake word recording DO keep
+  audio: the app records them from the second capture a satellite sends
+  while monitored (`AUDIO_MONITOR_AEC`), which the Echo sends, the same
+  echo-cancelled frames as the first, only while monitored, so only with
+  the live listening switch on and someone enrolling or recording on the
+  app's page. What the app keeps of them, and for how long, is the app's.
+  Calls carry no second capture. The intercom (the microphone to another
+  room) is not offered.
 
 ## Wake word off from Home Assistant
 

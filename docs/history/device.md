@@ -1942,6 +1942,19 @@ including why hashing is worth it when deleting the file defeats it, is in
 
 ## The Voice Incubator satellite (`internal/incubator`)
 
+- 2026-11-19: the app's voice enrolment and wake word recording read a
+  satellite's second capture while monitored (`AUDIO_MONITOR_AEC`, asked for
+  by HELLO `monitor_aec`; voice_incubator server.py, enrollment.py). Nothing
+  else reads it. The second capture in calls (`AUDIO_IN_AEC`, HELLO `aec`)
+  is optional: speaker identification, the wake word check and the
+  transcript fall back to the first capture. On a VPE the two differ (AGC
+  vs echo-cancelled, no AGC); the Echo's one capture is already
+  echo-cancelled with a fixed gain and no AGC, so it sends the same frames
+  as both monitor messages, and says `monitor_aec` exactly when it says
+  `monitor` (the live listening switch). Calls send one capture. The
+  monitor queue doubled (64) for the two frames per chunk. Checked by the
+  app's own parser (the interop vectors, regenerated).
+
 - 2026-11-18: `internal/microfeatures` passed here (glibc 2.41) and failed
   on CI's ubuntu-24.04 (glibc 2.39): 3 of 6 reference cases differed. The
   frontend's set-up tables take their last bit from libm; under 2.39 two

@@ -52,10 +52,16 @@ stopped.
   its **Voice Incubator live listening** switch in Home Assistant is on (off
   by default).
 
-Not offered: **voice enrolment** and **wake word recording** need a second,
-echo-cancelled capture the Echo does not send, and the app refuses both for
-it; the app's **intercom**. Replies are 16 kHz audio, so they sound slightly
-duller than music.
+- **Voice enrolment** (the app's People page) and **wake word recording**:
+  switch the Echo's *Voice Incubator live listening* on, enrol or record on
+  the app's page while the ring pulses red, then switch it off again. The
+  app records from the Echo's second capture while monitored, which the
+  Echo offers only with that switch on. Recognising who speaks in a call
+  keeps working with the switch off: calls send one capture, and the app
+  identifies speakers on it.
+
+Not offered: the app's **intercom**. Replies are 16 kHz audio, so they sound
+slightly duller than music.
 
 ## Privacy
 
@@ -64,9 +70,12 @@ the button; then the call goes straight to the app until you stop speaking.
 A wake call starts with **1.5 s of audio from before the detection**, which
 the app uses to check the wake word again; a tap sends nothing from before
 it. With live listening on, the Echo streams its microphone to the app for
-as long as the Test page listens (never during a call, never muted); the
-ring pulses red the whole time and the dashboard says it streams. The setup
-tool receives none of it ([Listening and privacy](listening.md)).
+as long as the app monitors it: its Test page, or enrolling a voice or
+recording a wake word. Never during a call, never muted. While monitored each
+frame goes twice, as the first and the second capture, which the app's
+enrolment and recording read. The ring pulses red the whole time and the
+dashboard says it streams. The setup tool receives none of it
+([Listening and privacy](listening.md)).
 
 The satellite port has no authentication, as the app's own satellites have
 none: whichever client connects first receives the Echo's calls. Keep port
