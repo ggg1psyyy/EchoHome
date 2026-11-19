@@ -204,8 +204,14 @@ var buttonPaused struct {
 }
 
 // resumeSettle is how long a resumed source counts as playing before its
-// music is heard.
-const resumeSettle = 5 * time.Second
+// music is heard: a Sendspin group's stream starts a second or so after the
+// command, and its player buffers 2-3 s more before the first of it sounds.
+const resumeSettle = 8 * time.Second
+
+// musicHeardLevel is the music plane's RMS at the speaker above which music
+// is heard (PcmSpeaker.MusicLevel, measured as it is written): the stream
+// starting is not yet music sounding.
+const musicHeardLevel = 1e-3
 
 // musicPress is the action button's music step, the Voice PE's (its
 // center button, firmware-voice-incubator voice-pe.yaml): music playing
@@ -294,7 +300,7 @@ func buttonResuming() bool {
 	buttonPaused.Lock()
 	waiting := buttonPaused.resumed != "" && time.Since(buttonPaused.resumedAt) < resumeSettle
 	buttonPaused.Unlock()
-	return waiting && !musicPlaying()
+	return waiting && !(mediaSpk != nil && mediaSpk.MusicLevel() > musicHeardLevel)
 }
 
 // resumeWaitSpec is the idle ring while resumed music is on its way: a slow
