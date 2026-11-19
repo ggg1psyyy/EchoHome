@@ -247,10 +247,12 @@ func musicPress() bool {
 		mp.Resume()
 		buttonPaused.resumed, buttonPaused.resumedAt = "media", time.Now()
 		log.Println("[media] the button resumed the music")
+		go musicRingRepaint() // the waiting ring (off this lock: the paint asks buttonResuming)
 		return true
 	case was == "sendspin" && ss != nil && ss.Command("play"):
 		buttonPaused.resumed, buttonPaused.resumedAt = "sendspin", time.Now()
 		log.Println("[sendspin] the button resumed the group")
+		go musicRingRepaint()
 		return true
 	}
 	return false
@@ -284,4 +286,23 @@ func announcingSoon(on bool) {
 	case announceCh <- on:
 	default: // sixteen changes behind: the app's wait times out instead
 	}
+}
+
+// buttonResuming says whether a press resumed music that is not heard yet:
+// the ring shows it waits (resumeWaitSpec), for at most resumeSettle.
+func buttonResuming() bool {
+	buttonPaused.Lock()
+	waiting := buttonPaused.resumed != "" && time.Since(buttonPaused.resumedAt) < resumeSettle
+	buttonPaused.Unlock()
+	return waiting && !musicPlaying()
+}
+
+// resumeWaitSpec is the idle ring while resumed music is on its way: a slow
+// spin in the LED Ring light's colour, at its brightness.
+func resumeWaitSpec() server.AnimSpec {
+	c, _ := ledRingColour()
+	if c == ([3]uint8{}) {
+		c = [3]uint8{160, 160, 160}
+	}
+	return server.AnimSpec{Pattern: "spin", Colors: [][3]uint8{c, {c[0] / 4, c[1] / 4, c[2] / 4}}, PeriodMs: 120}
 }

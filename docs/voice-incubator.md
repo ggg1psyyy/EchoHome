@@ -39,7 +39,9 @@ stopped.
 - **The action button**, in the Voice PE's order: a tap answers or ends the
   intercom, stops a ringing
   timer, cancels a call, pauses music that is playing (Home Assistant's, or
-  the whole Sendspin group), resumes what a tap paused, and otherwise asks.
+  the whole Sendspin group), resumes what a tap paused (the ring spins in
+  the LED Ring light's colour until the music is heard; a tap meanwhile
+  pauses it again), and otherwise asks.
   Muted, it still stops a timer and pauses music, and asks nothing. Over
   music, talk with the wake word. A tap that stops a timer or cancels a
   call also stops what Home Assistant is announcing on the Echo.

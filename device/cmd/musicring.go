@@ -113,11 +113,12 @@ func musicRingRepaint() {
 // Polled: music starts on three paths (Home Assistant, Sendspin, a resume)
 // and a quarter second is soon enough for a ring.
 func watchMusicRing() {
-	was := false
+	was, waited := false, false
 	for range time.Tick(250 * time.Millisecond) {
 		now := musicRingMode() != musicRingOff && musicPlaying()
-		if now != was {
-			was = now
+		waiting := buttonResuming() // the waiting ring ends when the music is heard
+		if now != was || waiting != waited {
+			was, waited = now, waiting
 			musicRingRepaint()
 		}
 	}

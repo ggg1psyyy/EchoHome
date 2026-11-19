@@ -142,7 +142,9 @@ func (e *echoParts) Show(v incubator.RingView) {
 		// (cmd/musicring.go), else the LED Ring light, if it is on
 		// (cmd/ledring.go).
 		if r == incubator.RingOff {
-			if music, ok := musicRingSpec(specs); ok {
+			if buttonResuming() {
+				spec = resumeWaitSpec()
+			} else if music, ok := musicRingSpec(specs); ok {
 				spec = music
 			} else if idle, ok := ledRingIdle(); ok {
 				spec = idle
