@@ -68,8 +68,9 @@ stopped.
 - **The intercom** ("connect to the kitchen"): the called Echo rings, a
   green pulse and a tone, and stays closed until someone there taps the
   button; then both talk until a tap on either. Unanswered for 30 s, or
-  muted while it rings, it declines. Needs no switch: nothing of a room is
-  heard until someone in it answers.
+  muted while it rings, it declines. The Echo that asked connects at once.
+  Needs no switch: nothing of a room is heard until someone in it asks or
+  answers.
 - **Voice enrolment** (the app's People page) and **wake word recording**:
   switch the Echo's *Voice Incubator live listening* on, enrol or record on
   the app's page while the ring pulses red, then switch it off again. The
@@ -128,6 +129,8 @@ stopped. The three wake words cost the Echo a few percent of its CPU.
 Since then, on 00LQ: the spinner in a recognized speaker's color, voice
 enrolment, and the button pausing Home Assistant's music.
 
-Not tested: the intercom, a Home Assistant voice, pausing a
+Since then, between 00LQ and 0SE7: the intercom, called and answered.
+
+Not tested: a Home Assistant voice, pausing a
 Sendspin group with the button, several Echoes hearing the same wake word,
 the app on another machine than Home Assistant.

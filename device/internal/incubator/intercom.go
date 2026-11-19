@@ -19,6 +19,14 @@ import (
 // Echo reports itself monitored, as live listening, so the privacy line
 // says audio is leaving. Mute closes the microphone and keeps the call: the
 // other side is still heard. Wake words are not answered meanwhile.
+//
+// The caller does not ring: the app sends both satellites the same MONITOR,
+// and starts the intercom only once the call that asked for it has ended
+// (INTERCOM_START_WAIT), with the callee refused while in a call of its own.
+// So an Echo whose own call ended within intercomCallerWithin is the one
+// that asked, someone having just spoken the command to it: it connects at
+// once. The callee could only be taken for the caller if someone ended a
+// call of their own on it in those same seconds, someone in its room.
 
 type intercomState int
 
@@ -31,6 +39,7 @@ const (
 var (
 	intercomAnswerWithin = 30 * time.Second
 	intercomChimeEvery   = 3 * time.Second
+	intercomCallerWithin = 5 * time.Second
 )
 
 // intercomStartLocked is MONITOR with the intercom: ring. s.mu held.
@@ -40,6 +49,13 @@ func (s *session) intercomStartLocked() {
 	}
 	s.intercom = intercomRinging
 	s.monitorAsked = false // the intercom stands in for live listening
+	if !s.callEnded.IsZero() && time.Since(s.callEnded) < intercomCallerWithin {
+		s.intercom = intercomConnected
+		s.intercomGen++
+		log.Printf("[incubator] intercom: asked for here, connected")
+		s.showLocked()
+		return
+	}
 	gen := s.intercomGen + 1
 	s.intercomGen = gen
 	log.Printf("[incubator] intercom: ringing, waiting for a tap to answer")

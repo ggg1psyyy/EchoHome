@@ -180,6 +180,7 @@ type session struct {
 
 	mu         sync.Mutex // guards call, timer, timerRings, announcing, closed, micOn
 	call       *call      // nil when not in a call
+	callEnded  time.Time  // when the last call ended; s.mu
 	timer      *time.Timer
 	timerRings bool
 	announcing bool
@@ -428,6 +429,7 @@ func (s *session) endLocked(reason string) bool {
 	was := s.stopListeningLocked(shown)
 	s.timer.Stop()
 	s.call = nil
+	s.callEnded = time.Now() // monotonic: an intercom right after is this call's (intercom.go)
 	if reason != "" {
 		if reason == "cancelled" {
 			s.discard.Store(true)

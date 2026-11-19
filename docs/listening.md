@@ -20,8 +20,9 @@ path and hears nothing of the room, ever.
   "Voice Incubator live listening" switch on the Echo's own ESPHome device is
   on, while the app's Test page listens. The Echo reports that as
   `incubator_state` `monitored`, and the privacy line says it streams.
-  And in an **intercom** someone on this Echo answered with a tap: called,
-  the Echo only rings, its microphone closed, until then.
+  And in an **intercom** someone on this Echo asked for it (the call that
+  asked ended here within 5 s) or answered with a tap: called, the Echo only
+  rings, its microphone closed, until then.
 - **What the Echo reports** as `listen_state`: `local`, or `degraded` with no
   microphone it can read. The controller takes that report over any stored
   `owwOnDevice` (`em_listen.resolve`): a stored `off` or `shadow` from before
@@ -167,6 +168,14 @@ ring pulses green slowly. Nothing remote answers it: unanswered for 30 s, or
 muted while it rings, it declines (`intercom_end`). Answered, a tap ends
 it; mute closes the microphone and keeps the other side heard; the app ends
 it after half an hour. No switch: the consent is the tap on the device.
+
+The Echo that asked does not ring. The app sends both satellites the same
+MONITOR, but only once the call that asked has ended, and it refuses a callee
+that is in a call. An Echo whose own call ended within the last 5 s
+(`intercomCallerWithin`) is therefore the one someone just spoke the command
+to, and it connects at once: that request, on the device, is its consent.
+The callee could only be taken for the caller if someone ended a call of
+their own on it in those same seconds.
 
 ## Wake word off from Home Assistant
 

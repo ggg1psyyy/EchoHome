@@ -368,3 +368,42 @@ func TestAnIntercomRequestStopsMonitoring(t *testing.T) {
 	waitFor(t, "monitoring stopped", func() bool { return !st.last().Monitored })
 	waitFor(t, "the microphone closed", func() bool { return echo.count(&echo.closes) == 1 })
 }
+
+// The caller does not ring: the call that asked for the intercom has just
+// ended here, so the microphone opens at once and nothing chimes.
+func TestTheEchoThatAskedConnectsWithoutRinging(t *testing.T) {
+	s, echo, st, a, _ := connectMonitorApp(t, false)
+	s.Press()
+	a.next(CallStart, AudioIn)
+	a.send(Hangup, []byte(`{"reason":"done"}`))
+	waitFor(t, "the call to end", func() bool { return !s.InCall() })
+	a.send(Monitor, []byte(`{"active":true,"intercom":true}`))
+	waitFor(t, "the microphone", func() bool { return echo.count(&echo.opens) >= 2 })
+	waitFor(t, "reported", func() bool { return st.last().Monitored })
+	if echo.count(&echo.chimes) != 0 {
+		t.Fatal("the caller rang")
+	}
+	if v := echo.lastView(); v.State != RingIntercom {
+		t.Fatalf("ring %v", v.State)
+	}
+}
+
+// A call that ended longer ago does not count: the Echo rings.
+func TestAnOlderCallStillRings(t *testing.T) {
+	old := intercomCallerWithin
+	intercomCallerWithin = 50 * time.Millisecond
+	t.Cleanup(func() { intercomCallerWithin = old })
+	s, echo, st, a, _ := connectMonitorApp(t, false)
+	s.Press()
+	a.next(CallStart, AudioIn)
+	a.send(Hangup, []byte(`{"reason":"done"}`))
+	waitFor(t, "the call to end", func() bool { return !s.InCall() })
+	time.Sleep(100 * time.Millisecond)
+	opens := echo.count(&echo.opens)
+	a.send(Monitor, []byte(`{"active":true,"intercom":true}`))
+	waitFor(t, "a ring", func() bool { return echo.count(&echo.chimes) >= 1 })
+	a.nothing(200 * time.Millisecond)
+	if echo.count(&echo.opens) != opens || st.last().Monitored {
+		t.Fatal("the microphone opened before anyone answered")
+	}
+}
