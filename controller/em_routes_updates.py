@@ -25,7 +25,7 @@ import em_tasks
 from version import VERSION as CONTROLLER_VERSION
 from version import compare as _compare_versions
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 def register(app: web.Application) -> None:

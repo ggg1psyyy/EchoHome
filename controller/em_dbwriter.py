@@ -24,7 +24,7 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 
-log = logging.getLogger("echomuse.dbwriter")
+log = logging.getLogger("echohome.dbwriter")
 
 _pool = concurrent.futures.ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="em-dbwrite")

@@ -25,6 +25,18 @@ EchoMuse repurposes Amazon Echo Dot Gen 2 (FireOS 5 / Android 5.1, codename "bis
   assistant-written PRs, issues and comments; the Voice Incubator change
   (telling the app a satellite's address, so it works across VLANs) is
   prepared in the owner's fork and posted by the owner.
+- 2026-11-19: the rename reaches what people and apps see (the owner's
+  call; 00LQ the only install). Now EchoHome: the Sendspin player's
+  manufacturer and mDNS instance (`echohome-<serial>`, product the board
+  id), the satellite's name (`echohome-<serial>`, so the Voice Incubator app
+  sees a new satellite once and the old one is removed by hand), its HELLO
+  model, the controller's mDNS instance default, its loggers
+  (`echohome.*`; a `log_levels` option naming `echomuse.*` matches nothing
+  now), the dashboard's title and texts, download filenames, the compose
+  container, the new CA's name. Kept: emOS's paths, `_emcontroller._tcp`,
+  the TLS SAN `echomuse-controller`, the database file `echomuse.db`, the
+  slugs, the `em_` modules, the Go module path, CI's image tags, and every
+  credit and link to EchoMuse.
 
 ## Direction: portable, and not dependent on Amazon
 

@@ -62,7 +62,7 @@ def test_sigterm_runs_the_teardown_and_closes_the_database(tmp_path):
     try:
         _wait_for(proc, "waiting for devices", 60)
         proc.send_signal(signal.SIGTERM)
-        out = _wait_for(proc, "EchoMuse Controller stopped", 8)
+        out = _wait_for(proc, "EchoHome setup tool stopped", 8)
         assert proc.wait(timeout=5) == 0
     finally:
         if proc.poll() is None:

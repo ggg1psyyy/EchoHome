@@ -50,7 +50,7 @@ def test_a_failure_is_logged_when_it_happens(caplog):
         em_tasks.spawn(boom(), name="reconcile")
         await asyncio.sleep(0.01)
 
-    with caplog.at_level(logging.ERROR, logger="echomuse.tasks"):
+    with caplog.at_level(logging.ERROR, logger="echohome.tasks"):
         asyncio.run(main())
     msgs = [r.getMessage() for r in caplog.records]
     assert any("reconcile" in m and "shell plane gone" in m for m in msgs)
@@ -63,7 +63,7 @@ def test_cancellation_is_not_reported_as_failure(caplog):
         t.cancel()
         await asyncio.sleep(0.01)
 
-    with caplog.at_level(logging.ERROR, logger="echomuse.tasks"):
+    with caplog.at_level(logging.ERROR, logger="echohome.tasks"):
         asyncio.run(main())
     assert not caplog.records
 

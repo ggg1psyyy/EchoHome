@@ -23,7 +23,7 @@ import em_state
 import em_volume
 from version import firmware_update as _firmware_update
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 # WiFi change state per device_id — {"pending": {...}|None, "last_result":

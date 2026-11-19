@@ -60,7 +60,7 @@ push fresh credentials. Copying four files avoids it.
 It is shown in the dashboard header, or:
 
 ```bash
-docker exec echomuse-controller printenv EM_CONTROLLER_VERSION
+docker exec echohome-controller printenv EM_CONTROLLER_VERSION
 ```
 
 (If that prints `dev` you built the image yourself, and only you know what is
@@ -116,7 +116,7 @@ directory is your rollback. Do not delete it until you are happy.
 ### 1. Stop the standalone controller
 
 ```bash
-cd /path/to/EchoMuse/controller
+cd /path/to/EchoHome/controller
 docker compose down
 ```
 
@@ -212,7 +212,7 @@ they already hold still verifies, because you copied `tls/`.
 
 ## Home Assistant re-points itself, if you copied the database
 
-Each EchoMuse device appears in Home Assistant as an ESPHome device on its own
+Each Echo appears in Home Assistant as an ESPHome device on its own
 port. Those port numbers live in the database, so copying it keeps every
 device on the port Home Assistant already knows.
 
@@ -229,9 +229,9 @@ re-approving; restore the database.
 
 ## Signing in changes
 
-On the standalone container you signed in with a local EchoMuse account. Under
+On the standalone container you signed in with a local account. Under
 the add-on, Home Assistant has already authenticated you and hands your
-identity to EchoMuse, so there is no login screen and no **Sign out** button —
+identity to the setup tool, so there is no login screen and no **Sign out** button —
 signing out would sign you straight back in.
 
 **The first person to open the dashboard becomes the admin.** Everyone else in

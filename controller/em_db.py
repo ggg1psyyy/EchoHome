@@ -36,7 +36,7 @@ import em_config_sections
 import em_recordings
 import em_wake_samples
 
-log = logging.getLogger("echomuse.db")
+log = logging.getLogger("echohome.db")
 
 # ─── Default device config ────────────────────────────────────────────────────
 

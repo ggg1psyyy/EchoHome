@@ -41,7 +41,7 @@ import em_db as db
 import em_http
 import em_ingressauth
 
-log = logging.getLogger("echomuse.auth")
+log = logging.getLogger("echohome.auth")
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -255,7 +255,7 @@ async def login_via_oidc(identity, role: Optional[str], *,
         log.warning(f"[auth] OIDC sign-in refused (no mapped group): "
                     f"{identity.username}")
         raise AuthError("no_access",
-                        "This account is not in a group that may use EchoMuse",
+                        "This account is not in a group that may use EchoHome",
                         403)
 
     if user is None:
@@ -456,7 +456,7 @@ def maybe_generate_bootstrap_token() -> Optional[str]:
     print(
         f"\n"
         f"  ┌─────────────────────────────────────────────────────────┐\n"
-        f"  │  EchoMuse first-run setup                               │\n"
+        f"  │  EchoHome first-run setup                               │\n"
         f"  │                                                         │\n"
         f"  │  No users found. Visit /setup to create an admin        │\n"
         f"  │  account using this one-time token:                     │\n"

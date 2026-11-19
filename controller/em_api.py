@@ -64,7 +64,7 @@ import em_routes_system
 import em_routes_updates
 import em_pairing
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 # ─── Initialisation ───────────────────────────────────────────────────────────

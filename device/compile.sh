@@ -10,7 +10,7 @@ else
     VERSION="$GIT_VERSION"
 fi
 [ -n "$EM_EXTRA_TAGS" ] && VERSION="${VERSION}-${EM_EXTRA_TAGS// /-}"
-echo "Building EchoMuse $VERSION..."
+echo "Building EchoHome $VERSION..."
 
 # Suppress known harmless warnings from vendored C sources:
 #   -Wno-null-dereference: rnnoise/rnn.c assert-style null checks

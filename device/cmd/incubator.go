@@ -291,7 +291,7 @@ func setupIncubator(cc *client.ControlClient, dc *client.DataClient, spk *speake
 			// deciding the link ring asks the satellite (Serving).
 			go incubatorServingChanged()
 		},
-		Model:    "echomuse-" + board.IDOf(board.Current()),
+		Model:    "echohome-" + board.IDOf(board.Current()),
 		Firmware: client.Version,
 		Device:   dev,
 		Announce: announceSatellite,

@@ -123,7 +123,7 @@ def test_a_failed_write_is_logged_not_raised(caplog):
     def boom():
         raise RuntimeError("FOREIGN KEY constraint failed")
 
-    with caplog.at_level(logging.ERROR, logger="echomuse.dbwriter"):
+    with caplog.at_level(logging.ERROR, logger="echohome.dbwriter"):
         em_dbwriter.submit(boom)      # must not raise here
         _drain()
     assert any("FOREIGN KEY" in r.getMessage() for r in caplog.records)

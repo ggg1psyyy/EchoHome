@@ -44,7 +44,7 @@ import (
 
 const usage = `usage: server [command]
 
-With no command, runs the EchoMuse device daemon (normally started by
+With no command, runs the EchoHome device daemon (normally started by
 start_server.sh, which restarts it; do not run a second copy by hand).
 
   version         print the firmware version and build time
@@ -81,7 +81,7 @@ func main() {
 			if sec, err := strconv.ParseInt(client.BuildUnix, 10, 64); err == nil {
 				built = time.Unix(sec, 0).UTC().Format(time.RFC3339)
 			}
-			fmt.Printf("EchoMuse %s (built %s)\n", client.Version, built)
+			fmt.Printf("EchoHome %s (built %s)\n", client.Version, built)
 			os.Exit(0)
 		case "help", "--help", "-h":
 			fmt.Print(usage)
@@ -92,7 +92,7 @@ func main() {
 		}
 	}
 	log.SetOutput(os.Stdout)
-	log.Printf("EchoMuse %s starting", client.Version)
+	log.Printf("EchoHome %s starting", client.Version)
 	// Before anything dials: emOS has no netd for bionic's resolver.
 	platform.UseResolverFor(net.DefaultResolver, platform.Base())
 

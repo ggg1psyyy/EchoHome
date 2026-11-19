@@ -98,13 +98,13 @@ def check(theirs) -> list[str]:
 
     # Our HELLO, read by the app.
     (frame,) = ours.FrameReader().feed(ours.hello(
-        name="interop-echo", mac="02:ec:00:00:00:01", model="echomuse-biscuit",
+        name="interop-echo", mac="02:ec:00:00:00:01", model="echohome-biscuit",
         firmware="v0.0.0-interop", preroll_ms=260, output_buffer_bytes=128000))
     hello = theirs.Hello.parse(frame.json())
     expect("Hello.protocol", hello.protocol, 2)
     expect("Hello.name", hello.name, "interop-echo")
     expect("Hello.mac", hello.mac, "02:ec:00:00:00:01")
-    expect("Hello.model", hello.model, "echomuse-biscuit")
+    expect("Hello.model", hello.model, "echohome-biscuit")
     expect("Hello.firmware", hello.firmware, "v0.0.0-interop")
     expect("Hello.aec", hello.aec, False)
     expect("Hello.wake_format", hello.wake_format, None)

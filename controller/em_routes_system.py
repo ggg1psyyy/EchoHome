@@ -25,7 +25,7 @@ import em_support
 from version import VERSION as CONTROLLER_VERSION
 from version import firmware_update as _firmware_update
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 def register(app: web.Application) -> None:
@@ -261,5 +261,5 @@ async def _get_support_bundle(request: web.Request) -> web.Response:
         body=body.encode(),
         content_type="application/json",
         headers={"Content-Disposition":
-                 f'attachment; filename="echomuse-support-{stamp}.json"'},
+                 f'attachment; filename="echohome-support-{stamp}.json"'},
     )

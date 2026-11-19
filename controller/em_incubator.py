@@ -69,7 +69,7 @@ import em_events
 import em_incubator_proto as proto
 import em_state
 
-log = logging.getLogger("echomuse.incubator")
+log = logging.getLogger("echohome.incubator")
 
 BACKEND_HA = "ha"
 BACKEND_INCUBATOR = "incubator"
@@ -127,7 +127,7 @@ def node_name(device_id: str) -> str:
     """The Echo's ESPHome node name (em_esphome's DeviceInfo `name`): HELLO's
     `name` must be it, because it is how Home Assistant knows the device and
     how the app finds its media player."""
-    return f"echomuse-{device_id[-12:].lower()}"
+    return f"echohome-{device_id[-12:].lower()}"
 
 
 _online: set[str] = set()

@@ -8,11 +8,11 @@ of the aiohttp/zeroconf/openwakeword stack.
 
 LOG_LEVELS is a comma-separated list of `name=LEVEL` pairs:
 
-    LOG_LEVELS="echomuse.esphome=DEBUG,aiohttp.access=INFO"
+    LOG_LEVELS="echohome.esphome=DEBUG,aiohttp.access=INFO"
 
 Each pair sets ONE logger's level, applied on top of the global level
 DEBUG chose, so a pair is read as written in BOTH directions: with the
-baseline at INFO, `echomuse.db=WARNING` does quiet the database logger.
+baseline at INFO, `echohome.db=WARNING` does quiet the database logger.
 
 The alternative — an override may only ever make a logger MORE verbose —
 was considered and rejected. It makes one string mean different things
@@ -25,19 +25,19 @@ line this emits.
 
 THE HIERARCHY IS PYTHON'S, NOT OURS
 ----------------------------------
-`echomuse=DEBUG` reaches `echomuse.esphome` and `echomuse.player` because
+`echohome=DEBUG` reaches `echohome.esphome` and `echohome.player` because
 logging resolves a logger's effective level from the nearest ancestor that
 has one (`Logger.getEffectiveLevel`). Nothing is walked here, no child is
 visited, no child needs a level set. That is the whole reason a logger
 outside the hierarchy is a bug rather than a style choice: `em_player`
-logged as the bare name `player`, so no `echomuse` level could ever have
+logged as the bare name `player`, so no `echohome` level could ever have
 reached the loudest logger in the tree, and it looked correct only because
 an unset DEBUG left it inheriting the root level by accident.
 
-A DOTLESS NAME IS HONOURED, because `echomuse` and `aiohttp` are real
+A DOTLESS NAME IS HONOURED, because `echohome` and `aiohttp` are real
 loggers and setting the root of a hierarchy is the obvious thing to want
 to do. The mistake this would otherwise hide — `player=DEBUG` for a
-logger that ought to be `echomuse.player` — is caught below instead, by
+logger that ought to be `echohome.player` — is caught below instead, by
 the name naming no logger anything logs to.
 
 A NAME NOTHING LOGS TO IS SKIPPED, AND SAYS SO

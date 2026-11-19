@@ -16,9 +16,9 @@
 # Docker's port mapping.
 
 services:
-  echomuse-controller:
+  echohome-controller:
     image: ghcr.io/ggg1psyyy/echohome-controller:latest
-    container_name: echomuse-controller
+    container_name: echohome-controller
     restart: unless-stopped
     network_mode: host
     env_file:

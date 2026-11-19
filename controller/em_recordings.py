@@ -36,7 +36,7 @@ import re
 import wave
 from pathlib import Path
 
-log = logging.getLogger("echomuse.recordings")
+log = logging.getLogger("echohome.recordings")
 
 RECORDINGS_SUBDIR = "recordings"
 

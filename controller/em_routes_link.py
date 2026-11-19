@@ -22,7 +22,7 @@ import em_pki
 import em_state
 import em_tasks
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 def register(app: web.Application) -> None:

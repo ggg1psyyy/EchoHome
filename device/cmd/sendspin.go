@@ -151,8 +151,8 @@ func applySendspinConfig(spk *speaker.PcmSpeaker, cc *client.ControlClient, vol 
 		c, err := sendspin.New(sendspin.Config{
 			StorePath: sendspinStore,
 			Name:      name,
-			Instance:  "echomuse-" + deviceID,
-			Product:   "EchoMuse " + board.IDOf(board.Current()),
+			Instance:  "echohome-" + deviceID,
+			Product:   board.IDOf(board.Current()),
 			Version:   client.Version,
 			Unpaired:  unpaired,
 		})

@@ -83,7 +83,7 @@ logging.basicConfig(
     level=logging.DEBUG if DEBUG else logging.INFO,
     format=_LOG_FORMAT,
 )
-log = logging.getLogger("echomuse")
+log = logging.getLogger("echohome")
 
 # Keep the last few hundred lines in memory so a support bundle can carry the
 # controller's own log, not just the relayed per-device one.
@@ -101,7 +101,7 @@ logging.getLogger("websockets.server").setLevel(logging.CRITICAL)
 # this module's log level.
 logging.getLogger("aiohttp.access").setLevel(logging.INFO if DEBUG else logging.WARNING)
 
-# LOG_LEVELS="echomuse.esphome=DEBUG,aiohttp.access=INFO" — per-logger
+# LOG_LEVELS="echohome.esphome=DEBUG,aiohttp.access=INFO" — per-logger
 # overrides on top of the global level, applied after the two defaults above
 # so a specific setting can supersede them. `.get(..., "")` rather than a
 # truthiness test for the reason DEBUG needed one: every non-empty string is
@@ -136,7 +136,7 @@ API_PORT     = int(os.environ.get("API_PORT", "8768"))
 # unset — never a literal, which used to send every unconfigured deployment
 # to a developer's own machine. See em_hostip.
 SERVER_IP    = em_hostip.server_ip(os.environ.get("SERVER_IP"))
-MDNS_NAME    = os.environ.get("MDNS_NAME", "echomuse")
+MDNS_NAME    = os.environ.get("MDNS_NAME", "echohome")
 DB_PATH      = os.environ.get("DB_PATH", "echomuse.db")
 
 # Device approval mode — overridden by system_config after db.init()
@@ -1819,7 +1819,7 @@ def _close_db() -> None:
 
 
 async def main():
-    log.info(f"EchoMuse Controller {CONTROLLER_VERSION}")
+    log.info(f"EchoHome setup tool {CONTROLLER_VERSION}")
     db.init(DB_PATH)
     em_state.boards.update(em_boards.decode(await asyncio.get_running_loop()
                            .run_in_executor(None, db.get_config, em_boards.CONFIG_KEY)))
@@ -1902,7 +1902,7 @@ async def main():
             if REQUIRE_DEVICE_TLS:
                 log.info("REQUIRE_DEVICE_TLS=1 — plain/tokenless device connections will be rejected")
 
-            log.info("EchoMuse Controller ready — waiting for devices")
+            log.info("EchoHome setup tool ready — waiting for devices")
             await _until_stopped()
 
     finally:
@@ -1915,7 +1915,7 @@ async def main():
         await azc.async_close()
         await runner.cleanup()
         await asyncio.get_running_loop().run_in_executor(None, _close_db)
-        log.info("EchoMuse Controller stopped")
+        log.info("EchoHome setup tool stopped")
 
 
 if __name__ == "__main__":

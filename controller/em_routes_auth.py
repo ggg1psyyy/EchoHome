@@ -21,7 +21,7 @@ import em_http
 import em_ingressauth
 import em_oidc
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 # ─── OpenID Connect sign-in ───────────────────────────────────────────────────

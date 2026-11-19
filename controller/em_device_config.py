@@ -15,7 +15,7 @@ import em_console_pw
 import em_listen
 import em_scenes
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 async def apply_live_config(device_id: str, live, effective: dict) -> None:

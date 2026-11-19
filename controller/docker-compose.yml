@@ -1,8 +1,8 @@
 services:
-  echomuse-controller:
+  echohome-controller:
     build:
       context: .
-    container_name: echomuse-controller
+    container_name: echohome-controller
     restart: unless-stopped
     network_mode: host
     environment:

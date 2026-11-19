@@ -26,7 +26,7 @@ import em_events
 import em_shell
 import em_state
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 # Device payloads — files the controller distributes to devices (provisioning
 # wizard today; script/component OTA tomorrow). One canonical copy on disk,

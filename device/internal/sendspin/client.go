@@ -392,7 +392,7 @@ func (c *Client) hello() clientHello {
 		SupportedRoles: []string{rolePlayer, roleController},
 		DeviceInfo: &deviceInfo{
 			ProductName:     c.cfg.Product,
-			Manufacturer:    "EchoMuse",
+			Manufacturer:    "EchoHome",
 			SoftwareVersion: c.cfg.Version,
 		},
 		PlayerSupport: &playerSupport{

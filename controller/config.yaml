@@ -71,12 +71,12 @@ options:
   # nothing to replace the credentials it holds.
   server_tls_port: 8770
   server_ip: ""
-  mdns_name: "echomuse"
+  mdns_name: "echohome"
   require_device_tls: false
   device_approval: "strict"
   debug: false
   # Per-logger level overrides, as comma-separated name=LEVEL pairs:
-  # "echomuse.esphome=DEBUG,aiohttp.access=INFO". Applied on top of the
+  # "echohome.esphome=DEBUG,aiohttp.access=INFO". Applied on top of the
   # level `debug` sets, so a name here wins over it. Empty leaves every
   # logger alone. A pair naming something that is not a logger is reported
   # in the log and skipped rather than refused.

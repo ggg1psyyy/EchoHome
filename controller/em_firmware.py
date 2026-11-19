@@ -35,7 +35,7 @@ from pathlib import Path
 
 from version import firmware_key
 
-log = logging.getLogger("echomuse.firmware")
+log = logging.getLogger("echohome.firmware")
 
 FIRMWARE_SUBDIR = "firmware"
 

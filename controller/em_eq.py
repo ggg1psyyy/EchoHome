@@ -48,7 +48,7 @@ def preload() -> None:
     _signal()
 
 
-log = logging.getLogger("echomuse.eq")
+log = logging.getLogger("echohome.eq")
 
 EQ_FREQUENCIES = [125, 250, 500, 1000, 2000, 3500, 5500, 8000]
 NUM_BANDS       = len(EQ_FREQUENCIES)

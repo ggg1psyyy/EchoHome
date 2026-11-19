@@ -15,7 +15,7 @@ import em_events
 import em_shell
 import em_state
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 def register(app: web.Application) -> None:

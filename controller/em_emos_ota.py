@@ -27,7 +27,7 @@ import em_releases
 import em_shell
 import em_state
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 # emOS updates (#573, em_emos_update). Their own sets rather than the firmware
 # ones above: the dashboard shows the two side by side, and a shared flag

@@ -26,7 +26,7 @@ import em_releases
 import em_support
 from version import VERSION as CONTROLLER_VERSION
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 def register(app: web.Application) -> None:
@@ -123,7 +123,7 @@ async def _post_provision_diagnostics(request: web.Request) -> web.Response:
         body=em_support.to_json(diag).encode(),
         content_type="application/json",
         headers={"Content-Disposition":
-                 f'attachment; filename="echomuse-provision-{stamp}.json"'},
+                 f'attachment; filename="echohome-provision-{stamp}.json"'},
     )
 
 

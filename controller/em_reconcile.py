@@ -25,7 +25,7 @@ import em_shell
 import em_state
 import em_tasks
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 # How long a device is left alone after a connect-time reconcile. Devices on

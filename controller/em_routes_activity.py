@@ -17,7 +17,7 @@ import em_auth as auth
 import em_db as db
 import em_http
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 def register(app: web.Application) -> None:

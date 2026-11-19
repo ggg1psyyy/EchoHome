@@ -26,7 +26,7 @@ from zeroconf import ServiceInfo
 
 import em_state
 
-log = logging.getLogger("echomuse.esphome_mdns")
+log = logging.getLogger("echohome.esphome_mdns")
 
 SERVICE_TYPE = "_esphomelib._tcp.local."
 

@@ -148,7 +148,7 @@ def drop_invalid(config: dict) -> tuple[dict, list[str]]:
     return {k: v for k, v in config.items() if k not in bad}, bad
 
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 
 def well_typed(device_id: str, config: dict) -> dict:

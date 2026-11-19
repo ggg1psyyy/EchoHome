@@ -3118,16 +3118,16 @@ function _serverBinaryVerdict(bytes) {
   if (u8.length < 52 || u8[0] !== 0x7f || u8[1] !== 0x45 || u8[2] !== 0x4c || u8[3] !== 0x46) {
     const head = new TextDecoder('latin1').decode(u8.slice(0, 8)).replace(/[^\x20-\x7e]/g, '.');
     return { ok: false, reason: `That file is not a program at all (it starts "${head}"). `
-      + 'Choose the EchoMuse server binary.' };
+      + 'Choose the EchoHome firmware binary.' };
   }
   const machine = u8[18] | (u8[19] << 8);
   if (u8[4] !== 1 || machine !== 0x28) {
     return { ok: false, reason: 'That is a program, but not a 32-bit ARM one, so it cannot run '
-      + 'on an Echo. Choose the EchoMuse server binary built for the device.' };
+      + 'on an Echo. Choose the EchoHome firmware binary built for the device.' };
   }
   if (!new TextDecoder('latin1').decode(u8).includes('github.com/wilbowes/EchoMuse/')) {
-    return { ok: false, reason: 'That is an ARM program, but not an EchoMuse server. '
-      + 'Choose the EchoMuse server binary.' };
+    return { ok: false, reason: 'That is an ARM program, but not EchoHome firmware. '
+      + 'Choose the EchoHome firmware binary.' };
   }
   return { ok: true, reason: '' };
 }
@@ -3200,7 +3200,7 @@ const _EMOS_STEPS = [
   { id: 'connect_android', mode: 'android', label: 'Connect Device',    desc: 'Connect the Echo Dot via USB. It can be booted into Android or already in TWRP. Appears as "AEOBC" (Android) or "Echo" (TWRP) in the USB picker.' },
   { id: 'connect_twrp',    mode: 'twrp',    label: 'Connect to TWRP',   desc: 'Wait for the device to reach TWRP, then reconnect — it appears as "Echo" in the USB picker. Everything after this happens there.' },
   { id: 'escrow_boot',     mode: 'twrp',    label: 'Escrow Boot Image', desc: 'Read the stock boot partition off the device and keep a copy. This one file is both the build input and your backup if we need to roll back.' },
-  { id: 'install_em',      mode: 'twrp',    label: 'Install EchoMuse',  desc: 'Push the server binary, startup script and TLS credentials to /data, which survives the boot-partition write.' },
+  { id: 'install_em',      mode: 'twrp',    label: 'Install EchoHome',  desc: 'Push the server binary, startup script and TLS credentials to /data, which survives the boot-partition write.' },
   { id: 'build_emos',      mode: 'twrp',    label: 'Build emOS',        desc: 'The controller repacks your own escrowed image with the emOS init, reusing your kernel and device trees.' },
   { id: 'flash_emos',      mode: 'twrp',    label: 'Flash and Verify',  desc: 'Write the built image to the boot partition and read it back to confirm it landed.' },
   { id: 'reboot_watch',    mode: 'serial',  label: 'Reboot and Watch',  desc: 'Reboot into emOS and follow the first boot over the USB serial console while the ring fills.' },
@@ -3867,7 +3867,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `echomuse-provision-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'')}.json`;
+    a.download = `echohome-provision-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'')}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -4632,7 +4632,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
           ? ' The Echo is unlocked, since it is in TWRP; this is the wizard failing to read it. '
             + 'Try this step again, and if it repeats, use Download diagnostics and attach the '
             + 'file to an issue.'
-          : ' EchoMuse only builds for amonet 1 with TWRP 3.2.3 and FireOS 5, or amonet 2 with '
+          : ' EchoHome only installs on amonet 1 with TWRP 3.2.3 and FireOS 5, or amonet 2 with '
             + 'TWRP 3.7.0 and FireOS 6. A TWRP or amonet updated by hand would explain this; '
             + 'please open an issue with Download diagnostics attached.';
     return { ok: false, gen, confirmed: seen, notes, reason:
@@ -4923,7 +4923,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   async function runInstallEchoMuse(c, file, useLatest) {
     let buf;
     if (useLatest) {
-      addLog('Fetching latest EchoMuse build from controller…');
+      addLog('Fetching the latest EchoHome firmware from the setup tool…');
       // Confirmed against em_api.py: /api/provision/latest_binary streams
       // the binary itself (distinct from /api/releases/latest, which only
       // returns {version, url} metadata). Server-side download from
@@ -4955,7 +4955,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     // what let the GitHub-install bug silently keep an old dev build in
     // place. Each step is checked individually rather than && chained —
     // that's what let the original bug stay silent in the first place.
-    addLog('Clearing any pre-existing EchoMuse install…');
+    addLog('Clearing any earlier install…');
     await c.shell('su -c "mkdir -p /data/local/bin"');
     const rmOut = (await c.shell('su -c "rm -f /data/local/bin/server /data/local/bin/server_a /data/local/bin/server_b" 2>&1')).trim();
     if (rmOut) addLog(`  → ${rmOut}`);
@@ -5109,9 +5109,9 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     if (scriptGot !== scriptWant) {
       throw new Error('Startup script install verification failed — '
         + `/data/local/bin/start_server.sh reads ${scriptGot || 'unreadable'}, expected `
-        + `${scriptWant}. Without it the device will never start EchoMuse.`);
+        + `${scriptWant}. Without it the device will never start EchoHome.`);
     }
-    addLog('EchoMuse installed.', 'ok');
+    addLog('EchoHome installed.', 'ok');
 
     // Device-link TLS credentials — pushed pre-first-contact so the very
     // first connection this device ever makes to the controller is wss +
@@ -5291,7 +5291,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       ev.split('\n').map(l => l.trim()).filter(Boolean)
         .forEach(l => addLog(`  ${l}`, 'warn'));
       throw new Error('/data could not be mounted in TWRP, so there is nowhere '
-        + 'to install EchoMuse — tried the fstab entry, TWRP\'s own mount, and '
+        + 'to install EchoHome — tried the fstab entry, TWRP\'s own mount, and '
         + 'the userdata partition directly as ext4 and f2fs. Nothing has been '
         + 'written and the device is still in TWRP.\n\n'
         + 'A userdata partition that mounts nowhere usually needs reformatting: '
@@ -5601,7 +5601,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     // in the browser is the convenient one; the one on their disk is the one
     // that survives this tab being closed, and it is the ten-second undo for
     // everything after this point.
-    _downloadBytes(ref, `echomuse-stock-boot-${md5.slice(0, 8)}.img`);
+    _downloadBytes(ref, `echohome-stock-boot-${md5.slice(0, 8)}.img`);
     addLog('A copy has been downloaded to your computer. KEEP IT — it is both '
          + 'the build input and the recovery image. Restoring it takes about '
          + 'ten seconds and leaves /data untouched.', 'warn');
@@ -6207,7 +6207,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       }
       if (!bytes) {
         throw new Error('No escrowed image in this session. Choose the '
-          + 'echomuse-*.img file downloaded at the escrow step.');
+          + 'echohome-*.img file downloaded at the escrow step.');
       }
       // The same guard the escrow and the patch step apply. Restoring is the
       // one operation nobody will check afterwards, so a file that is not a
@@ -6565,7 +6565,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     }
     if (!seen) {
       throw new Error('The device did not register within two minutes. It may be '
-        + 'on the network without EchoMuse running. Check the console for what '
+        + 'on the network without EchoHome running. Check the console for what '
         + 'the device is doing. To start over, get it into TWRP — unplug, hold '
         + 'mute or + (volume up), and plug back in with it held until the ring '
         + 'changes — and run this wizard again.');
@@ -7036,7 +7036,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                 {!emosRef && (
                   <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--warn)' }}>
                     This session has no escrowed image — choose the
-                    {' echomuse-stock-boot-*.img'} downloaded at step 3.
+                    {' echohome-stock-boot-*.img'} downloaded at step 3.
                   </div>
                 )}
                 <input type="file" accept=".img"
@@ -8400,7 +8400,7 @@ function SettingsPanel({ globalConfig, onGlobalConfigChange, onClose, username, 
       const p = n => String(n).padStart(2, '0');
       const stamp = `${now.getFullYear()}${p(now.getMonth()+1)}${p(now.getDate())}`
                   + `-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
-      setBundle({ url: URL.createObjectURL(b), name: `echomuse-support-${stamp}.json`, bytes: b.size });
+      setBundle({ url: URL.createObjectURL(b), name: `echohome-support-${stamp}.json`, bytes: b.size });
     } catch(e) {
       setBundleErr(e.error || 'Failed to collect bundle');
     }
@@ -8940,7 +8940,7 @@ function App() {
       {/* Header */}
       <div className="em-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 'var(--space-18)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-7)' }}>
-          <h1 style={{ fontFamily: "var(--font-sans)", fontSize: 'var(--fs-3xl)', color: 'var(--text)', fontWeight: 600, letterSpacing: 'var(--tracking-tight)' }}>EchoMuse</h1>
+          <h1 style={{ fontFamily: "var(--font-sans)", fontSize: 'var(--fs-3xl)', color: 'var(--text)', fontWeight: 600, letterSpacing: 'var(--tracking-tight)' }}>EchoHome</h1>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 'var(--fs-sm)', color: 'var(--muted)', letterSpacing: 'var(--tracking-label)', textTransform: 'uppercase' }}>Device Management</div>
           {status?.controller_version && (
             /* Deliberately IN PLACE of the version rather than a banner beside
@@ -9169,7 +9169,7 @@ function App() {
 
       {devices.length === 0 && !loadError && !isAdmin && (
         <div style={{ textAlign: 'center', padding: 'var(--space-30) 0', fontFamily: "var(--font-mono)", fontSize: 'var(--fs-base)', color: 'var(--muted)' }}>
-          No devices yet — power on an EchoMuse device to see it appear here
+          No devices yet — power on an Echo running EchoHome to see it appear here
         </div>
       )}
 

@@ -325,7 +325,7 @@ Set these on the controller, and restart it:
 | Setting | What it is |
 |---|---|
 | `OIDC_ISSUER` | The provider's issuer URL, which has a `/.well-known/openid-configuration` beneath it. Must be `https` (plain `http` only for `localhost`). Setting it turns single sign-on on. |
-| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | The client you registered for EchoMuse. Register it as a confidential client using the authorization-code flow. |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | The client you registered for the setup tool. Register it as a confidential client using the authorization-code flow. |
 | `OIDC_REDIRECT_URI` | `https://<where you open the dashboard>/api/auth/oidc/callback`. Register exactly this at the provider. |
 | `OIDC_ADMIN_GROUPS` | Comma-separated group names whose members become **admin**. |
 | `OIDC_READONLY_GROUPS` | Comma-separated group names whose members become **read-only**. |

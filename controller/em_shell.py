@@ -20,7 +20,7 @@ from shlex import quote as _sh_quote
 
 import em_state
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 # How long to wait before asking again when the shell plane did not answer:
 # seconds after a register it is often not up yet.

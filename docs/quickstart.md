@@ -50,7 +50,7 @@ docker compose -f docker-compose.deploy.yml up -d
 ```
 
 Open `http://<this computer>:8768` and claim it with the setup token printed
-in `docker logs echomuse-controller`.
+in `docker logs echohome-controller`.
 
 </details>
 
@@ -82,7 +82,7 @@ The Echo then finds the setup tool on its own. Approve it in the dashboard
    router's leases, so the reservation and Home Assistant name the same
    device.
 2. In the **Voice Incubator app**, add the Echo as a satellite; it is
-   announced on the network as `echomuse-<serial>`. Choose its wake words on
+   announced on the network as `echohome-<serial>`. Choose its wake words on
    the app's *Wake words* page.
 
 Say a wake word, or tap the action button, and ask.

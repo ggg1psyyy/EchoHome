@@ -34,7 +34,7 @@ import logging
 import os
 import ssl
 
-log = logging.getLogger("echomuse.pki")
+log = logging.getLogger("echohome.pki")
 
 # DNS name devices expect in the server cert — coupled with
 # device/internal/client/tlscreds.go (tlsServerName). Not resolvable on
@@ -70,7 +70,7 @@ def _generate(tls_dir: str) -> None:
 
     # ── CA ────────────────────────────────────────────────────────────────
     ca_key  = ec.generate_private_key(ec.SECP256R1())
-    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "EchoMuse Controller CA")])
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "EchoHome Controller CA")])
     ca_cert = (
         x509.CertificateBuilder()
         .subject_name(ca_name)

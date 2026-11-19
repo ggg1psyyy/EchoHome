@@ -22,7 +22,7 @@ import em_releases
 import em_shell
 import em_state
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 # Track in-progress OTA updates per device_id to enforce one-at-a-time.
 in_progress: set[str] = set()

@@ -17,7 +17,7 @@ stopped.
   [install steps](https://github.com/OHF-Voice/voice-incubator#install) say.
   It needs Home Assistant 2025.10 or later.
 - The app finds satellites over mDNS. The Echo announces itself
-  (`_voice-incubator._tcp`, as `echomuse-<serial>`) while it listens, and
+  (`_voice-incubator._tcp`, as `echohome-<serial>`) while it listens, and
   the setup tool announces it too, at the Echo's address, on its own
   network: where mDNS does not cross your VLANs it is enough for the app and
   the setup tool to share one, as long as the app can reach the Echo on port

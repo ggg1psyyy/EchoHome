@@ -33,7 +33,7 @@ from version import parse as _parse_version
 from version import choose_firmware_release as _choose_firmware_release
 from version import offers_ea_firmware as _offers_ea_firmware
 
-log = logging.getLogger("echomuse.api")
+log = logging.getLogger("echohome.api")
 
 # List endpoint, not /releases/latest: device firmware releases (v* tags with
 # a `server` asset) share the repo with controller releases (controller-v*
