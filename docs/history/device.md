@@ -2120,3 +2120,8 @@ including why hashing is worth it when deleting the file defeats it, is in
   orange every 5 s once it has been away 15 s (`watchAppMissing`), through
   `Server.Flash`, which hands the ring back: the continuous orange pulse
   had overlapped the music ring and the LED Ring light.
+- 2026-11-19: with the setup tool stopped for a while, the Echo found it
+  again only after up to ~2 min (the controller link's static backoff: 5,
+  5, 10, 20, then 60 s per endpoint, the setup tool's address plus one mDNS
+  try; across VLANs mDNS can't shorten it). Capping it at 15 s was offered
+  and declined: the delay is acceptable as it is.
