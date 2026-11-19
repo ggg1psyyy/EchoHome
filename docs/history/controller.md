@@ -2173,6 +2173,15 @@ finish on `_b`, the slot `boot-root.zip` patches for root.
 
 ### The emOS flow, and what a run against real hardware found
 
+- 2026-11-19, EchoHome setup tool 3.0.0-ea.2, a fresh install: an Echo
+  provisioned onto an IoT VLAN, the setup tool on Home Assistant's, never
+  registered (mDNS does not cross; a re-run keeps `/data`, so the WiFi stayed).
+  With **Controller address** set first, the wizard's Install step wrote
+  `controller.json`, a re-run from TWRP skipped the WiFi step, and the Echo
+  registered across the VLANs. Booted normally, step 1 can stop at
+  "Authenticating ADB…" (EchoMuse#1208); from TWRP it goes on. The quickstart
+  says both.
+
 The nine-step emOS flow ran end to end for the first time on 2026-09-06 and
 failed at four different steps. Every one of those failures was in a CHECK
 rather than in the thing it was checking — the writes and pushes were correct
