@@ -714,6 +714,7 @@ func main() {
 	startStandaloneIncubator(s)
 	applyOwnedAtBoot()
 	go watchMusicRing()
+	go watchAppMissing(s)
 
 	// Heap-profile dump on SIGUSR1 — the ~1MB/h leak hunt (2026-07-17).
 	// The device accepts no inbound connections, so instead of an HTTP pprof

@@ -146,6 +146,12 @@ func (m *Manager) Serving() bool {
 	return m.s != nil && m.want.Standalone
 }
 
+// AppConnected says whether the running satellite has its app connected.
+func (m *Manager) AppConnected() bool {
+	s := m.server()
+	return s != nil && s.State().AppConnected
+}
+
 func (m *Manager) stopLocked(why string) {
 	if m.s == nil {
 		return

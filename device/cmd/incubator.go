@@ -500,3 +500,31 @@ func incubatorLinkDown() {
 		incubatorMgr.LinkDown()
 	}
 }
+
+// watchAppMissing shows that the satellite's app is away: a short dim orange
+// flash every appMissingEvery, once it has been away for appMissingAfter
+// (an app restarting, or a link the app lost). A flash holds the ring for a
+// moment and hands it back, so the music ring, the LED Ring light and the
+// satellite's own states carry on under it; never over the mute ring.
+const (
+	appMissingAfter = 15 * time.Second
+	appMissingEvery = 5 * time.Second
+	appMissingFlash = 200 * time.Millisecond
+)
+
+func watchAppMissing(s *server.Server) {
+	var since time.Time
+	for range time.Tick(appMissingEvery) {
+		if incubatorMgr == nil || !incubatorMgr.Serving() || incubatorMgr.AppConnected() {
+			since = time.Time{}
+			continue
+		}
+		if since.IsZero() {
+			since = time.Now()
+			continue
+		}
+		if time.Since(since) >= appMissingAfter && !s.IsMuted() {
+			s.Flash(153, 24, 0, appMissingFlash) // the link pulse's orange at its peak
+		}
+	}
+}

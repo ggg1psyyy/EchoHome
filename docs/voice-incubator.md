@@ -104,7 +104,9 @@ none: whichever client connects first receives the Echo's calls. Keep port
   this Echo (is it running, can it reach port 6055?); *not listening*: the
   Echo is offline.
 - **Without the app the Echo has no voice assistant**: a tap gives the error
-  flash and nothing answers.
+  flash and nothing answers. While the app has been away for 15 s the ring
+  flashes orange briefly every 5 s; the buttons, music and the ring's other
+  states carry on.
 - **A wake word that starts a call and hangs up at once** is the app
   rejecting it on its second check; its Sessions page says why.
 - Firmware from before EchoHome cannot be its own satellite and is not

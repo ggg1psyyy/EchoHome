@@ -2115,3 +2115,8 @@ including why hashing is worth it when deleting the file defeats it, is in
   unchanged, and the router's lease shows the host name (class ID
   `udhcp 1.38.0`). The emOS change for a DHCP hostname, once planned for a
   fork of EchoMuse, is not needed.
+- 2026-11-19: with the link ring standing aside for a running satellite, an
+  app that is away showed nothing. Now a 200 ms flash of the link pulse's
+  orange every 5 s once it has been away 15 s (`watchAppMissing`), through
+  `Server.Flash`, which hands the ring back: the continuous orange pulse
+  had overlapped the music ring and the LED Ring light.
