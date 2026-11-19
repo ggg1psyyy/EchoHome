@@ -393,3 +393,52 @@ func TestARepaintPaintsTheSameStateAgain(t *testing.T) {
 	s.Repaint()
 	rings(t, echo, RingTimers, RingTimers)
 }
+
+// An identified speaker's ring color (voice_incubator server.py
+// _speaker_event: `processing` with r, g, b) colors the ring while the
+// command is processed, and the call's end takes it away. Nobody
+// recognized (no color) or a color that is not one keeps the scene's.
+func TestTheSpeakersColorShowsWhileTheirCommandIsProcessed(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	a.send(AudioOut, make([]byte, 4000)) // the heard sound: thinking, uncolored
+	rings(t, echo, RingListening, RingThinking)
+	if echo.lastView().Speaker != nil {
+		t.Fatal("a color before anyone was identified")
+	}
+	event(a, "processing", `{"speaker":"Alex","score":0.71,"r":0,"g":180,"b":255}`)
+	rings(t, echo, RingListening, RingThinking, RingThinking)
+	if v := echo.lastView(); v.Speaker == nil || *v.Speaker != [3]uint8{0, 180, 255} {
+		t.Fatalf("the thinking ring is %+v, want the speaker's color", v.Speaker)
+	}
+	a.send(AudioOut, make([]byte, 4000)) // the answer: no longer thinking
+	event(a, "responding", `{"text":"hi"}`)
+	a.send(AudioOut, make([]byte, 4000))
+	waitFor(t, "the answer", func() bool { return echo.lastView().State == RingSpeaking })
+	if echo.lastView().Speaker != nil {
+		t.Fatal("the speaker's color outlived the processing")
+	}
+}
+
+func TestOnlyAColorCountsAsTheSpeakers(t *testing.T) {
+	for _, data := range []string{
+		`{"speaker":"unknown"}`,                   // nobody recognized
+		`{"speaker":"x","r":0,"g":180}`,           // incomplete
+		`{"speaker":"x","r":0,"g":256,"b":0}`,     // out of range
+		`{"speaker":"x","r":-1,"g":0,"b":0}`,      // out of range
+		`{"speaker":"x","r":0.5,"g":0,"b":0}`,     // not a whole number
+		`{"speaker":"x","r":"0","g":"0","b":"0"}`, // not numbers
+		`not json`,
+	} {
+		if c := speakerColor(json.RawMessage(data)); c != nil {
+			t.Errorf("%s gave %v", data, *c)
+		}
+	}
+	if c := speakerColor(json.RawMessage(`{"r":0,"g":0,"b":0}`)); c == nil || *c != [3]uint8{} {
+		t.Error("black is a color")
+	}
+	if c := speakerColor(json.RawMessage(`{"r":255,"g":255,"b":255}`)); c == nil || *c != [3]uint8{255, 255, 255} {
+		t.Error("the top of the range is a color")
+	}
+}

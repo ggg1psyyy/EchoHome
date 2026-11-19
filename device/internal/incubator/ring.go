@@ -60,6 +60,9 @@ type RingView struct {
 	State  Ring
 	Night  bool
 	Timers TimerView
+	// Speaker is the identified speaker's color while the command is
+	// processed (RingThinking); nil: the scene's own.
+	Speaker *[3]uint8
 }
 
 // TimerView is the app's last timer_progress (timers.progress): up to
@@ -149,9 +152,10 @@ func (s *session) repaint() {
 // shownKey is what was painted: a repaint only when it changes (new timer
 // data matters only while the timers are shown).
 type shownKey struct {
-	r      Ring
-	night  bool
-	timers int
+	r       Ring
+	night   bool
+	timers  int
+	speaker [4]uint8 // the speaker's color while thinking, [3] set when there is one
 }
 
 // showLocked hands the ring its state if it, night mode, or the timers it
@@ -166,6 +170,9 @@ func (s *session) showLocked() {
 	if r == RingTimers {
 		k.timers = s.timersGen
 	}
+	if sp := s.speakerLocked(r); sp != nil {
+		k.speaker = [4]uint8{sp[0], sp[1], sp[2], 1}
+	}
 	if k == s.shownKey {
 		return
 	}
@@ -173,8 +180,36 @@ func (s *session) showLocked() {
 	s.dev.Show(s.viewLocked(r))
 }
 
+// speakerLocked is the identified speaker's color, while the ring shows the
+// command being processed. s.mu held.
+func (s *session) speakerLocked(r Ring) *[3]uint8 {
+	if r != RingThinking || s.call == nil {
+		return nil
+	}
+	return s.call.speaker
+}
+
+// speakerColor reads the ring color from a `processing` event's data
+// (voice_incubator server.py _speaker_event: `r`, `g`, `b`, absent when
+// nobody was recognized): all three whole numbers 0-255, or none.
+func speakerColor(data json.RawMessage) *[3]uint8 {
+	var d map[string]any
+	if json.Unmarshal(data, &d) != nil {
+		return nil
+	}
+	var c [3]uint8
+	for i, k := range []string{"r", "g", "b"} {
+		v, ok := d[k].(float64)
+		if !ok || v < 0 || v > 255 || v != math.Trunc(v) {
+			return nil
+		}
+		c[i] = uint8(v)
+	}
+	return &c
+}
+
 func (s *session) viewLocked(r Ring) RingView {
-	v := RingView{State: r, Night: s.night}
+	v := RingView{State: r, Night: s.night, Speaker: s.speakerLocked(r)}
 	if r == RingTimers {
 		v.Timers = s.timers
 	}

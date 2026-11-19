@@ -121,6 +121,9 @@ func (e *echoParts) Show(v incubator.RingView) {
 		if len(raw) == 0 || json.Unmarshal(raw, &spec) != nil || spec.Pattern == "" {
 			spec = server.AnimSpec{Pattern: "off"}
 		}
+		if r == incubator.RingThinking && v.Speaker != nil {
+			spec = speakerSpin(spec, *v.Speaker)
+		}
 		// Dark between calls: the LED Ring light, if it is on (cmd/ledring.go).
 		if r == incubator.RingOff {
 			if idle, ok := ledRingIdle(); ok {
@@ -240,6 +243,21 @@ func (e *echoParts) duckFor(r incubator.Ring) {
 // monitoredAnim is shown while the app listens live: no TTL, cleared by the
 // satellite the moment it stops.
 var monitoredAnim = server.AnimSpec{Pattern: "pulse", Colors: [][3]uint8{{255, 0, 0}}, PeriodMs: 1000}
+
+// speakerSpin is the thinking spinner in the identified speaker's color, as
+// the app's own satellites show it: their color as the head and the trail at
+// the scene's standard ratio (30%), the scene's speed and time-out kept.
+func speakerSpin(scene server.AnimSpec, c [3]uint8) server.AnimSpec {
+	trail := [3]uint8{uint8(uint16(c[0]) * 3 / 10), uint8(uint16(c[1]) * 3 / 10), uint8(uint16(c[2]) * 3 / 10)}
+	spec := server.AnimSpec{Pattern: "spin", Colors: [][3]uint8{c, trail}, PeriodMs: scene.PeriodMs, TTLSec: scene.TTLSec}
+	if spec.PeriodMs <= 0 {
+		spec.PeriodMs = 80
+	}
+	if spec.TTLSec <= 0 {
+		spec.TTLSec = 135
+	}
+	return spec
+}
 
 // ringSpecKey names each state's spec in incubatorRing.
 var ringSpecKey = map[incubator.Ring]string{

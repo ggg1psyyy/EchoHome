@@ -42,7 +42,9 @@ stopped.
 - The app's **timers and alarms** ring on the Echo that set them, and its
   **announcements** play on it.
 - **The ring** shows the app's state with your ring scene: listening, the
-  spinner while it works, the meter while it answers, a short flash when a
+  spinner while it works (in the speaker's color, from the app's People
+  page, once their voice is enrolled and recognized), the meter while it
+  answers, a short flash when a
   command needed no reply (or failed), an amber pulse while a timer rings,
   and running timers between calls, the ring counting down to the next. In
   the app's **night mode** the ring is dim and amber, a ringing timer aside.

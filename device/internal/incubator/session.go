@@ -133,6 +133,11 @@ type call struct {
 	spoke      bool   // the answer has sounded
 	failed     bool   // a `result` with ok false
 	hangup     string // the HANGUP's reason
+	// speaker is whose command it is, as the app identified them, when it
+	// sent their ring color (`processing` r, g, b): the ring takes it while
+	// the command is processed (voice_incubator DESIGN.md, People). Nil when
+	// nobody was recognized or no voice is enrolled: the scene's own.
+	speaker *[3]uint8
 }
 
 // push hands a chunk to the call's sender, or drops and counts it.
@@ -539,6 +544,8 @@ func (s *session) handle(m Message, p []byte) error {
 					c.failed = resultFailed(e.Data)
 				case "responding":
 					c.responding = true
+				case "processing":
+					c.speaker = speakerColor(e.Data)
 				}
 			}
 			s.showLocked()

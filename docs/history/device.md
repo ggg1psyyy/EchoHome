@@ -1942,6 +1942,15 @@ including why hashing is worth it when deleting the file defeats it, is in
 
 ## The Voice Incubator satellite (`internal/incubator`)
 
+- 2026-11-19: a recognized speaker's color. The app sends it on
+  `processing` as `r`, `g`, `b` (server.py `_speaker_event`, absent when
+  nobody was recognized, "so the device keeps its own"), and its design
+  says the satellite's ring takes that person's color while the command is
+  processed (DESIGN.md, People). The Echo paints its thinking spinner in
+  it (the head; the trail at 30%, the scene's own ratio), the scene's
+  speed and time-out kept; the call owns the color, so it ends with it.
+  The firmware-voice-incubator reference has no LED code of its own for it.
+
 - 2026-11-19: the app's voice enrolment and wake word recording read a
   satellite's second capture while monitored (`AUDIO_MONITOR_AEC`, asked for
   by HELLO `monitor_aec`; voice_incubator server.py, enrollment.py). Nothing
