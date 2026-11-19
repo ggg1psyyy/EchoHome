@@ -185,7 +185,13 @@ func (s *session) chunk(h heard) {
 	// Monitored (monitor.go): the chunk, then after the detector the report.
 	// Never during a call, whatever the flag says this instant.
 	mon := c == nil && s.mon.on.Load()
-	if mon {
+	intercom := mon && s.intercomOn()
+	switch {
+	case intercom:
+		// The other satellite hears the first capture, nothing else
+		// (set_monitoring_: no second capture, no WAKE_REPORT).
+		s.monitorPush(AudioMonitor, pcm)
+	case mon:
 		if s.mon.fresh.Swap(false) {
 			s.monitorStart()
 		}
@@ -216,6 +222,10 @@ func (s *session) chunk(h heard) {
 	})
 	w.detMu.Unlock()
 	for _, d := range w.found {
+		if intercom {
+			log.Printf("[incubator] wake word %q heard during the intercom, not answered", d.WakeWord)
+			continue
+		}
 		if mon {
 			// Someone is listening, not talking to it: said, not answered
 			// ("stop" included).
@@ -232,6 +242,11 @@ func (s *session) chunk(h heard) {
 func (s *session) wakeHeard(d mixednet.Detection, n uint64) {
 	muted := s.dev.Muted()
 	s.mu.Lock()
+	if s.intercom != intercomNone {
+		s.mu.Unlock()
+		log.Printf("[incubator] wake word %q heard, ignored (the intercom)", d.WakeWord)
+		return
+	}
 	if d.ID == mixednet.StopModelID && !s.closed && s.call != nil {
 		// Said over the answer: the call ends, as by the button, and what it
 		// is saying with it (the Voice PE's on_stop_word).

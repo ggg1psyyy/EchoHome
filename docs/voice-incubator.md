@@ -36,7 +36,8 @@ stopped.
 
 - A wake word, then a question or a command; questions the app asks back
   ("Which room?") are answered without the wake word.
-- **The action button**, in the Voice PE's order: a tap stops a ringing
+- **The action button**, in the Voice PE's order: a tap answers or ends the
+  intercom, stops a ringing
   timer, cancels a call, pauses music that is playing (Home Assistant's, or
   the whole Sendspin group), resumes what a tap paused, and otherwise asks.
   Muted, it still stops a timer and pauses music, and asks nothing. Over
@@ -62,6 +63,11 @@ stopped.
   its **Voice Incubator live listening** switch in Home Assistant is on (off
   by default).
 
+- **The intercom** ("connect to the kitchen"): the called Echo rings, a
+  green pulse and a tone, and stays closed until someone there taps the
+  button; then both talk until a tap on either. Unanswered for 30 s, or
+  muted while it rings, it declines. Needs no switch: nothing of a room is
+  heard until someone in it answers.
 - **Voice enrolment** (the app's People page) and **wake word recording**:
   switch the Echo's *Voice Incubator live listening* on, enrol or record on
   the app's page while the ring pulses red, then switch it off again. The
@@ -70,7 +76,7 @@ stopped.
   keeps working with the switch off: calls send one capture, and the app
   identifies speakers on it.
 
-Not offered: the app's **intercom**. Replies are 16 kHz audio, so they sound
+Replies are 16 kHz audio, so they sound
 slightly duller than music.
 
 ## Privacy
@@ -118,6 +124,6 @@ stopped. The three wake words cost the Echo a few percent of its CPU.
 Since then, on 00LQ: the spinner in a recognized speaker's color, voice
 enrolment, and the button pausing Home Assistant's music.
 
-Not tested: "stop" over an answer, a Home Assistant voice, pausing a
+Not tested: the intercom, a Home Assistant voice, pausing a
 Sendspin group with the button, several Echoes hearing the same wake word,
 the app on another machine than Home Assistant.

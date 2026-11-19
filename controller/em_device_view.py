@@ -80,11 +80,11 @@ def _listen_json(live) -> dict | None:
     if view is None:
         return None
     if em_incubator.monitored(getattr(live, "device_id", "")):
-        # The Echo says so (incubator_state monitored): its microphone goes
-        # to the Voice Incubator app, outside any call, while its Test page
-        # listens. Opt-in, on the Echo's own ESPHome device.
-        return {"state": "monitored", "streams": True,
-                "reason": "the Voice Incubator app is listening live (its Test page)"}
+        # The Echo says so (incubator_state monitored): its microphone goes to
+        # the app outside a call, for its Test page (opt-in) or an intercom answered here.
+        ic = em_incubator.in_intercom(getattr(live, "device_id", ""))
+        return {"state": "intercom" if ic else "monitored", "streams": True, "reason": "an intercom answered on this Echo: another satellite hears this room" if ic
+                else "the Voice Incubator app is listening live (its Test page)"}
     return {"state": view.state, "streams": view.streams, "reason": view.reason}
 
 

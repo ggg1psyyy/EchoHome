@@ -237,3 +237,25 @@ func note(fs, freq, ms, amp float64) []float64 {
 // The device is the one making the sound, so it can say exactly; that is the
 // main reason the cue is generated here rather than sent by the controller.
 func DurationMS() float64 { return bingMS + gapMS + bongMS }
+
+// IntercomRing is one ring of a called intercom: two pairs of high-low
+// notes, played every few seconds until a tap answers. volumeGain is the
+// device volume's linear gain, baked in as VolumeCue's is.
+func IntercomRing(sampleRate int, volumeGain float64) []float64 {
+	if volumeGain <= 0 {
+		return nil
+	}
+	volumeGain = math.Min(volumeGain, 1)
+	fs := float64(sampleRate)
+	amp := math.Pow(10, volumePeakDB/20.0) * 32768.0 * volumeGain
+	gap := make([]float64, int(fs*0.06))
+	pause := make([]float64, int(fs*0.25))
+	var out []float64
+	for range 2 {
+		out = append(out, note(fs, 880, 160, amp)...)
+		out = append(out, gap...)
+		out = append(out, note(fs, 660, 160, amp)...)
+		out = append(out, pause...)
+	}
+	return out
+}

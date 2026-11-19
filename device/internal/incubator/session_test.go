@@ -30,6 +30,7 @@ type fakeEcho struct {
 	music        bool
 	musicPresses int
 	annStops     int // StopAnnouncement calls
+	chimes       int // IntercomChime calls
 }
 
 func (f *fakeEcho) MicOpen(d func([]byte)) { f.mu.Lock(); f.deliver = d; f.opens++; f.mu.Unlock() }
@@ -48,6 +49,7 @@ func (f *fakeEcho) End()              { f.mu.Lock(); f.ends++; f.mu.Unlock() }
 func (f *fakeEcho) Flush()            { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
 func (f *fakeEcho) Muted() bool       { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
 func (f *fakeEcho) StopAnnouncement() { f.mu.Lock(); f.annStops++; f.mu.Unlock() }
+func (f *fakeEcho) IntercomChime()    { f.mu.Lock(); f.chimes++; f.mu.Unlock() }
 func (f *fakeEcho) MusicPress() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

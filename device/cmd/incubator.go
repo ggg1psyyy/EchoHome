@@ -12,6 +12,7 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/bindings/speaker"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
+	"github.com/wilbowes/EchoMuse/internal/cue"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
 	"github.com/wilbowes/EchoMuse/internal/incubator"
 	"github.com/wilbowes/EchoMuse/internal/server"
@@ -97,6 +98,13 @@ func (e *echoParts) StopAnnouncement() {
 // longer than any TTL would otherwise go dark while it plays).
 func (e *echoParts) Show(v incubator.RingView) {
 	r := v.State
+	if spec, ok := intercomAnims[r]; ok {
+		// The Echo's own, never a scene's, never dimmed at night: someone is
+		// calling, or this room is heard in another.
+		e.srv.StartAnim(spec)
+		e.duckFor(r)
+		return
+	}
 	if r == incubator.RingMonitored {
 		// The Echo's own, never a scene's: a privacy indicator, as the mute
 		// ring is. Red as the VPE's ring blinks while monitored; a pulse,
@@ -253,6 +261,19 @@ func (e *echoParts) duckFor(r incubator.Ring) {
 // monitoredAnim is shown while the app listens live: no TTL, cleared by the
 // satellite the moment it stops.
 var monitoredAnim = server.AnimSpec{Pattern: "pulse", Colors: [][3]uint8{{255, 0, 0}}, PeriodMs: 1000}
+
+// The intercom's rings (internal/incubator/intercom.go): green, quick while
+// it rings for an answer, slow once answered.
+var intercomAnims = map[incubator.Ring]server.AnimSpec{
+	incubator.RingIntercomRinging: {Pattern: "pulse", Colors: [][3]uint8{{0, 255, 64}}, PeriodMs: 600},
+	incubator.RingIntercom:        {Pattern: "pulse", Colors: [][3]uint8{{0, 255, 64}}, PeriodMs: 2000},
+}
+
+// IntercomChime is one ring of a called intercom, at the Echo's volume, on
+// the cue path (no stream: the app's audio is not played while it rings).
+func (e *echoParts) IntercomChime() {
+	e.spk.PlayCue(cue.IntercomRing(speakerRate, e.spk.CueGain(e.srv.VolumeLevel())))
+}
 
 // speakerSpin is the thinking spinner in the identified speaker's color, as
 // the app's own satellites show it: their color as the head and the trail at

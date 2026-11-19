@@ -20,6 +20,8 @@ path and hears nothing of the room, ever.
   "Voice Incubator live listening" switch on the Echo's own ESPHome device is
   on, while the app's Test page listens. The Echo reports that as
   `incubator_state` `monitored`, and the privacy line says it streams.
+  And in an **intercom** someone on this Echo answered with a tap: called,
+  the Echo only rings, its microphone closed, until then.
 - **What the Echo reports** as `listen_state`: `local`, or `degraded` with no
   microphone it can read. The controller takes that report over any stored
   `owwOnDevice` (`em_listen.resolve`): a stored `off` or `shadow` from before
@@ -151,8 +153,20 @@ live", under the voice backend; firmware announcing `incubator_monitor`).
   echo-cancelled frames as the first, only while monitored, so only with
   the live listening switch on and someone enrolling or recording on the
   app's page. What the app keeps of them, and for how long, is the app's.
-  Calls carry no second capture. The intercom (the microphone to another
-  room) is not offered.
+  Calls carry no second capture.
+
+### The intercom
+
+The app joins two satellites, each one's microphone on the other's speaker
+(MONITOR with `intercom`). Called, the Echo **rings and waits**: a green
+pulse and a ring tone, its microphone closed, and what the other side says
+is not played. Only a tap on this Echo answers: then its microphone goes to
+the other satellite (the first capture only), it reports `monitored` and
+`intercom` `connected`, the privacy line says it is in an intercom, and the
+ring pulses green slowly. Nothing remote answers it: unanswered for 30 s, or
+muted while it rings, it declines (`intercom_end`). Answered, a tap ends
+it; mute closes the microphone and keeps the other side heard; the app ends
+it after half an hour. No switch: the consent is the tap on the device.
 
 ## Wake word off from Home Assistant
 

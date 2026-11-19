@@ -241,6 +241,14 @@ def monitored(device_id: str) -> bool:
     return rec is not None and bool(rec.state.get("monitored"))
 
 
+def in_intercom(device_id: str) -> bool:
+    """Whether the Echo reports an intercom answered on it (incubator_state
+    intercom "connected"): monitored too, the microphone going to another
+    satellite."""
+    rec = _on_echo.get(device_id)
+    return rec is not None and rec.state.get("intercom") == "connected"
+
+
 async def _start_on_echo(device_id: str, loop, monitor: bool = False, standalone: bool = False) -> None:
     rec = _on_echo.get(device_id)
     if rec is None:
@@ -321,6 +329,7 @@ async def on_incubator_state(device, msg: dict) -> None:
     state = {"listening": bool(st.get("listening")), "appConnected": bool(st.get("appConnected")),
              "inCall": bool(st.get("inCall")),
              "monitored": st.get("monitored") is True,
+             "intercom": st.get("intercom") if st.get("intercom") in ("ringing", "connected") else "",
              "wakeModels": st["wakeModels"] if type(st.get("wakeModels")) is int and st["wakeModels"] >= 0 else 0,
              "port": st.get("port") if isinstance(st.get("port"), int) else None,
              "error": str(st.get("error"))[:200] if st.get("error") else ""}
@@ -413,7 +422,7 @@ def status_view(device_id: str) -> Optional[dict]:
         return {"port": rec.port, "listening": bool(st.get("listening")),
                 "appConnected": bool(st.get("appConnected")),
                 "inCall": bool(st.get("inCall")), "wakeModels": st.get("wakeModels", 0),
-                "monitored": bool(st.get("monitored")),
+                "monitored": bool(st.get("monitored")), "intercom": st.get("intercom", ""),
                 "onEcho": True}
     # Set to the Voice Incubator, not (yet) on the Echo: nothing runs it.
     return {"port": None, "listening": False, "appConnected": False, "inCall": False}

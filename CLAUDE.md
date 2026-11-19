@@ -128,9 +128,10 @@ are the record, and their density is load-bearing.
 
 **`docs/listening.md` is the spec.** EchoHome firmware sends nothing of the
 room to the controller, in any state; the Voice Incubator app hears it only in
-a call (after the Echo's own wake word or a press) or while the app's Test
-page listens with HA's "live listening" switch on, which the Echo reports
-(`incubator_state` `monitored`).
+a call (after the Echo's own wake word or a press), while the app's Test
+page listens with HA's "live listening" switch on, or in an intercom answered
+by a tap on the Echo itself; the Echo reports both (`incubator_state`
+`monitored`, and `intercom`).
 
 - **Privacy statements come from what the Echo REPORTS** (`listen_state` →
   `em_listen.resolve`, and `monitored`), never from configuration. For

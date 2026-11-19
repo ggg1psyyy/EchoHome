@@ -7590,6 +7590,10 @@ function StageAdvanced({ open, onToggle, disabledStyle, children }) {
 // arrives with the next poll): its microphone going to the app, live.
 function deviceListen(device) {
   if (device.voiceIncubator?.monitored === true) {
+    if (device.voiceIncubator.intercom === 'connected') {
+      return { state: 'intercom', streams: true,
+               reason: 'an intercom answered on this Echo: another satellite hears this room' };
+    }
     return { state: 'monitored', streams: true,
              reason: 'the Voice Incubator app is listening live (its Test page)' };
   }
@@ -7599,6 +7603,7 @@ function deviceListen(device) {
 function listenStatusText(listen) {
   switch (listen.state) {
     case 'monitored':  return 'Now: streaming to the Voice Incubator app — its Test page is listening live';
+    case 'intercom':   return 'Now: in an intercom answered here — another satellite hears this room';
     case 'local':      return 'Now: listening privately — nothing leaves this Echo until it hears the wake word';
     case 'degraded':   return `Now: button only — ${listen.reason}`;
     case 'controller': return 'Now: streaming continuously to the controller';
@@ -7615,11 +7620,13 @@ function listenStatusText(listen) {
 function listenFleetText(devices) {
   const live = devices.filter(d => d.connected && d.listen).map(deviceListen);
   const monitored = live.filter(l => l.state === 'monitored').length;
-  const streaming = live.filter(l => l.streams === true && l.state !== 'monitored').length;
+  const intercom = live.filter(l => l.state === 'intercom').length;
+  const streaming = live.filter(l => l.streams === true && l.state !== 'monitored' && l.state !== 'intercom').length;
   const unknown = live.filter(l => l.streams === null).length;
   const parts = [];
   if (streaming) parts.push(`${streaming} of ${live.length} Echo${live.length === 1 ? '' : 'es'} stream${streaming === 1 ? 's' : ''} all the time`);
   if (monitored) parts.push(`${monitored} streaming to the Voice Incubator app's Test page`);
+  if (intercom) parts.push(`${intercom} in an intercom`);
   if (unknown) parts.push(`${unknown} not reported yet`);
   return parts.length ? parts.join(' · ') : null;
 }

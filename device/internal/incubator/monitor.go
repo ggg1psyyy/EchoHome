@@ -14,12 +14,9 @@ import (
 // answered.
 //
 // It streams the microphone continuously, so it is opt-in: HELLO says
-// `monitor` only when the controller has been told to allow it
-// (Config.Monitor, the dashboard's per-Echo switch), and a MONITOR arriving
-// otherwise is ignored. The intercom (MONITOR with intercom, the microphone to
-// another satellite) is not offered and is ignored, as is the second capture
-// (monitor_aec): the app needs that for enrolling speakers and recording wake
-// words, and refuses both without it.
+// `monitor` only when live listening is switched on, and a MONITOR arriving
+// otherwise is ignored. The intercom (MONITOR with intercom) needs no switch:
+// it rings and streams only once someone here answers it (intercom.go).
 //
 // Whether audio is leaving is one predicate, monitorWantLocked: asked,
 // allowed, not muted, no call (a call streams its own audio). The Echo reports
@@ -85,7 +82,8 @@ func (s *session) monitorPush(m Message, p []byte) {
 // monitorWantLocked is whether the microphone streams to the app now.
 // s.mu held.
 func (s *session) monitorWantLocked() bool {
-	return s.allowMonitor && s.monitorAsked && !s.muted && !s.closed && s.call == nil
+	asked := (s.allowMonitor && s.monitorAsked) || s.intercom == intercomConnected
+	return asked && !s.muted && !s.closed && s.call == nil
 }
 
 // monitoring says whether the Echo is streaming to the app (what it reports).
@@ -135,21 +133,26 @@ func (s *session) monitorFrame(p []byte) {
 	if err := json.Unmarshal(p, &m); err != nil {
 		return
 	}
-	asked := m.Active
+	s.mu.Lock()
 	switch {
-	case m.Active && !s.allowMonitor:
+	case m.Active && m.Intercom:
+		s.intercomStartLocked()
+	case !m.Active:
+		s.monitorAsked = false
+		s.intercomStopLocked()
+	case s.intercom != intercomNone:
+		// Live listening asked during the intercom: the intercom stands.
+	case !s.allowMonitor:
+		s.mu.Unlock()
 		log.Printf("[incubator] MONITOR ignored: listening live is not allowed on this Echo")
 		return
-	case m.Active && m.Intercom:
-		// Not offered, and the app sends a monitored Echo's audio to the
-		// other satellite once it asks: a stream already going stops.
-		log.Printf("[incubator] MONITOR with the intercom: not offered, monitoring stops")
-		asked = false
+	default:
+		s.monitorAsked = true
 	}
-	s.mu.Lock()
-	s.monitorAsked = asked
 	s.mu.Unlock()
 	s.updateMonitor()
+	s.report() // the intercom's ringing changes no monitoring
+
 }
 
 // monitorChunk is the worker's part, for one chunk: before the detector, the

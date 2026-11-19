@@ -140,7 +140,7 @@ ignored.
 |--------|---------|---------|
 | `register` | see above | Handshake, sent once at connect |
 | `listen_state` | `state` (`local`/`degraded`; `stream` from older firmware), `reason?` | What the device does with its microphone, for the privacy line (`em_listen.resolve`). Sent after every `ack` and on change |
-| `incubator_state` | `listening`, `port`, `appConnected`, `inCall`, `wakeModels`, `monitored`, `error`, `mac` | The satellite's state as it changes, and in answer to every `incubator_satellite`. `monitored`: the microphone is streaming to the app outside a call now; the dashboard's privacy line follows it. `mac`: the one the satellite announces (the Echo's WiFi chip's, as its ESPHome device reports), which the controller's record then carries; absent from older firmware, which keeps the stored one |
+| `incubator_state` | `listening`, `port`, `appConnected`, `inCall`, `wakeModels`, `monitored`, `intercom`, `error`, `mac` | The satellite's state as it changes, and in answer to every `incubator_satellite`. `monitored`: the microphone is streaming to the app outside a call now; the dashboard's privacy line follows it. `intercom`: `ringing` (called, waiting for a tap on the Echo) or `connected` (answered there; `monitored` too); absent otherwise. `mac`: the one the satellite announces (the Echo's WiFi chip's, as its ESPHome device reports), which the controller's record then carries; absent from older firmware, which keeps the stored one |
 | `mute_state` | `muted` | The button's mute or Software Mute changed (mute is the device's own) |
 | `volume_state` | `level` | Volume changed |
 | `ambient_light` | `lux` | Light reading on a real change (only with `ambient_light`) |

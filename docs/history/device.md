@@ -2010,6 +2010,22 @@ including why hashing is worth it when deleting the file defeats it, is in
   disarmed model is skipped by the detector; "stop" takes the fourth of
   `ModelSlots` (4) beside the app's three wake words. Before this, "stop"
   ran armed throughout but was loaded only for a ring.
+- 2026-11-19: the intercom (HELLO `intercom`), with the Echo's own rule on
+  top of the Voice PE's: called (MONITOR `intercom`), it rings and waits, a
+  green pulse and a ring tone on the cue path (`PlayCue`: no stream, so the
+  app's playback accounting is untouched), microphone closed and the other
+  side's AUDIO_OUT dropped, until a tap here answers. Then the first capture
+  alone goes as AUDIO_MONITOR (no second capture, no WAKE_REPORT, as
+  set_monitoring_ with intercom), it reports `monitored` and `intercom`
+  `connected`, and the dashboard's privacy line says intercom. Unanswered
+  for 30 s, or muted while it rings, it sends `intercom_end` (the app ends it
+  on the other satellite, voice_incubator server.py `end_intercom`); a tap
+  answered ends it the same way; the app's MONITOR off ends it with nothing
+  back. Wake words are not answered meanwhile. No switch (the owner's call):
+  the consent is the tap. The protocol has no "ringing" for the caller, who
+  hears the app's connect tone and then silence until the answer. Until
+  this, `intercom` was simply never built; no decision against it is on
+  record.
 
 ## The Echo's ESPHome device (`internal/esphome`, `cmd/esphome.go`)
 

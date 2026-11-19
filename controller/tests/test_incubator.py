@@ -357,6 +357,26 @@ def test_the_privacy_line_says_the_echo_streams_while_it_reports_monitoring(on_e
     asyncio.run(run())
 
 
+def test_an_intercom_answered_on_the_echo_is_its_own_privacy_line(on_echo):
+    """An intercom answered on the Echo (incubator_state intercom
+    "connected", monitored too) streams, and says it is the intercom, not the
+    Test page; ringing streams nothing."""
+    import em_device_view
+    echo = _calls_echo(on_echo)
+    echo.listen_view = type("V", (), {"state": "local", "streams": False, "reason": ""})()
+    async def run():
+        await inc.device_connected(DEV)
+        await _state(echo, listening=True, port=6055, appConnected=True, intercom="ringing")
+        assert em_device_view._listen_json(echo)["streams"] is False
+        assert inc.status_view(DEV)["intercom"] == "ringing"
+        await _state(echo, listening=True, port=6055, appConnected=True, monitored=True, intercom="connected")
+        view = em_device_view._listen_json(echo)
+        assert view["state"] == "intercom" and view["streams"] is True and "intercom" in view["reason"]
+        await _state(echo, listening=True, port=6055, appConnected=True, intercom="bogus")
+        assert inc.status_view(DEV)["intercom"] == ""
+    asyncio.run(run())
+
+
 def test_an_echo_that_announces_itself_is_still_announced_for(on_echo):
     """Firmware announcing incubator_mdns puts its own satellite on the
     network, but only on its own: where mDNS does not cross VLANs (the Echo

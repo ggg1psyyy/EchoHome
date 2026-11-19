@@ -80,10 +80,12 @@ func TestHelloOffersMonitoringOnlyWhenAllowed(t *testing.T) {
 	if on["monitor_aec"] != true {
 		t.Errorf("HELLO monitor_aec = %v with monitoring allowed", on["monitor_aec"])
 	}
-	for _, k := range []string{"intercom", "aec"} {
-		if _, ok := on[k]; ok {
-			t.Errorf("HELLO says %s", k)
-		}
+	if _, ok := on["aec"]; ok {
+		t.Error("HELLO says aec")
+	}
+	// The intercom needs no switch: it rings and waits for a tap here.
+	if off["intercom"] != true || on["intercom"] != true {
+		t.Errorf("HELLO intercom = %v / %v", off["intercom"], on["intercom"])
 	}
 }
 
@@ -96,12 +98,98 @@ func TestAMonitorThatIsNotAllowedStreamsNothing(t *testing.T) {
 	}
 }
 
-func TestTheIntercomIsNotOffered(t *testing.T) {
-	_, echo, _, a, _ := connectMonitorApp(t, true)
+// Called, the Echo rings and opens nothing; what the other side says is not
+// played. Live listening is off: the intercom needs no switch.
+func TestACalledIntercomRingsAndOpensNothing(t *testing.T) {
+	_, echo, st, a, _ := connectMonitorApp(t, false)
 	a.send(Monitor, []byte(`{"active":true,"intercom":true}`))
+	waitFor(t, "a ring", func() bool { return echo.count(&echo.chimes) >= 1 })
+	a.send(AudioOut, make([]byte, 4000))
 	a.nothing(200 * time.Millisecond)
-	if echo.count(&echo.opens) != 0 {
-		t.Fatal("the intercom opened the microphone")
+	if echo.count(&echo.opens) != 0 || st.last().Monitored {
+		t.Fatal("the microphone opened before anyone answered")
+	}
+	if echo.periods() != 0 {
+		t.Fatal("the other side was played before anyone answered")
+	}
+	if v := echo.lastView(); v.State != RingIntercomRinging {
+		t.Fatalf("ring %v", v.State)
+	}
+}
+
+// A tap answers: the first capture alone goes, no report, and the other
+// side plays; the next tap hangs up, and the app is told.
+func TestATapAnswersTheIntercomAndTheNextEndsIt(t *testing.T) {
+	s, echo, st, a, _ := connectMonitorApp(t, false)
+	a.send(Monitor, []byte(`{"active":true,"intercom":true}`))
+	waitFor(t, "a ring", func() bool { return echo.count(&echo.chimes) >= 1 })
+	s.Press()
+	waitFor(t, "the microphone", func() bool { return echo.count(&echo.opens) == 1 })
+	waitFor(t, "reported", func() bool { return st.last().Monitored })
+	chunk := bytes.Repeat([]byte{7, 8}, chunkBytes/2)
+	echo.speak(chunk)
+	if got := a.next(AudioMonitor); !bytes.Equal(got, chunk) {
+		t.Fatal("AUDIO_MONITOR is not the microphone's")
+	}
+	echo.speak(chunk)
+	if got := a.next(AudioMonitor); !bytes.Equal(got, chunk) {
+		t.Fatal("a second capture or a report came between two chunks")
+	}
+	if v := echo.lastView(); v.State != RingIntercom {
+		t.Fatalf("ring %v", v.State)
+	}
+	a.send(AudioOut, make([]byte, 4096))
+	waitFor(t, "the other side heard", func() bool { return echo.periods() > 0 })
+	s.Press()
+	var ev DeviceEventInfo
+	json.Unmarshal(a.next(DeviceEvent, AudioMonitor), &ev)
+	if ev.Type != "intercom_end" {
+		t.Fatalf("DEVICE_EVENT %+v", ev)
+	}
+	waitFor(t, "no longer reported", func() bool { return !st.last().Monitored })
+	waitFor(t, "the microphone closed", func() bool { return echo.count(&echo.closes) == 1 })
+}
+
+func TestAnUnansweredIntercomIsDeclined(t *testing.T) {
+	old := intercomAnswerWithin
+	intercomAnswerWithin = 300 * time.Millisecond
+	t.Cleanup(func() { intercomAnswerWithin = old })
+	_, echo, _, a, _ := connectMonitorApp(t, false)
+	a.send(Monitor, []byte(`{"active":true,"intercom":true}`))
+	var ev DeviceEventInfo
+	json.Unmarshal(a.expect(DeviceEvent), &ev)
+	if ev.Type != "intercom_end" || echo.count(&echo.opens) != 0 {
+		t.Fatalf("DEVICE_EVENT %+v, opens %d", ev, echo.opens)
+	}
+}
+
+func TestMutingARingingIntercomDeclinesIt(t *testing.T) {
+	s, echo, _, a, _ := connectMonitorApp(t, false)
+	a.send(Monitor, []byte(`{"active":true,"intercom":true}`))
+	waitFor(t, "a ring", func() bool { return echo.count(&echo.chimes) >= 1 })
+	echo.mu.Lock()
+	echo.muted = true
+	echo.mu.Unlock()
+	s.SetMuted(true)
+	var ev DeviceEventInfo
+	json.Unmarshal(a.expect(DeviceEvent), &ev)
+	if ev.Type != "intercom_end" {
+		t.Fatalf("DEVICE_EVENT %+v", ev)
+	}
+}
+
+// The app ending it: no event back, the microphone closes.
+func TestTheAppEndingTheIntercomClosesTheMicrophone(t *testing.T) {
+	s, echo, st, a, _ := connectMonitorApp(t, false)
+	a.send(Monitor, []byte(`{"active":true,"intercom":true}`))
+	waitFor(t, "a ring", func() bool { return echo.count(&echo.chimes) >= 1 })
+	s.Press()
+	waitFor(t, "reported", func() bool { return st.last().Monitored })
+	a.send(Monitor, []byte(`{"active":false}`))
+	waitFor(t, "no longer reported", func() bool { return !st.last().Monitored })
+	waitFor(t, "the microphone closed", func() bool { return echo.count(&echo.closes) == 1 })
+	if v := echo.lastView(); v.State == RingIntercom || v.State == RingIntercomRinging {
+		t.Fatalf("ring %v after the end", v.State)
 	}
 }
 

@@ -37,6 +37,9 @@ type Device interface {
 	// it did neither, and the press goes on to start a call. Called without
 	// the session's lock.
 	MusicPress() bool
+	// IntercomChime plays one ring of a called intercom (intercom.go),
+	// locally, at the device's volume. Called without the session's lock.
+	IntercomChime()
 	// StopAnnouncement ends what Home Assistant is announcing here (a reply
 	// spoken through the Echo's media player): the button's, as it stops a
 	// ringing timer or cancels a call. Called without the session's lock.
@@ -196,6 +199,8 @@ type session struct {
 	allowMonitor bool // the Echo's switch: HELLO said monitor
 	monitorAsked bool // the app's MONITOR active
 	monitored    bool // streaming now (monitorWantLocked), as reported
+	intercom     intercomState
+	intercomGen  int // a ring's chimes stop when it moves on
 	mon          *monitor
 
 	wake *wake // wake.go
@@ -256,6 +261,14 @@ func (s *session) press() {
 	switch {
 	case s.closed:
 		s.mu.Unlock()
+	case s.intercom == intercomRinging:
+		// The Voice PE's order: the intercom first.
+		s.intercomAnswerLocked()
+		s.mu.Unlock()
+		s.report()
+	case s.intercom == intercomConnected:
+		s.mu.Unlock()
+		s.intercomEnd("the button")
 	case s.timerRings:
 		s.timerRings = false
 		s.showLocked()
@@ -312,6 +325,7 @@ func (s *session) setMuted(muted bool) {
 	s.mu.Unlock()
 	if muted {
 		s.cancel()
+		s.intercomDecline("muted while it rang")
 	}
 	s.updateMonitor()
 }
@@ -464,6 +478,7 @@ func (s *session) close() {
 	s.syncMicLocked()
 	s.replying, s.timerRings, s.announcing = false, false, false
 	s.timers, s.night, s.flashing = TimerView{}, false, false
+	s.intercom, s.intercomGen = intercomNone, s.intercomGen+1
 	s.showLocked()
 	s.mu.Unlock()
 	s.updateMonitor() // off, and said so
@@ -485,6 +500,9 @@ func (s *session) handle(m Message, p []byte) error {
 	case AudioOut:
 		if s.discard.Load() {
 			return nil // a cancelled call's, first: never a new call's reply
+		}
+		if s.intercomRinging() {
+			return nil // the other side, before anyone here answered
 		}
 		if s.staleCall() {
 			return nil // the ring or announcement the call cut

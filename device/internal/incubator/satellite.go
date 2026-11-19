@@ -44,8 +44,11 @@ type State struct {
 	WakeModels int `json:"wakeModels,omitempty"`
 	// Monitored: the microphone is streaming to the app outside a call
 	// (its Test page listening live).
-	Monitored bool   `json:"monitored,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Monitored bool `json:"monitored,omitempty"`
+	// Intercom: "ringing" (called, waiting for a tap here) or "connected"
+	// (answered: Monitored too, the microphone going to the other one).
+	Intercom string `json:"intercom,omitempty"`
+	Error    string `json:"error,omitempty"`
 	// MAC is the one the satellite announces and says in HELLO, so the
 	// controller's record of it (across VLANs) carries the same: the app
 	// keys a satellite on it.
@@ -194,6 +197,7 @@ func (s *Server) hello() HelloInfo {
 		h.MaxPool = true
 		h.Listen = true   // a HANGUP with listen opens the answer's call
 		h.StopWord = true // "stop" stays loaded, run only while armed (wake.go)
+		h.Intercom = true // rung here, answered by a tap (intercom.go)
 		h.Monitor = s.cfg.Monitor
 		// Its second capture while monitored (AUDIO_MONITOR_AEC) is what the
 		// app enrolls a voice and records wake word samples from, and it asks
@@ -283,10 +287,10 @@ func (s *Server) session() *session {
 func (s *Server) callChanged(sess *session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	in, n, mon := sess.listening(), sess.wakeModels(), sess.monitoring()
-	if s.sess == sess && !s.closed && (s.state.InCall != in || s.state.WakeModels != n || s.state.Monitored != mon) {
+	in, n, mon, ic := sess.listening(), sess.wakeModels(), sess.monitoring(), sess.intercomName()
+	if s.sess == sess && !s.closed && (s.state.InCall != in || s.state.WakeModels != n || s.state.Monitored != mon || s.state.Intercom != ic) {
 		st := s.state
-		st.InCall, st.WakeModels, st.Monitored = in, n, mon
+		st.InCall, st.WakeModels, st.Monitored, st.Intercom = in, n, mon, ic
 		s.setLocked(st)
 	}
 }

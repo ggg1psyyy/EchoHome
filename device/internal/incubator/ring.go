@@ -35,9 +35,14 @@ const (
 	// TTL: done (no reply was needed) or error (a timeout, a failed result).
 	RingDone
 	RingError
+	// The intercom (intercom.go): called and waiting for a tap here, and
+	// answered, the microphone going to the other satellite.
+	RingIntercomRinging
+	RingIntercom
 )
 
-var ringNames = [...]string{"off", "listening", "thinking", "speaking", "timer", "announcement", "monitored", "timers", "done", "error"}
+var ringNames = [...]string{"off", "listening", "thinking", "speaking", "timer", "announcement", "monitored", "timers", "done", "error",
+	"intercom_ringing", "intercom"}
 
 func (r Ring) String() string {
 	if r >= 0 && int(r) < len(ringNames) {
@@ -127,6 +132,10 @@ func (s *session) ringLocked() Ring {
 		return RingThinking // the "heard" sound included
 	case c != nil:
 		return RingOff // the answer played; the hang-up is awaited
+	case s.intercom == intercomRinging:
+		return RingIntercomRinging
+	case s.intercom == intercomConnected:
+		return RingIntercom // muted too: the call stands, the other side heard
 	case s.monitored:
 		return RingMonitored // above a timer and an announcement: audio is leaving
 	case s.timerRings:
