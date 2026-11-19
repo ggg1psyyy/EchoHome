@@ -23,7 +23,7 @@ Sendspin's player aside.
 | **Bluetooth proxy** (switch) | A passive ESPHome Bluetooth proxy (advertisements only, no connections). Scanning costs some of the Echo's WiFi; the scan stands aside during calls. |
 | **Wake word microphone** (select) | Which microphone the satellite hears on: the default (the centre one on a Dot 2), or one of the edge microphones, for an Echo whose centre microphone has failed. |
 | **Sendspin player** (switch) | Makes the Echo a Sendspin player for Music Assistant. Pair it in the setup tool first ([Sendspin](#sendspin-early-access)); until then it refuses to turn on. |
-| **Ring while music plays** (select) | What the ring shows while music plays (Home Assistant's or a Sendspin group's), in place of the LED Ring light: **Off**, a **Level meter** that follows the music in the ring scene's reply colours, or a slow **Colour drift**. Calls, the volume arc and the mute ring still come first; in night mode it is dim and amber. |
+| **Ring while music plays** (select) | What the ring shows while music plays (Home Assistant's or a Sendspin group's), in place of the LED Ring light: **Off**, a **Level meter** that follows the music, or a slow **Colour drift**, in the LED Ring light's colour and brightness (on or off). Pick the colour with the light. Calls, the volume arc and the mute ring still come first; in night mode it is dim and amber. |
 
 The device's MAC is the Echo's WiFi chip's, as an ESPHome device reports
 its own: the address in your router's DHCP leases, which Home Assistant

@@ -14,7 +14,8 @@ import (
 // The ring while music plays: Home Assistant's "Ring while music plays"
 // select on the Echo's own device, kept on the Echo (ownedMusicRing, an
 // index into musicRingModes). While music plays, Home Assistant's or a
-// Sendspin group's, the idle ring shows it instead of the LED Ring light;
+// Sendspin group's, the idle ring shows it instead of the LED Ring light, in
+// the light's colour and brightness;
 // the satellite's states, the volume arc and the mute ring stay above it, as
 // they are above the light. Night mode dims and warms it as every idle ring.
 
@@ -78,25 +79,24 @@ func musicPlaying() bool {
 }
 
 // musicRingSpec is the idle ring while music plays, or false: with no music,
-// or the mode Off. specs are the scene's (incubatorRing): the meter is the
-// scene's reply meter, following the music; with none, the LED Ring light's
-// colour, or white.
+// or the mode Off. Its colour is the LED Ring light's, at the light's
+// brightness, whether the light is on or off (the owner's choice: the ring
+// scene's colours are the satellite's); the meter keeps the scene's response
+// curve, for the scene's tuning of it.
 func musicRingSpec(specs map[string]json.RawMessage) (server.AnimSpec, bool) {
 	mode := musicRingMode()
 	if mode == musicRingOff || !musicPlaying() {
 		return server.AnimSpec{}, false
 	}
+	colour, brightness := ledRingColour()
 	if mode == musicRingDrift {
-		return server.AnimSpec{Pattern: "rotate", Colors: rainbow(0.4), PeriodMs: 400}, true
+		return server.AnimSpec{Pattern: "rotate", Colors: rainbow(brightness), PeriodMs: 400}, true
 	}
 	var spec server.AnimSpec
 	if raw := specs["meter"]; len(raw) == 0 || json.Unmarshal(raw, &spec) != nil || spec.Pattern != "meter" {
-		colour := [3]uint8{160, 160, 160}
-		if idle, ok := ledRingIdle(); ok && len(idle.Colors) > 0 {
-			colour = idle.Colors[0]
-		}
-		spec = server.AnimSpec{Pattern: "meter", Colors: [][3]uint8{colour}}
+		spec = server.AnimSpec{Pattern: "meter"}
 	}
+	spec.Colors = [][3]uint8{colour}
 	spec.Source, spec.TTLSec = "music", 0
 	return spec, true
 }

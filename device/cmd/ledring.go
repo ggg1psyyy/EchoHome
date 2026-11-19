@@ -129,6 +129,17 @@ func clamp01(v float32) float32 {
 	return min(max(v, 0), 1)
 }
 
+// ledRingColour is the light's colour at its brightness, and the brightness,
+// whether it is on or off: the ring while music plays takes them
+// (cmd/musicring.go).
+func ledRingColour() ([3]uint8, float32) {
+	ledRing.Lock()
+	st := ledRing.st
+	ledRing.Unlock()
+	ch := func(v float32) uint8 { return uint8(math.Round(float64(clamp01(v*st.Brightness)) * 255)) }
+	return [3]uint8{ch(st.R), ch(st.G), ch(st.B)}, clamp01(st.Brightness)
+}
+
 // ledRingIdle is the light as the ring's idle scene, or false when it is off.
 func ledRingIdle() (server.AnimSpec, bool) {
 	ledRing.Lock()

@@ -2069,3 +2069,7 @@ including why hashing is worth it when deleting the file defeats it, is in
   voice plane's alone by design, so the music plane's RMS is measured
   beside it (`PcmSpeaker.MusicLevel`, before mixing) and the animator reads
   that instead.
+- 2026-11-19: the ring while music plays takes the LED Ring light's colour
+  and brightness, on or off (the owner's ask, after trying the scene's
+  reply colours): meter and drift alike; the meter keeps the scene's
+  response curve. A colour change on the light repaints it at once.
