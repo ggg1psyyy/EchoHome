@@ -70,7 +70,9 @@ stopped.
   button; then both talk until a tap on either. Unanswered for 30 s, or
   muted while it rings, it declines. The Echo that asked connects at once.
   Needs no switch: nothing of a room is heard until someone in it asks or
-  answers.
+  answers. The room said must be a name the app knows for the called Echo's
+  area (its *Names* page); otherwise the sentence goes to the conversation
+  agent instead.
 - **Voice enrolment** (the app's People page) and **wake word recording**:
   switch the Echo's *Voice Incubator live listening* on, enrol or record on
   the app's page while the ring pulses red, then switch it off again. The
