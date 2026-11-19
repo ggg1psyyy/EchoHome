@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- EchoHome: an Echo Dot, seen from above (its light ring and four buttons), in a house. -->
+  <path d="M64 9 L119 55 L119 113 Q119 119 113 119 L15 119 Q9 119 9 113 L9 55 Z"
+        fill="#16232d" stroke="#18bcf2" stroke-width="8" stroke-linejoin="round"/>
+  <circle cx="64" cy="81" r="30" fill="#2a2f33"/>
+  <circle cx="64" cy="81" r="26" fill="none" stroke="#5fd8ff" stroke-width="5"/>
+  <circle cx="64" cy="81" r="21" fill="#1b1f22"/>
+  <g fill="#c9d3da">
+    <circle cx="64" cy="69" r="3.6"/>
+    <circle cx="64" cy="93" r="3.6"/>
+    <circle cx="52" cy="81" r="3.6"/>
+    <circle cx="76" cy="81" r="3.6"/>
+  </g>
+</svg>
