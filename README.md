@@ -46,7 +46,7 @@ nothing of the room.
 ## Supported hardware
 
 The Echo Dot 2nd gen (biscuit), the Echo 2nd gen (radar) and the Echo Dot 3rd
-gen (donut), unlocked first. [Boards](docs/boards.md) says how a new one is
+gen (donut), unlocked first. [EchoMuse's board guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/boards.md) says how a new one is
 described.
 
 ## Getting started
@@ -101,7 +101,7 @@ The [quickstart](docs/quickstart.md) walks through all four.
 | [Listening and privacy](docs/listening.md) | What the microphone does, in every state. |
 | [emOS](https://github.com/wilbowes/EchoMuse/tree/main/emos) | EchoMuse's small Linux userspace, which the Echo runs (in EchoMuse). |
 | [Device ↔ controller protocol](docs/device-controller-interface.md) | The setup link, for porting. |
-| [Boards](docs/boards.md) | Describing a new board's hardware. |
+| [Boards](https://github.com/wilbowes/EchoMuse/blob/main/docs/boards.md) | Describing a new board's hardware (EchoMuse's guide). |
 | [Contributing](CONTRIBUTING.md) | Building from source and tests. |
 
 ## How it's built

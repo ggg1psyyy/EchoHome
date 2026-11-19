@@ -21,8 +21,8 @@ Deeper references:
   messages, config push, link auth.
 - [config-keys.md](config-keys.md) — every pushed key, generated from the
   code.
-- [boards.md](boards.md) — how the firmware finds each part by name, and how
-  to describe a new board.
+- [Boards](https://github.com/wilbowes/EchoMuse/blob/main/docs/boards.md) — how the firmware finds each part by name, and how to
+  describe a new board: EchoMuse's guide.
 - [CLAUDE.md](../CLAUDE.md) — codebase orientation for developers (and AI
   assistants); [history/](history/) holds the reasons behind its rules.
 

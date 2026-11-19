@@ -243,7 +243,7 @@ Everything an Echo does for its owner, with or without a controller:
 
 It does not depend on Amazon HALs or libraries to do any of it (the direction
 note in the repo-root `CLAUDE.md`). A new board is a fresh set of bindings
-behind `pkg/board`; see [boards.md](boards.md).
+behind `pkg/board`; see [EchoMuse's board guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/boards.md).
 
 ## Invariants (what the tests pin)
 

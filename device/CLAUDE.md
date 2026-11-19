@@ -144,7 +144,7 @@ runs** (EQ, bass guard, limiter, the voicing): every sound is the Echo's own.
 
 ## Boards: hardware is found by name (#541, 2026-10-04)
 
-`docs/boards.md` is the porter's guide; these must stay true. Parts are named
+EchoMuse's `docs/boards.md` is the porter's guide; these must stay true. Parts are named
 in `pkg/board/hardware.go`, found once by `board.Resolve`.
 
 - **Only biscuit has a numeric FALLBACK; a new board never gets one.**

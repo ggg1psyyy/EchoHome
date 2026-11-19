@@ -5142,7 +5142,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
             + ', which is amonet v1\'s partition table under a v2 unlock. Installing v2 '
             + 'should have restored the original table, and on this Echo it has not. '
             + 'Nothing has been read or written. Reflashing FireOS will not change it. '
-            + 'See the FAQ: https://github.com/ggg1psyyy/EchoHome/blob/main/docs/faq.md'
+            + 'See the EchoMuse FAQ: https://github.com/wilbowes/EchoMuse/blob/main/docs/faq.md'
             + '#the-wizard-stops-at-escrow-boot-image-and-mentions-boot_a_x' };
         }
         return { ok: false, target, names, reason:

@@ -85,7 +85,8 @@ evdev, sysfs and wpa_supplicant.
   Android call rather than spread it.
 - **Resolve hardware by NAME, not by number** — the wrong `event*` opens
   silently and leaves the buttons dead. Boards state their parts in
-  `pkg/board` (`device/CLAUDE.md` → "Boards", `docs/boards.md`).
+  `pkg/board` (`device/CLAUDE.md` → "Boards"; EchoMuse's `docs/boards.md` is the
+  porter's guide).
 - **A change that makes a vendor blob necessary is going the wrong way**:
   at most a terminal opt-in for one platform. **Decline the direction, keep
   the findings** (PR #168).
