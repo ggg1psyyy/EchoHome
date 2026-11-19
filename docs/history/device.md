@@ -2101,3 +2101,8 @@ including why hashing is worth it when deleting the file defeats it, is in
   address is not flushed in the gap. The name is the label as a DNS label
   plus the serial's last four (`em_labels.hostname`); a rename whose
   hostname another Echo has is refused.
+- 2026-11-19: verified on 00LQ: the running client is `/sbin/busybox udhcpc
+  -x hostname:<name>-00lq -B -f -i wlan0 -s /tmp/udhcpc.sh`, the address
+  unchanged, and the router's lease shows the host name (class ID
+  `udhcp 1.38.0`). The emOS change for a DHCP hostname, once planned for a
+  fork of EchoMuse, is not needed.
