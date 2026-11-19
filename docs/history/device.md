@@ -355,15 +355,10 @@ own files that informed it stay off the repo (Amazon's).
 | `internal/config/config.go` | Global runtime config; env var defaults, overridden by controller push |
 | `internal/bindings/` | Hardware drivers: mic PCM, speaker PCM, LED I2C, button evdev. None of them names hardware by number: each opens what `pkg/board` resolved (see "Boards" below) |
 | `pkg/board/` | Which board this is (idme `device_type_id`), where its parts are BY NAME (`Hardware`), the lookup (`Resolve`), and the emOS thermal tuning. `guard_test.go` fails on an event number, i2c bus address, pcm path or `NewDevice` with literal numbers anywhere outside this package |
-| `internal/wakeword/` | openWakeWord streaming feature pipeline (mel ring → 76-frame windows → embedding ring → classifier). Pure Go: inference sits behind the `Inferer` interface so the buffering is host-testable with no ONNX/cgo. Validated tensor-for-tensor against Python via a golden fixture (`testdata/`, regenerate with `gen_fixture.py`) |
-| `internal/wakeword/ort/` | The `Inferer` implementation: ONNX Runtime via cgo. The library is **dlopen'd at runtime, never linked** (only the MIT C header is vendored) so a device without it boots normally and falls back to controller-side wake word — verified by the ARM binary needing only libdl/liblog/libc with zero undefined `Ort*` symbols. `DefaultOptions` (1 thread, XNNPACK, `allow_spinning=0`) is the measured optimum: 37.7% of one core against 243% for ORT's defaults. Don't "fix" the thread count — more threads lowers latency and *raises* CPU, the wrong trade for duty-cycled work |
-| `internal/wakeword/shadow/` | On-device scoring that reports but never acts (see "On-device wake word"). `Push` must never block: inference runs on its own goroutine and drops frames when behind |
-| `internal/listen/` | Private listening (docs/listening.md): the session gate that decides what of the wake stream may leave the device, and `Resolve` for local/stream/degraded. Pure, clock-injected, tested |
-| `internal/wakeword/fixture/` | Shared golden-fixture parser, tolerance policy and `Verify`. Used by both the host test and `tools/oww_probe`, deliberately — the probe's answer is the trusted one because it runs on hardware, so it must be exactly as strict as the test by construction. Tolerances are relative to the **tensor's** scale, not per element: per-element relative error is meaningless for tensors straddling zero |
 | `internal/bindings/als/` | Ambient light (ams **TSL2540** on i2c). Android does not expose it AT ALL — `dumpsys sensorservice` reports an empty list, nothing under `/sys/class/sensors`, no input device; it is visible only on the raw i2c bus, the same shape as the mute LED being on a different GPIO than the vendor HAL believed. Resolved **by name, not address** (`0-0039` is an enumeration accident). **The bus listing is not a hardware inventory**: both ALS names are registered by Amazon's board file, so a `tsl2540` at 0x39 and a `tsl2584tsv` at 0x29 appear on every unit whatever is soldered on (`modalias` is static kernel data). Which one answers differs by batch — ours have the 2540 and nothing at 0x29 (`taos_probe() err = -6`, ENXIO), the `G090LF096` batch has the 2584 instead, reachable only through IIO at `/sys/bus/iio/devices/iio:device0` (#90). A second-sourced part, not a driver fault, so the board lists both (`board.LightSensors`, tried in order: the 2540's `als_lux` on i2c, then the 2584's `illuminance0_input` on IIO), never a looser `tsl` match. **Never read the 2584's `calibrated_lux`**: its `parse_alscal_idme()` kfree()s a pointer strsep() has moved, which corrupts kernel memory and surfaces later as an oops or a watchdog reset (#90, found by the reporter in `drivers/misc/tsl2583.c`; a test fails on the name in any firmware string). `illuminance0_input` is safe only when the idme `alscal` string has an `ams_0_0` baseline: `get_baseline()` (compiled into the FireOS 5 and 6 kernels, checked by its strings) otherwise leaks its copy and logs two lines on every lit read, so without one the status is `unsafe` and the sensor is not read. The **boot log is the real inventory** — both drivers probe on every unit and log what replied — but `dmesg` rolls, so it needs reading soon after a reboot. Never `unbind` the driver to experiment: it succeeds, leaves the `als_*` attributes in place, and the next read hangs the device until a power cycle. **Polled every 5s, not every 1s, and the reason is the kernel log rather than the syscalls.** The driver prints a line on every read under its darkness threshold (`tsl2540_get_lux: darkness (0 <= 10)`), so a 1Hz poll is ~86,000 kernel lines a day — and it only fires in the dark, so it runs all night, which is exactly when a device sits idle and a crash most needs explaining. Measured on EFF 2026-09-04: the whole log ring was that one line and `messages.last` had reached 609KB. The cost is not disk — MediaTek's ram_console is the ONLY crash channel this kernel has and it is a fixed-size ring we do not control, so anything filling it evicts the evidence. `MinInterval` already refuses to report more often than every 2s, so 1Hz was finer than the reporting floor it feeds; if #296 ever wants faster, make the poll adaptive rather than paying a permanent flood. `Lux()` returns **nil, never 0** — a covered sensor reads a genuine 0. `Watch` reports a step change immediately (25% relative, 10-lux floor, measured noise ±1.5%); the steady value rides the ~30s stats tick. `Report()` says **why** there is no sensor (`ok`/`no_chip`/`no_attribute`/`unknown`, plus every i2c name it saw) and rides the register message as `ambient_light_status` — absence used to be logged only to the device's own stdout, which support bundles do not collect, so two users could not be told apart without a shell session (#90). The whole bus is enumerated **before** matching: returning at the match truncated the list on working devices, which is exactly the side you compare against |
 | `internal/bindings/jack/` | Headphone jack detect (`/sys/class/switch/h2w`, mediatek accdet). Polled, not evented — the ACCDET input node reports no keys on this hardware. `Watch` dispatches the state it STARTS in as well as every change: accdet is edge-triggered and a boot has no edge, so a device booted with a cable in got no correction at all. The callback (`PcmSpeaker.SetJackRouting`) owns both positions — the amp switch, and the `HP Driver Gain Volume` that accdet drops to the floor of its range on insert and nothing used to raise. Output *destination* is still physical, done by the jack's own switch contacts, so no mux layer should be driven — but level is ours |
 | `internal/outchain/` | Speaker output chain — EQ → bass guard → limiter — run on the MIX at the ALSA write, after the duck and before the taps. A port of `em_eq`/`em_mbc`/`em_limiter`, held **bit-exact** to vectors the Python generates (`testdata/gen_vectors.py`), on the host and on VVV's A53. Inactive until the controller's ack carries `output_chain`, so it never runs twice. Processing is mono (L+R)/2 written to both channels — exact, since the wire is mono. Idles after ~2 silent periods, so a quiet speaker costs nothing. **Cost on VVV, 2026-09-22: 1.9ms per 42.7ms period at defaults (4.4% of one core), 2.6ms worst case (shaped EQ + speech boost, 6.2%)**, only while audio plays. Most of it is per-sample `Log`/`Exp` in the guard and 13 biquads; a `%` in the limiter cost a runtime divide call per sample, since Go's 32-bit ARM build has no divide instruction |
-| `internal/sendspin/` | Sendspin player (#89, EA): Music Assistant connects to the Echo directly for synchronised multi-room audio. Noise KKpsk2 responder, token pairing, the spec's Kalman time filter, FLAC decode, and a **pull** scheduler: `PcmSpeaker.SetMusicSource` makes the write loop read the substream's ALSA `delay` each period and ask for the audio due when that period reaches the DAC — the `0x04` plane plays in order and has no timestamps, so a push could not place anything. Consulted only while `0x04` is empty (HA wins), and the player reports itself taken while `0x04` has anything. **Speaks aiosendspin 9.1.1's wire, which disagrees with the spec in seven places** — `docs/audio-states.md` §6.4 lists them; re-run `tools/sendspin_interop/run.sh` against any new aiosendspin before trusting a Music Assistant upgrade. Held to references rather than readings: the time filter to aiosendspin's to the microsecond, FLAC bit-exact against its encoder, the token and Sentinel psk_id to the spec's vectors. **It is the first thing on the Echo that LISTENS, and emOS drops inbound** (init's `firewall()`): `internal/firewall` inserts an ACCEPT for 8928 before `Start` advertises and removes it on every stop, so an Echo with Sendspin off stays outbound-only. Without it the player logs "listening" and every connection times out, and Music Assistant does not list the player at all, so it looks like discovery failing. First heard on 15LE (emOS 32-bit) 2026-09-30: play, duck, seek, volume both ways, pause/resume, discovery. 2026-10-01, 15LE + C95 grouped: in sync by ear, 0.1–0.4ms self-reported, corrections 2–7/min settled (bursts to ~300/min for a minute or two), playback cost below what /proc resolves, both players stop in the same second as the controller link and resume with it, and a Music Assistant left/right stereo pair works with the mono player (MA picks the channel before encoding). `[sendspin] playing:` logs the counts once a minute. The occasional crackle was dropped audio, not corrections: tinyalsa's `pcm_write` discards the rest of a signal-interrupted write, fixed in the fork (see the GoTinyAlsa note above). `OutputClock` gates any reading over 3ms from prediction and `pullSource` brackets its status read with two clock reads (#710) |
+| `internal/sendspin/` | Sendspin player (#89, EA): Music Assistant connects to the Echo directly for synchronised multi-room audio. Noise KKpsk2 responder, token pairing, the spec's Kalman time filter, FLAC decode, and a **pull** scheduler: `PcmSpeaker.SetMusicSource` makes the write loop read the substream's ALSA `delay` each period and ask for the audio due when that period reaches the DAC — the `0x04` plane plays in order and has no timestamps, so a push could not place anything. Consulted only while `0x04` is empty (HA wins), and the player reports itself taken while `0x04` has anything. **Speaks aiosendspin 9.1.1's wire, which disagrees with the spec in seven places** — EchoMuse's `docs/audio-states.md` §6.4 lists them; re-run `tools/sendspin_interop/run.sh` against any new aiosendspin before trusting a Music Assistant upgrade. Held to references rather than readings: the time filter to aiosendspin's to the microsecond, FLAC bit-exact against its encoder, the token and Sentinel psk_id to the spec's vectors. **It is the first thing on the Echo that LISTENS, and emOS drops inbound** (init's `firewall()`): `internal/firewall` inserts an ACCEPT for 8928 before `Start` advertises and removes it on every stop, so an Echo with Sendspin off stays outbound-only. Without it the player logs "listening" and every connection times out, and Music Assistant does not list the player at all, so it looks like discovery failing. First heard on 15LE (emOS 32-bit) 2026-09-30: play, duck, seek, volume both ways, pause/resume, discovery. 2026-10-01, 15LE + C95 grouped: in sync by ear, 0.1–0.4ms self-reported, corrections 2–7/min settled (bursts to ~300/min for a minute or two), playback cost below what /proc resolves, both players stop in the same second as the controller link and resume with it, and a Music Assistant left/right stereo pair works with the mono player (MA picks the channel before encoding). `[sendspin] playing:` logs the counts once a minute. The occasional crackle was dropped audio, not corrections: tinyalsa's `pcm_write` discards the rest of a signal-interrupted write, fixed in the fork (see the GoTinyAlsa note above). `OutputClock` gates any reading over 3ms from prediction and `pullSource` brackets its status read with two clock reads (#710) |
 | `internal/wifi/` | Safe WiFi network change with auto-rollback (wifi_change/wifi_commit/wifi_scan control messages; pending-marker recovery at startup). Reload path is `svc wifi disable/enable` ONLY — see package comment for the hardware-proven constraints. **An SSID is 0–32 arbitrary BYTES and is handled as bytes** (`ssid.go`): decoded from wpa_cli's printf_encode, carried as `ssid_hex`, compared as bytes, and written quoted when wpa_supplicant's quoted form can hold it (it reads to the LAST `"`, so quotes and backslashes are literal) or as hex when not. Until 2026-09-19 every path refused `"` and `\`, trimmed spaces, and wrote escaped text back as a different network — and the emOS wizard put SSIDs into a shell command |
 | `internal/bluetooth/` | BLE proxy — raw HCI passive scan over `/dev/stpbt` (single-owner, so Android's Bluedroid is durably `pm disable`d first), parsed into adverts and forwarded to the controller. `emit.go` decides which of them are worth sending; see "The BLE proxy" below, and read it before changing the scan cadence or the filtering |
 | `pkg/led/`, `pkg/mic/`, `pkg/speaker/`, `pkg/buttons/` | Hardware abstractions (interfaces) |
@@ -598,558 +593,13 @@ jack tables and the Android `stop <service>` names.
   @Starker3's from #1044 (co-author), on @technotiger's diagnosis in #527.
   41C8: the scan starts ~30 s after boot, no HCI errors, adverts reach HA.
 
-## Private listening (the default since 2026-09-21)
-
-**The spec is `docs/listening.md`; this is what the firmware does to meet it.**
-Under `owwOnDevice=on`, against a controller announcing `listen_session`, with
-a scorer loaded, the device is `local`: the always-on wake stream still runs
-and feeds the scorer, and **nothing is sent**. A crossing opens a session in
-`internal/listen.Gate`; the audio from `listen.WakeLead` (260ms) before the
-crossing frame goes up as `0x07` frames tagged with the session until the controller's `listen_close`
-(end of speech) or a device-side limit. `listen.Resolve` is the whole state
-decision and `syncListenState` reports it as `listen_state` on every config
-push and every connect.
-
-- **The limits are the device's, not the controller's.** No `listen_ack`
-  within 3s closes the session; nothing outlives 30s; mute, `StopMic` and a
-  data-link drop close it. A controller that crashes mid-command must not
-  leave an Echo streaming, and that can only be guaranteed at this end.
-
-- **Missing scorer is `degraded`, never `stream`.** The button still works
-  (lock_mic turns are untouched); the wake stream sends nothing. Falling back
-  to streaming would make the dashboard's privacy statement false without
-  anyone choosing it. The controller's `effective_mode` has the matching rule:
-  it no longer degrades an `oww_local_only` device to "off".
-
-- **One timestamp per frame, taken once**, handed to both `PushBytesAt` and
-  `Gate.Push`. The scorer reports the CAPTURE time of the crossing frame, not
-  when inference finished (its queue holds up to 640ms). Two clocks would
-  duplicate or drop the first word.
-
-- **The session starts `WakeLead` (260ms) before the crossing, counted in
-  FRAMES back from the crossing frame** (#1014). The scorer crosses a few
-  frames into a command run on from the wake word, so starting at the
-  crossing cut its first word on 5 of 9 VVV captures ("time is it?"). It is
-  counted in frames because the mic is read in 160ms batches: two frames
-  carry near-equal stamps and batches land 130-190ms apart, so a start chosen
-  by time moved by a frame. The window that works is about two frames wide
-  (240-280ms quiet, 180-340ms barge, 38 dumps replayed through HA's whisper,
-  2026-10-23); anchoring on the score's peak was tried and is no better,
-  since the score plateaus for 2-4 frames. The part of the first frame before
-  the lead is silenced on a copy: the ring's buffer is shared.
-
-- **A crossing inside an open session is words, not a wake** — `Gate.Open`
-  refuses and `onWakeCrossing` drops it.
-
-- **`mic_stop` does not stop local listening, and does not end sessions.**
-  It ends a lock_mic turn and hands straight back to the wake stream, which is
-  what hears a barge-in over the reply. Sessions end only by id
-  (`listen_close`): mic_stop carries none, and one crossing a barge-in's
-  `oww_wake` on the wire would close the session the controller is about to
-  take. `mic_start` with lock_mic
-  REPLACES the wake stream rather than being refused as "already active",
-  which is what the button and HA follow-up questions rely on.
-
-- **The barge bar applies to music too** (`speakerPlaying`), mirroring the
-  controller's wake-over-music rule, and at that bar the scorer needs **two
-  consecutive frames** — em_barge.decide's rule, now on the device because a
-  private Echo sends the controller nothing to decide over. **Such a crossing
-  is dated from the FIRST of the two frames**; dated from the second, the
-  barge session started a frame late and "stop" reached HA as "Nope".
-
-- **The Echo cuts its own reply at a barge crossing** (`listen.CutReplyOnBarge`,
-  #1014), instead of waiting a round trip for the controller's `speaker_flush`
-  (1.3s late on a stalled link). Only while the reply is still to be heard
-  (`replyStillHeard`): the barge flag stays true for `ScoreSpan` after a reply
-  ends, and a cut there flushed a silent speaker. Up to ~210ms (the ALSA ring
-  plus a period) still plays after the cut and is sent with the session.
-  **Dropping that reply audio from the session was built and removed**: it
-  fixed "Oh, never mind" after a pause, but once the session started earlier
-  and the Echo cut its own reply the pause case was clean without it, and it
-  ate a command run on from the wake word ("it." for "what time is it").
-  Dropping the ALSA ring on the cut is the untried next step; it needs a
-  GoTinyAlsa change and would click ducked music.
-
-- **Older controllers keep the old behaviour.** Without `listen_session` the
-  state is `stream` in every mode, because an old controller only acts on a
-  device wake when stream frames are arriving.
-
-## On-device wake word (shadow mode)
-
-The Echo can run the wake model itself. `owwOnDevice` = `off` (default),
-`shadow` or `on`; an unknown value normalises to `off` at BOTH ends rather than
-being guessed at — the two plausible guesses are "score silently" and "start
-triggering", and one of those is a live behaviour change on a device that
-cannot honour it. Neither end may assume the other is the careful one.
-
-**`on` is gated on the `oww_trigger` capability, which is separate from
-`oww_shadow` on purpose.** Shadow shipped first, so there is firmware in the
-field that scores and reports without being able to act on it; offering those
-`on` produces a device that scores perfectly and never answers.
-`em_shadow.effective_mode` degrades `on` to `shadow` when the capability is
-absent — never to `on`, which would leave the controller waiting for wakes the
-firmware has no code to send while no longer acting on its own. That is a wrong
-answer rather than the old behaviour, which is the line the whole capability
-rule is drawn along.
-
-- **2026-11-03, a custom wake model that "stops" after a turn (#1094) kept
-  scoring**: the Echo scored every frame of the dead stretches (about 15,700
-  frames in 22 minutes, 0 drops, 55-74 ms inference); the model's scores just
-  never crossed 0.50 again. Read `wake_counters.dev_frames`/`dev_drops` before
-  calling a stall.
-
-### `on` — the device decides, the controller keeps watching
-
-The device sends `oww_wake` (score, the threshold it actually cleared, and how
-long AGO — never a timestamp) instead of `oww_shadow_cross`. It lands in
-`Device.pending_wake` and the wake listener acts on it on its next mic frame
-(~80ms), because that is where turn setup lives: capture routing, beam lock and
-arbitration have to happen together, and driving them from the control-plane
-handler would be a second copy of the most delicate sequence in the controller.
-`em_shadow.decide_wake_source` is the decision, pure and tested, for the reason
-`em_button.decide` and `em_linkauth.decide` are.
-
-- **The controller keeps scoring, and its detections stop triggering.** Its
-  score still records whether it agreed (`turns.ctrl_wake_score` /
-  `ctrl_wake_delta_ms`, schema v17) — the comparison that justified shipping
-  this, with the roles inverted, and the only place a *controller* miss can be
-  seen at all. Without it, turning a device `on` would silently end the
-  measurement: every turn would show a device score with nothing to compare
-  against, which reads as perfect agreement rather than as no data.
-
-- **It is also what leaves barge-in alone.** Barge is scored controller-side
-  over the turn's own audio (`_barge_watcher`) and is untouched by this.
-
-- **`last_wake_mono` is the CROSSING instant, not arrival.** Using arrival
-  would fold the network hop into every comparison and every arbitration
-  decision, which this fleet's measured 1.1–2.6s RTT excursions make certain
-  to matter.
-
-- **Mute is checked on the device** (`onWakeCrossing`), not only controller-
-  side. The existing `mic_start` refusal plus the hardware ADC mute already
-  make a muted wake harmless, but "harmless" still means the ring lights up and
-  HA runs a pipeline because a muted device thought it heard something. The
-  crossing is still *reported* — it is real data about the detector.
-
-- **A pending wake expires** (`MAX_PENDING_WAKE_S`, 4s, measured from the
-  crossing). A wake that stale means the person has finished speaking, so
-  acting on it answers into silence; expiry logs the age, which is the
-  instrument for whether the trigger needs more slack.
-
-- The trigger label is `wakeword-dev(score)`, which still matches every
-  existing reader's `wakeword` prefix — including `_persist_turn`'s shadow
-  block.
-
-**Arbitration compares capture times, measured so time in flight cannot move
-them** (2026-09-22; docs/listening.md is the reference). A wake carries
-`capturedMono`, the crossing frame's capture instant on `client.MonoMs`'s
-clock, and every ping reply carries `mono`; the controller maps the one onto
-its own clock through the cleanest exchange of the last two minutes
-(`em_listen.DeviceClock`). The first version dated a wake as arrival − `ageMs`
-− half the RTT, which is right only when the message was not delayed: on the
-bench a wake spent 3.1s in flight and read as a separate utterance.
-A controller-scored wake is dated from the stream's sequence numbers instead
-(`CaptureClock`), so no firmware is needed for that half. A claim heard
-within the window of the winner's cedes whenever it arrives, the winner is held
-for the window plus 3s, and a granted claim is never revoked.
-
-**Shadow mode scores and reports; it never acts.** It exists to answer whether
-on-device detection is good enough to trust, by comparing both detectors on the
-same audio. The tap sits where the ungated wake stream's frames are written to
-the wire, so the device scores byte-identical 80ms frames on identical
-boundaries — a score difference can then only be the engine, not the framing.
-
-Three things are load-bearing:
-
-- **Inference must never run on the mic goroutine.** It costs ~31ms per 80ms
-  frame, the mic loop reads 160ms ALSA batches, and the ring is only 160ms
-  deep — two frames inline would spend 62ms of that budget and risk the capture
-  stalls that lose whole batches. `shadow.Scorer.Push` hands off to a buffered
-  channel and returns; the scorer goroutine **drops frames and counts them**
-  when it falls behind. A shadow run that drops frames is informative; one that
-  stutters the microphone is not.
-
-- **Nothing is sent per frame.** Threshold crossings go immediately (they are
-  rare — a refractory period collapses each utterance to one — and their whole
-  value is the timing). Everything else is a window summary riding the existing
-  ~30s stats tick, so the DB cost is one extra upsert per 30s per device.
-
-  The window summary carries `maxInferMs` and `maxGapMs` (schema v16) because
-  `dev_drops` alone had stopped being able to answer its own question — turn
-  bursts, core hotplug and controller redeploys were each falsified by
-  measurement. A drop means the 8-frame (640ms) queue overflowed, which has two
-  causes needing opposite fixes: the slowest single inference is the CONSUMER
-  stalling, the longest gap between frames arriving is the PRODUCER bursting.
-  **Maxima, not averages** — a stall IS the tail, and a 700ms event averaged
-  over 375 normal frames disappears. They are `atomic.Int64`, not mutex state,
-  because `Push` runs on the mic goroutine; and the gap is measured in
-  `enqueue` so one site covers `Push` and `PushBytes` alike, the same reason
-  drops are counted in exactly one place. Note the first frame must record NO
-  gap: a zero-valued `lastPush` would report a gap of however long the process
-  had been running and point at a producer stall that never happened.
-
-- **The device never sends a WALL-CLOCK timestamp.** An Echo's wall clock is
-  bogus before NTP, so it reports how long *ago* a crossing happened and the
-  controller converts against its own monotonic clock — same reasoning as the
-  RTT instrumentation. `capturedMono` and the ping reply's `mono` are the
-  device's MONOTONIC clock, which is immune to that, and mean nothing until
-  the controller has mapped them.
-
-**Thresholds must match or the comparison is meaningless.** The controller drops
-its wake bar to `bargeInThreshold` while the speaker is streaming (echo at the
-mic is ~25dB louder than the person, so speech-over-TTS scores are depressed), so
-the device mirrors that: `shadow.Scorer.SetBargeThreshold` uses the lower bar
-while `PcmSpeaker.VoiceAudible(wakeword.ScoreSpan)` is true (arriving, queued, or
-played within the 1.96s the model can still see — it was `IsStreaming`, "still
-arriving", until 2026-09-22, which dropped the bar ~0.1s into a reply), and never *raises* the bar if
-misconfigured above the normal one. The device reports the threshold in force
-with each window summary; it lands on the turn as `dev_threshold` (schema v15).
-`turns.wake_threshold` now records the **effective** threshold the wake actually
-cleared, not the nominal one — recording 0.5 for a wake that fired at 0.055 made
-rows self-contradictory (present in data since at least 2026-07-25) and made
-every barge-in look like an on-device miss. The activity rollup therefore reports
-three buckets, not two: agreed, missed, and **not_comparable** (controller used a
-lower bar, or the device's threshold is unknown).
-
-Correlation (`em_shadow.ShadowTracker`, schema v13) happens at turn-persist
-time, not at detection: the crossing report can land after the wake it belongs
-to, and by turn end it has had seconds to arrive. The nearest crossing within
-`MATCH_WINDOW_S` (2.0s) wins and is **consumed**, so two turns in quick
-succession cannot both be credited to one crossing. The window is loose on
-purpose — both detectors see the same frames but not in the same detector
-*state*, since the controller drops wake frames while a turn or TTS is in
-flight, and a false "miss" argues against a feature that is actually working.
-`turns.dev_shadow` records whether the device was scoring at all, which is what
-separates "the device missed this" from "the device was not looking";
-`wake_counters.dev_*` carries the hourly view, where crossings with no matching
-turn are the false-accept side that per-turn rows structurally cannot show.
-
-Requirements and cost: ONNX Runtime plus the three models must be installed at
-`shadow.DefaultDir` (`/data/local/share/echomuse/oww`, override `EM_OWW_DIR`)
-— they are **not** in the firmware, since 12.3MB would double the OTA payload
-and both A/B slots. Absence is an ordinary condition, logged once, and the
-device carries on with controller-side wake word. `device/tools/oww_probe`
-verifies a device reproduces Python and reports the real CPU cost. With the
-streaming embedding (#894, `embedding_stream.onnx`, installed with the other
-assets) it costs ~23% of one core on VVV (`oww_probe`, p50 17.3ms), against
-41% for the stock embedding it falls back to when the file is missing or
-disagrees at load; either is on top of the ~18-20% mic-pipeline baseline, so
-**enable it on one device at a time**.
-
-**The scorer pointer must be re-read PER FRAME, never cached for a stream.**
-A config push replaces the scorer and **closes** the old one, so a mic stream
-holding the pointer it captured at `StartMic` is feeding a dead object. This
-cost two bugs in succession on 2026-08-16, and the second is the instructive
-one:
-
-- `Close()` used to close the channel `enqueue` sends on, so the next 80ms
-  frame panicked the process. It restarted in ~6s, opened a fresh mic stream,
-  picked up the new scorer, and worked — the crash was **accidentally
-  self-healing**.
-
-- Making `enqueue` drop silently removed the crash *and* the recovery. The new
-  scorer then received nothing and detection stayed dead until the next
-  `StartMic`, which only follows a voice turn, which cannot happen because the
-  wake word is dead.
-
-So `Close()` signals a dedicated `quit` channel and never closes `ch`, AND the
-push site re-reads `d.ShadowScorer()` per  frame. A mutex read per 80ms is
-nothing beside the inference it feeds. Both halves are needed; either alone
-leaves a device that goes deaf or panics. The comment that justified caching
-("a stream that began before the change keeps using the scorer it started
-with") described exactly what made it fatal.
-
-**A missing classifier used to silently deafen a device under
-`owwOnDevice=on`.** The device cannot score without the model, and the
-controller has stood down and no longer triggers on its behalf — so nothing
-fired, nothing warned, and the dashboard reported the device as healthy. That
-is a degradation to *no* behaviour, which the capability rule above exists to
-forbid. Selecting a wake word a device was never provisioned with is enough to
-produce it, and that is an ordinary dashboard action.
-
-**Bouncing the HA connection flaps EVERY entity for that device.**
-`update_oww_model` drops and remakes the connection so HA re-reads the wake
-word, and that is the only lever the protocol offers — HA calls
-`_update_satellite_config()` from `async_added_to_hass` and nowhere else. The
-cost is that the voice assistant, media player, event and sensor entities all
-go unavailable and back in the same instant.
-
-For the **event** entity that is user-visible and looks like a fault: HA's
-`EsphomeEvent._on_device_update` deliberately writes state on reconnect
-("Event entities should go available directly when the device comes online"),
-restoring the last event's timestamp. `_trigger_event` is NOT called, so HA
-does not think a new event happened — but a **state-triggered** automation sees
-`unavailable` → timestamp and fires. Reported 2026-08-17 as "changing the wake
-word triggers a long button press"; the controller had sent no event at all.
-The user-side fix is `not_from: [unavailable, unknown]`, documented in
-docs/configuration.md. Worth remembering before adding any new bounce.
-
-**The fix is install-before-switch, not a fallback.** A device is never told
-about a new `owwModel` until the classifier is on it
-(`em_oww_sync.hold_back_model` swaps the key back to the current model, and
-`_install_then_switch` pushes the real config once the file has landed). The
-device keeps listening for its CURRENT wake word, on-device, throughout; if the
-install fails it simply stays there and says so loudly.
-
-The first attempt stood the device down to controller-side scoring while the
-model installed. That works and was rejected: it silently overrides a setting
-the user chose, and the dashboard goes on reporting `owwOnDevice: on` — the
-same "reports healthy while something else is true" shape the capability rule
-exists to forbid. On firmware from before private listening there is no
-privacy difference between the modes (it streams either way); on current
-firmware there is all the difference, which makes a silent override to
-streaming the worst version of this.
-
-Only devices that actually score locally are held back — with
-`owwOnDevice=off` the file is irrelevant, so the change stays instant. Both the
-old and the incoming mode are consulted, or a save that enables on-device
-scoring while changing the wake word slips through on the old mode.
-
-**A missing model never changes the mode — for the offline case either.**
-Install-before-switch covers every path where the device is connected;
-**`em_oww_sync.reconcile`**, run in the background from the connect
-handler, covers the one where it was not — a device whose wake word changed
-while it was offline is told to use the new model by the ordinary connect-time
-config push, with nothing checking it has the classifier. The reconcile
-installs it and pushes the config again so the scorer rebuilds. Until then the
-device keeps its mode and answers the button. It used to drop the mode to
-`off` so the controller would trigger meanwhile (`effective_mode`'s
-`model_ready`); private-listening firmware was already exempt, and on
-2026-09-22 Wil removed it for older firmware too and declined an opt-in for it
-("the button still works regardless") — `effective_mode` now takes no
-readiness at all, and a test pins that the reconcile never assigns the mode.
-
-The hold-back is invisible at the call site — the config push looks entirely
-ordinary and the whole guard is that one key was swapped out first — so tests
-pin the ordering, the capability gate, and that a failed install returns rather
-than falling through into the switch. The install runs as a background task:
-blocking the config save on a multi-megabyte shell-plane push would time out
-the request without making anything safer, and nothing is degraded while it
-runs.
-
-**Every device carries all four stock classifiers**, not just the one selected
-when it was provisioned (`em_oww_assets.STOCK_MODELS`, 3.04MB for the set).
-That removes the whole class of "you selected a wake word this device has never
-had" for stock models — which under `owwOnDevice=on` is a device with no wake
-word at all. The set is what `dashboard.jsx`'s `WW_MODELS` offers, pinned by
-test in both directions: a wake word offered but not installed is #191, and one
-installed but not offered is dead weight. openwakeword's `timer` and `weather`
-are NOT included — they are intent models, not wake words, and are offered
-nowhere.
-
-Both transports share `desired_assets` (`include_stock` defaults True), so a
-device provisioned today and one synced today carry the same files.
-
-**`CLASSIFIER_SLOTS` budgets LEFTOVER CUSTOM classifiers, not every classifier
-on the device.** It used to be a budget for all of them, which was right while
-only the selected model was ever desired; the four stock models fill it exactly,
-so under the old rule installing them would have silently deleted every custom
-model on the device — including ones a user trained and cannot re-download.
-Stock models are required by definition and never evictable.
-
-**Reconcile-on-connect** (`em_oww_sync.reconcile`, reached through
-`em_reconcile.on_connect` — see controller/CLAUDE.md for the other two payloads
-that ride with it) closes the offline case, and four rules keep it from doing
-harm:
-
-- **Failure to LOOK is not evidence of absence.** Any error reading the
-  device's inventory changes nothing — the shell plane is very likely not up
-  yet moments after connect. Only a successful listing that lacks a file
-  counts.
-
-- **Repair, never switch.** The mode is left alone whatever is missing; a
-  device missing its selected model is warned about, repaired, and sent the
-  config again so its scorer rebuilds. **Every device carries the full set
-  whatever its mode** (`em_oww_assets.reconcile_action`), so switching modes
-  never waits on an install.
-
-- **Quiet when there is nothing to do.** Devices reconnect often on this
-  fleet, so the ordinary path is one shell round trip and no log line.
-
-- **An install is followed by the config** (`em_oww_sync.push_config`,
-  #1029): the firmware builds its scorer from the config push, so a model
-  installed without one sits unused. The dashboard's **Install assets** said
-  "restart the device" for this until 2026-10-24, and the reconcile's own
-  repair path already re-pushed; now both do.
-
-Presence is judged by **md5, not filename**: a re-trained custom model keeps
-its name, and counting that as installed leaves the device scoring against a
-classifier that silently disagrees with the controller.
-
-**"Can it score today" and "is it complete" are two questions, and only the
-first was ever asked.** `missing_selected_classifier` decides whether the
-device is deaf (warned about, config re-pushed once repaired), and correctly
-looks only at the selected model —
-a missing spare is not a deaf device. But nothing looked at the spares at all,
-so Office ran from 17 August to 2026-09-02 without `alexa`, `hey_mycroft` or
-`hey_rhasspy`, scoring its own wake word perfectly and reported healthy by
-every panel. The status was right; the question was too narrow, and the cost
-lands the day someone selects one of the missing ones — which is the deaf
-device the whole path exists to prevent. `em_oww_assets.missing_assets`
-answers the wider one, and the reconcile acts on it **without degrading
-anything**: repair quietly, log at info, no warn event, because the user has
-lost nothing today.
-
-The rest of #191 — custom slots and a per-device Repair action — is designed
-on the issue and not yet built.
-
-### Asset distribution (`em_oww_assets.py`)
-
-Installing those files is automatic. `em_oww_assets` plans (pure, unit-tested);
-`em_api` carries it out. Two transports, one plan: the **provisioning wizard**
-pushes over USB/ADB (a fresh device is not connected to the controller yet, and
-USB suits 15MB far better than a base64 heredoc), and **fielded devices** use
-the shell plane from the device's Updates tab. The wizard step is **mandatory**
-— a device advertising `oww_shadow` without the assets is exactly the "I
-enabled it and nothing happened" this removes.
-
-- The ARM runtime is **vendored into the controller image**, pinned by AAR
-  sha256 (`onnxruntime-android` 1.19.2), so devices never need internet. The
-  models come from the installed openwakeword package or `oww_models/` — no
-  second copy to keep in step.
-
-- **md5 is the only definition of success**, both transports. Push to `.part`,
-  rename only on match: a truncated file is the right size and fails later at
-  `dlopen` with an error naming nothing.
-
-- **Four classifier slots, LRU by device mtime** — no controller-side
-  bookkeeping to lose across a restart. The selected model is **pinned**;
-  evicting it is the one outcome that breaks a device rather than costing a
-  re-push. Only files positively recognised as evictable classifiers are ever
-  deleted.
-
-- Free space is checked against **what actually needs sending**, so a device
-  that already has everything is never blocked. Read it with
-  `parse_free_mb`, never an awk field index — busybox wraps a long filesystem
-  name onto its own line, so `$4` is the *percentage* on these devices, which
-  parsed as "unknown" and silently disabled the check.
-
-- **`TransferResult` is truthy-compatible so existing `if not …` call sites
-  keep working — which is exactly how a call site that treated it as a LIST
-  reached a release.** `_sync_oww_assets` assigned the per-file transfer
-  result over its own `pushed` accumulator, so the first file replaced the
-  list and the append raised `AttributeError`. Every classifier push 500'd,
-  and provisioning is the only other path that installs one, so a device
-  could never be given a wake word it had not been provisioned with. Pinned
-  by test.
-
-- `DEVICE_DIR`, the shared model names and the classifier stem rule are pinned
-  against the firmware constants **by test**. Drift installs assets the device
-  never looks for, and the only symptom is shadow mode silently never starting.
-
-- **`silero_vad.onnx` rides the same path, for the turn stream's speech gate**
-  (`internal/client/speechgate.go`), and it is NOT openwakeword's copy. As
-  shipped, that file takes ORT 1.19 on armv7 down with SIGBUS (`BUS_ADRALN`)
-  inside `CreateSession`: its tensors are protobuf `raw_data` at arbitrary
-  offsets. Rewriting the int64 tensors alone still faulted and graph
-  optimisation off did not help; every tensor in its typed field loads and is
-  bit-identical (`controller/tools/silero_typed.py`, run in the Dockerfile's
-  `silero` stage, input and output pinned by sha256). **It presents as a
-  hang**: debuggerd itself crashes dumping the 32-bit process, the tombstone
-  is 340 bytes, and the process sits in state `T` with no output — look in
-  `logcat` for `BUS_ADRALN`, not in the tombstone. The asset is optional and
-  never evictable; a device without it gates on RMS as before, and picks it up
-  on the next turn once installed, no restart. Measured on VVV: 9.2% of one
-  core at 12.5 frames/s continuous, p50 6.9ms; it only runs while a turn is
-  open. Every device carries the full asset set whatever its wake word mode
-  (controller `reconcile_action`), so this reaches controller-scoring devices
-  too, on their next connect.
-
-- **2026-11-17, the Voice Incubator's wake word stack on an Echo (00LQ,
-  emOS, v2.19.0), by `tools/mixednet_probe`.** Front end
-  (`internal/microfeatures`) plus one `okay_nabu` stream (`internal/mixednet`),
-  paced at 80 ms of audio a tick: 4.2% of one core for one model, 7.1% for
-  two, 12.3% for four, no late tick (longest 4 / 10 / 24 ms); 2 cores online,
-  42 °C, the server running beside it (CPU frequency not recorded). Against
-  the ~23% this file gives for openWakeWord, measured earlier on another
-  Echo, not in this run.
-  Parity: the app's okay-nabu recording gives every frame, probability and
-  the detection (frame 138, report 235/255) identical to the host. The
-  probe's seeded broadband audio does not quite: with the input bytes
-  identical (hash `d122071c` both sides), 2 of its 998 frames differ, both in
-  channel 38 (~7 kHz) and both one int8 step higher on the Echo (frame 64: 19
-  against 20; frame 741: 17 against 18). One channel, one direction, fits a
-  single table entry: the front end builds its filterbank tables once with
-  float math from the C library, and bionic's rounding a last bit
-  differently from glibc's is the suspect (not yet confirmed by a table
-  dump). Neither
-  is known to equal the ESP32's (newlib). Accepted as is: one step in 256, a
-  few frames, the top of the band. A first report of a mismatch was the
-  probe's own fault: its audio came from Go's float math, which rounds
-  differently on 32-bit ARM, so it now generates the audio in integers.
-  The parser's refusal table, field sweep (5.7 s), trial test, frame-width
-  refusal and cutoff conversion pass on the Echo, 29 tests and subtests
-  under `-test.v`: the first run of the range checks on the real 32-bit
-  target. Phase 1 hashes for reference: host `4d99a062`, 00LQ `2b79ae70`.
-
-- **2026-11-17, the Echo as its own Incubator satellite: who a reply's end
-  belongs to (00LQ, feat/integration).** The voice plane has one stats
-  slot, and a satellite reply's end must go to the satellite
-  (PLAYBACK_DRAINED), not the controller (it reads as a turn's
-  `playback_stats`; seen once on 00LQ, a cancel during a reply logging the
-  stream's barge window at the controller and the app waiting 12 s for the
-  fallback drain). `cmd/incubator.go` owns the plane from a satellite
-  period to its report, and at the satellite's own flush keeps it only if a
-  period sounded within 50 ms (`VoiceSoundingUntil`): a stream cut while
-  priming never reports. Whether it was playing is known only to the ALSA
-  loop, so the sign can misroute in two rare cases, both accepted: a stream
-  cut after a stall longer than that (its report goes to the controller),
-  and a priming stream cut just after another finished (ownership held
-  until the next satellite stream's report). The session lets an awaited
-  PLAYBACK_DRAINED go at any cut, so neither stalls the app.
-
-- **2026-11-17, the app's wake words on the Echo's own satellite
-  (`incubator_wake`, host tests only so far).** One path carries the
-  microphone: the device's callback queues each 80 ms chunk to the
-  session's worker (16 deep, dropped and counted when full), which keeps the
-  1.5 s pre-roll, feeds a listening call, then runs the front end and
-  detector. A detection's call starts with the pre-roll up to the chunk
-  that detected, and the next chunk follows as live audio, proven
-  byte-for-byte on the app's okay-nabu recording against the stack run
-  directly. Three choices: (1) four slots, the measured figure, not the
-  executor's six; (2) the Echo's own wake word stands down while a model is
-  loaded (its crossing opened a session to a controller that runs no turns
-  here); (3) `WakeWordOn()` does not gate the app's words: HA's picker is
-  unreachable under this backend, and 00LQ's has been off since a test.
-  Mute must close the satellite's microphone, not only cancel the call:
-  with a model loaded the tap kept the stream running through
-  `stopMic`, and a wake soon after unmute would have sent up to 1.5 s heard
-  while muted. Each chunk carries the microphone opening it came in; one
-  from an earlier opening is dropped, and a new one empties the pre-roll (a
-  chunk queued before the mute but taken after the unmute leaked one chunk
-  in a test run before that). The first server build to link the front
-  end failed on duplicate `kiss_fft*` symbols: `internal/aec` vendors
-  speex's kiss_fft under the same names (the probe never linked the AEC).
-  The front end's are renamed `msf_kiss_*` by `-D` in its cgo flags, the
-  vendored files untouched.
-
-- **2026-11-18, the Echo's own satellite on 00LQ: the call-only stream, a
-  dropped data link, and the cost (v2.20.0-ea.1-66-gfe6588e).** The
-  call-only microphone stream (data_call.go) runs on every restart: the
-  app's models load before the controller's mic_start, so the satellite
-  opens its own stream (`call microphone started`) and hands over when the
-  controller's arrives (`stopped`, about 30 s later); wake calls worked
-  throughout. The data link was dropped by blocking its local port's output
-  for 60 s (iptables, the second of the firmware's connections to :8770):
-  the Echo noticed after about 30 s, redialled at once, restored the mic
-  stream on the new link, and a hey_jarvis call 7 s later went through; the
-  controller closed the old link on its keepalive timeout and kept the new
-  one (data_ws is compared by identity). Cost with three of the app's wake
-  words loaded beside openWakeWord: the server process 51% of one core over
-  30 s, about a quarter of the two cores online; the controller's hourly
-  cpuPct averages read 17-19% the day before and 16-22% since. 33-40 °C, no
-  dropped microphone audio logged.
-
-- **2026-11-18, the Echo announcing its own satellite (incubator_mdns,
-  fe72d4b) and VLANs (00LQ).** The Echo's record (zeroconf RegisterProxy,
-  host `<name>-vi`) was sent, but the app is on another VLAN and mDNS does
-  not cross: with the controller standing down the app lost the Echo
-  ("Satellite went away", no new "appeared" for minutes). The controller's
-  record is what bridges VLANs (announced on its own network, at the Echo's
-  address), so it announces as before, beside the Echo's (f2fad2d). Both
-  under the same instance name and host register without a rename, and the
-  app connected within a second. The Echo's own record matters only where
-  the app shares its network, or without a controller.
+## The old voice path (removed in EchoHome)
+
+Private listening through the controller, the on-device openWakeWord
+(shadow mode and `on`) and the controller's asset distribution were
+EchoMuse's voice path, removed in EchoHome (2026-11-18). Their history is
+EchoMuse's: [docs/history/device.md](https://github.com/wilbowes/EchoMuse/blob/main/docs/history/device.md),
+"Private listening" and "On-device wake word (shadow mode)".
 
 ## The external audio jack
 
@@ -1942,6 +1392,102 @@ including why hashing is worth it when deleting the file defeats it, is in
 
 ## The Voice Incubator satellite (`internal/incubator`)
 
+- **2026-11-17, the Voice Incubator's wake word stack on an Echo (00LQ,
+  emOS, v2.19.0), by `tools/mixednet_probe`.** Front end
+  (`internal/microfeatures`) plus one `okay_nabu` stream (`internal/mixednet`),
+  paced at 80 ms of audio a tick: 4.2% of one core for one model, 7.1% for
+  two, 12.3% for four, no late tick (longest 4 / 10 / 24 ms); 2 cores online,
+  42 °C, the server running beside it (CPU frequency not recorded). Against
+  the ~23% this file gives for openWakeWord, measured earlier on another
+  Echo, not in this run.
+  Parity: the app's okay-nabu recording gives every frame, probability and
+  the detection (frame 138, report 235/255) identical to the host. The
+  probe's seeded broadband audio does not quite: with the input bytes
+  identical (hash `d122071c` both sides), 2 of its 998 frames differ, both in
+  channel 38 (~7 kHz) and both one int8 step higher on the Echo (frame 64: 19
+  against 20; frame 741: 17 against 18). One channel, one direction, fits a
+  single table entry: the front end builds its filterbank tables once with
+  float math from the C library, and bionic's rounding a last bit
+  differently from glibc's is the suspect (not yet confirmed by a table
+  dump). Neither
+  is known to equal the ESP32's (newlib). Accepted as is: one step in 256, a
+  few frames, the top of the band. A first report of a mismatch was the
+  probe's own fault: its audio came from Go's float math, which rounds
+  differently on 32-bit ARM, so it now generates the audio in integers.
+  The parser's refusal table, field sweep (5.7 s), trial test, frame-width
+  refusal and cutoff conversion pass on the Echo, 29 tests and subtests
+  under `-test.v`: the first run of the range checks on the real 32-bit
+  target. Phase 1 hashes for reference: host `4d99a062`, 00LQ `2b79ae70`.
+
+- **2026-11-17, the Echo as its own Incubator satellite: who a reply's end
+  belongs to (00LQ, feat/integration).** The voice plane has one stats
+  slot, and a satellite reply's end must go to the satellite
+  (PLAYBACK_DRAINED), not the controller (it reads as a turn's
+  `playback_stats`; seen once on 00LQ, a cancel during a reply logging the
+  stream's barge window at the controller and the app waiting 12 s for the
+  fallback drain). `cmd/incubator.go` owns the plane from a satellite
+  period to its report, and at the satellite's own flush keeps it only if a
+  period sounded within 50 ms (`VoiceSoundingUntil`): a stream cut while
+  priming never reports. Whether it was playing is known only to the ALSA
+  loop, so the sign can misroute in two rare cases, both accepted: a stream
+  cut after a stall longer than that (its report goes to the controller),
+  and a priming stream cut just after another finished (ownership held
+  until the next satellite stream's report). The session lets an awaited
+  PLAYBACK_DRAINED go at any cut, so neither stalls the app.
+
+- **2026-11-17, the app's wake words on the Echo's own satellite
+  (`incubator_wake`, host tests only so far).** One path carries the
+  microphone: the device's callback queues each 80 ms chunk to the
+  session's worker (16 deep, dropped and counted when full), which keeps the
+  1.5 s pre-roll, feeds a listening call, then runs the front end and
+  detector. A detection's call starts with the pre-roll up to the chunk
+  that detected, and the next chunk follows as live audio, proven
+  byte-for-byte on the app's okay-nabu recording against the stack run
+  directly. Three choices: (1) four slots, the measured figure, not the
+  executor's six; (2) the Echo's own wake word stands down while a model is
+  loaded (its crossing opened a session to a controller that runs no turns
+  here); (3) `WakeWordOn()` does not gate the app's words: HA's picker is
+  unreachable under this backend, and 00LQ's has been off since a test.
+  Mute must close the satellite's microphone, not only cancel the call:
+  with a model loaded the tap kept the stream running through
+  `stopMic`, and a wake soon after unmute would have sent up to 1.5 s heard
+  while muted. Each chunk carries the microphone opening it came in; one
+  from an earlier opening is dropped, and a new one empties the pre-roll (a
+  chunk queued before the mute but taken after the unmute leaked one chunk
+  in a test run before that). The first server build to link the front
+  end failed on duplicate `kiss_fft*` symbols: `internal/aec` vendors
+  speex's kiss_fft under the same names (the probe never linked the AEC).
+  The front end's are renamed `msf_kiss_*` by `-D` in its cgo flags, the
+  vendored files untouched.
+
+- **2026-11-18, the Echo's own satellite on 00LQ: the call-only stream, a
+  dropped data link, and the cost (v2.20.0-ea.1-66-gfe6588e).** The
+  call-only microphone stream (data_call.go) runs on every restart: the
+  app's models load before the controller's mic_start, so the satellite
+  opens its own stream (`call microphone started`) and hands over when the
+  controller's arrives (`stopped`, about 30 s later); wake calls worked
+  throughout. The data link was dropped by blocking its local port's output
+  for 60 s (iptables, the second of the firmware's connections to :8770):
+  the Echo noticed after about 30 s, redialled at once, restored the mic
+  stream on the new link, and a hey_jarvis call 7 s later went through; the
+  controller closed the old link on its keepalive timeout and kept the new
+  one (data_ws is compared by identity). Cost with three of the app's wake
+  words loaded beside openWakeWord: the server process 51% of one core over
+  30 s, about a quarter of the two cores online; the controller's hourly
+  cpuPct averages read 17-19% the day before and 16-22% since. 33-40 °C, no
+  dropped microphone audio logged.
+
+- **2026-11-18, the Echo announcing its own satellite (incubator_mdns,
+  fe72d4b) and VLANs (00LQ).** The Echo's record (zeroconf RegisterProxy,
+  host `<name>-vi`) was sent, but the app is on another VLAN and mDNS does
+  not cross: with the controller standing down the app lost the Echo
+  ("Satellite went away", no new "appeared" for minutes). The controller's
+  record is what bridges VLANs (announced on its own network, at the Echo's
+  address), so it announces as before, beside the Echo's (f2fad2d). Both
+  under the same instance name and host register without a rename, and the
+  app connected within a second. The Echo's own record matters only where
+  the app shares its network, or without a controller.
+
 - 2026-11-19: a recognized speaker's color. The app sends it on
   `processing` as `r`, `g`, `b` (server.py `_speaker_event`, absent when
   nobody was recognized, "so the device keeps its own"), and its design
@@ -2098,6 +1644,19 @@ including why hashing is worth it when deleting the file defeats it, is in
   and brightness, on or off (the owner's ask, after trying the scene's
   reply colours): meter and drift alike; the meter keeps the scene's
   response curve. A colour change on the light repaints it at once.
+- 2026-11-19: with the link ring standing aside for a running satellite, an
+  app that is away showed nothing. Now a 200 ms flash of the link pulse's
+  orange every 5 s once it has been away 15 s (`watchAppMissing`), through
+  `Server.Flash`, which hands the ring back: the continuous orange pulse
+  had overlapped the music ring and the LED Ring light.
+- 2026-11-19: with the setup tool stopped for a while, the Echo found it
+  again only after up to ~2 min (the controller link's static backoff: 5,
+  5, 10, 20, then 60 s per endpoint, the setup tool's address plus one mDNS
+  try; across VLANs mDNS can't shorten it). Capping it at 15 s was offered
+  and declined: the delay is acceptable as it is.
+
+## The DHCP hostname (`internal/dhcpname`, `cmd/dhcpname.go`)
+
 - 2026-11-19: the DHCP hostname without changing emOS. On 00LQ emOS runs
   `/sbin/udhcpc -B -f -i wlan0 -s /tmp/udhcpc.sh` (init.c net_main,
   `dhcp_fos6`), no hostname; `/sbin/udhcpc` is a symlink to busybox on the
@@ -2115,13 +1674,3 @@ including why hashing is worth it when deleting the file defeats it, is in
   unchanged, and the router's lease shows the host name (class ID
   `udhcp 1.38.0`). The emOS change for a DHCP hostname, once planned for a
   fork of EchoMuse, is not needed.
-- 2026-11-19: with the link ring standing aside for a running satellite, an
-  app that is away showed nothing. Now a 200 ms flash of the link pulse's
-  orange every 5 s once it has been away 15 s (`watchAppMissing`), through
-  `Server.Flash`, which hands the ring back: the continuous orange pulse
-  had overlapped the music ring and the LED Ring light.
-- 2026-11-19: with the setup tool stopped for a while, the Echo found it
-  again only after up to ~2 min (the controller link's static backoff: 5,
-  5, 10, 20, then 60 s per endpoint, the setup tool's address plus one mDNS
-  try; across VLANs mDNS can't shorten it). Capping it at 15 s was offered
-  and declined: the delay is acceptable as it is.

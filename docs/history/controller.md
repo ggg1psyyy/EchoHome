@@ -1089,7 +1089,7 @@ with no way for the user to tell which they had.
 ## Sendspin: the music plane's second producer never crosses the controller
 
 Music Assistant connects to the Echo's Sendspin player directly (#89,
-`device/internal/sendspin`, design in `docs/audio-states.md` §6). The
+`device/internal/sendspin`, design in EchoMuse's `docs/audio-states.md` §6). The
 controller's whole part is four things, and none of them is audio:
 
 - **Config**: `sendspinEnabled` / `sendspinUnpaired` in their own `sendspin`
@@ -1176,7 +1176,7 @@ permanently. The old `clear()` calls are gone with it — a fresh Event per
 playback cannot carry a stale set, so that hazard is removed by construction
 rather than by discipline.
 
-See `docs/audio-states.md` §6 Q4 for the surrounding options.
+See EchoMuse's `docs/audio-states.md` §6 Q4 for the surrounding options.
 
 **A cancelled playback must release `speaking` (#366).** `_run_post_turn_playback`
 clears it in the `finally`, beside `speaker_busy`, and shielded — it used to sit
@@ -1265,7 +1265,7 @@ went straight to the wire and put music under the response — the precise thing
 
 **The alarm is a fourth owner and the state map is still owed** — `speaker_busy`
 handles it as far as the ring goes, but voice/music/announcement/alarm has no
-single written ladder. `docs/audio-states.md` §2 is the nearest thing.
+single written ladder. EchoMuse's `docs/audio-states.md` §2 is the nearest thing.
 
 ## Key Python modules
 
