@@ -450,7 +450,7 @@ jobs:
           # 90s: a first start generates the CA and runs every migration on
           # an empty database, which is the slowest legitimate boot there is.
           for i in $(seq 1 90); do
-            if docker logs em-ci 2>&1 | grep -q "Controller ready"; then
+            if docker logs em-ci 2>&1 | grep -q "setup tool ready"; then
               echo "booted in ${i}s"
               docker logs em-ci
               # A traceback ANYWHERE in a clean first boot is a fault, even
@@ -494,7 +494,7 @@ jobs:
       #
       # The boot is the controller-imports job's, unchanged: the same pinned
       # image via uat/Dockerfile — which layers this PR's Python AND this PR's
-      # compiled dashboard over the published one — the same "Controller ready"
+      # compiled dashboard over the published one — the same "setup tool ready"
       # wait with the same 90s ceiling and the same refusal on a traceback. One
       # way to boot a controller, not two.
       #
@@ -517,7 +517,7 @@ jobs:
           # first start generates the CA and runs every migration on an empty
           # database, the slowest legitimate boot there is.
           for i in $(seq 1 90); do
-            if docker logs em-uat 2>&1 | grep -q "Controller ready"; then
+            if docker logs em-uat 2>&1 | grep -q "setup tool ready"; then
               echo "booted in ${i}s"
               if docker logs em-uat 2>&1 | grep -q "Traceback"; then
                 echo "::error::traceback during a clean first boot"
