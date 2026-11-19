@@ -214,10 +214,15 @@ func (s *Server) hello() HelloInfo {
 }
 
 // Press is the action button, passed on by the controller as a press (not
-// a hold, not an event). Without an app connected it does nothing.
+// a hold, not an event). Without an app connected only its music step runs:
+// music is paused or resumed; nothing can be asked.
 func (s *Server) Press() {
 	if sess := s.session(); sess != nil {
 		sess.press()
+		return
+	}
+	if s.cfg.Device != nil && !s.cfg.Device.MusicPress() {
+		log.Printf("[incubator] press with no app connected: nothing to do")
 	}
 }
 

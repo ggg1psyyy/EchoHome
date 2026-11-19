@@ -587,3 +587,17 @@ func TestCancellingACallStopsTheAnnouncementToo(t *testing.T) {
 		t.Fatal("a press that started a call stopped an announcement")
 	}
 }
+
+// With no app connected a press still pauses or resumes the music.
+func TestWithNoAppAPressStillGoesToTheMusic(t *testing.T) {
+	echo := &fakeEcho{music: true}
+	s, err := Listen(Config{Name: "n", MAC: "02:ec:00:00:00:01", Port: freePort(t), Device: echo}, func(State) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	s.Press()
+	if echo.count(&echo.musicPresses) != 1 {
+		t.Fatal("the press did not reach the music")
+	}
+}
