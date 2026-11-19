@@ -56,7 +56,7 @@ ingress_port: 8768
 # why only the FIRST Home Assistant user becomes admin and the rest are
 # read-only until promoted.
 panel_admin: true
-panel_icon: mdi:microphone-message
+panel_icon: mdi:home-sound-out
 panel_title: EchoHome EA
 environment:
   ECHOMUSE_HOME_ASSISTANT_INGRESS: "true"
