@@ -111,3 +111,39 @@ def test_the_record_carries_its_own_iteration_count():
     assert record.startswith("7:")
     assert pw.parse(record)[0] == 7
     assert pw.verify("x", record)
+
+
+def test_emos_init_checks_the_hash_this_module_writes(tmp_path):
+    """emOS's init checks the console password with its own C hash
+    (pw_hash in init.c, EchoMuse's, at the pinned commit); pwcheck.c prints
+    its records for a set of passwords. Each must verify here: a record this
+    module writes that init would not accept is a console nobody can open.
+    Compiled with the host's cc: CI always has one, so there it fails rather
+    than skips."""
+    import os
+    import shutil
+    import subprocess
+
+    from _emos_ref import emos_file
+
+
+    src = emos_file("emos/init/pwcheck.c")
+    emos_file("emos/init/init.c")  # pwcheck.c includes it, beside itself
+    cc = shutil.which("cc") or shutil.which("gcc")
+    if cc is None:
+        if os.environ.get("CI"):
+            pytest.fail("no C compiler on a CI runner")
+        pytest.skip("no C compiler on this host")
+    exe = tmp_path / "pwcheck"
+    subprocess.run([cc, "-O2", "-o", str(exe), str(src)], check=True,
+                   capture_output=True, timeout=120)
+    out = subprocess.run([str(exe)], check=True, capture_output=True, text=True,
+                         timeout=120).stdout
+    n = 0
+    for line in out.splitlines():
+        if not line:
+            continue
+        text, record = line.split("\t", 1)
+        assert pw.verify(text, record), f"init's record for {text!r} does not verify here"
+        n += 1
+    assert n >= 4, f"pwcheck printed {n} records"

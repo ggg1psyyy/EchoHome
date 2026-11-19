@@ -10,17 +10,14 @@ will meet rather than against hand-made headers.
 import base64
 import hashlib
 import re
-import shutil
-import subprocess
-from pathlib import Path
 
 import pytest
 
 import em_emos_build as eb
 import em_emos_update as up
+from _emos_ref import emos_file
 import test_emos_build as fx
 
-REPO = Path(__file__).resolve().parents[2]
 
 
 def installed(version="emos-v0.9", arch="arm64", system_part=13, init_fill=1):
@@ -276,7 +273,7 @@ def test_an_init_without_the_trial_is_recognised_from_the_binary():
 
 
 def test_the_real_init_source_carries_the_string_the_check_looks_for():
-    src = (REPO / "emos" / "init" / "init.c").read_text()
+    src = emos_file("emos/init/init.c").read_text()
     assert f'"{up.TRIAL_MARK}"' in src
 
 
@@ -291,7 +288,7 @@ def test_the_mark_is_the_one_trialcheck_reads():
     mark = up.trial_mark(SHARED_ID, "0123456789abcdef", "emos-v0.10")
     assert mark.splitlines()[0] == SHARED_ID
     assert mark.endswith("\n")
-    src = (REPO / "emos" / "init" / "trialcheck.c").read_text()
+    src = emos_file("emos/init/trialcheck.c").read_text()
     assert f'#define ID_HEX "{SHARED_ID}"' in src
     # The form with our notes after the id is one trialcheck accepts.
     assert 'ID_HEX "\\nbuild=0123456789abcdef\\nversion=0.10\\n"' in src
@@ -304,7 +301,7 @@ def test_the_mark_names_the_image_by_the_id_init_reads():
 
 
 def test_init_and_the_controller_agree_on_the_paths():
-    src = (REPO / "emos" / "init" / "init.c").read_text()
+    src = emos_file("emos/init/init.c").read_text()
     assert f'#define BOOTDEV   "{up.BOOT_DEV}"' in src
     assert f'#define GOODIMG   "{up.GOOD_IMG}"' in src
     assert f'#define BOOTSTATE "{up.BOOT_STATE}"' in src
@@ -315,20 +312,6 @@ def test_init_and_the_controller_agree_on_the_paths():
 
 def test_the_watch_outlasts_a_full_rollback():
     assert up.WATCH_S > up.TRIAL_SECS * up.MAX_TRIES + 120
-
-
-def test_trialcheck_passes():
-    """Runs the C check where a compiler exists (CI runs it regardless)."""
-    cc = shutil.which("cc")
-    if not cc:
-        pytest.skip("no C compiler")
-    out = Path(subprocess.check_output(["mktemp", "-d"]).decode().strip())
-    exe = out / "trialcheck"
-    subprocess.run([cc, "-O2", "-o", str(exe),
-                    str(REPO / "emos" / "init" / "trialcheck.c")],
-                   check=True, capture_output=True)
-    r = subprocess.run([str(exe)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stdout
 
 
 @pytest.mark.parametrize("bad", [
@@ -361,12 +344,12 @@ def test_the_mark_round_trips():
 
 def test_the_rollback_record_is_the_one_trialcheck_writes():
     text = f"from={SHARED_ID}\nto=unknown\ntries=3\n"
-    src = (REPO / "emos" / "init" / "trialcheck.c").read_text()
+    src = emos_file("emos/init/trialcheck.c").read_text()
     assert '"from=" ID_HEX "\\n"' in src and '"to=unknown\\n"' in src \
         and '"tries=3\\n"' in src
     assert up.parse_rollback(text) == {
         "from": SHARED_ID, "to": "unknown", "tries": 3}
-    init = (REPO / "emos" / "init" / "init.c").read_text()
+    init = emos_file("emos/init/init.c").read_text()
     assert f'#define ROLLBACKREC "{up.ROLLBACK_REC}"' in init
     assert '"from=%s\\nto=%s\\ntries=%d\\n"' in init
 

@@ -1,0 +1,14 @@
+{
+  "_about": "emOS is EchoMuse's (wilbowes/EchoMuse, emos/, by Wil Bowes and the EchoMuse contributors). EchoHome's tests read these files, at this commit, where its code must agree with emOS; tools/fetch_emos_ref.py fetches them into .emos-ref/. Move the pin with the emOS release the setup tool installs: change commit and tag, then run it with --update.",
+  "repo": "wilbowes/EchoMuse",
+  "tag": "emos-v0.12-ea.1",
+  "commit": "e0c4093f4ff0cc496c0d5c15bf16baa5baceefb0",
+  "files": {
+    "emos/mkboot.py": "e581c92ff11b4de4355f26f462893c9a0e1f3e84fe70903453d861926475b11f",
+    "emos/init/init.c": "4070eac159772d5f40d420f4ce828c5052c38ecc02e5e1d08b7a568703cc7d36",
+    "emos/init/trialcheck.c": "8cfa12d95fa2bdfec065f83e68b5732f73d1a7b2bf4a618c6e6c2257fbc045f4",
+    "emos/tools/emconsole.py": "d73cc5ac7aa5a81373f3d366e8882eb1deeb8cf4e7a0fc0df5abef847a9098ec",
+    "emos/init/pwcheck.c": "78d44acfc4116ad669ed7952914cb05e90947eac72bbcc25a133a1742daaad75",
+    ".github/workflows/emos-release.yml": "378bbb1a203525ffef1d9b972b5745c3797f88a612f75ae8de650c1190fe9704"
+  }
+}

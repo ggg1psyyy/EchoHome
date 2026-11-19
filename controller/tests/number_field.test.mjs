@@ -15,7 +15,7 @@
 // the obvious way to enforce integers and has that hole in it; stripping
 // non-digits as they are typed does not.
 
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import assert from "assert";
@@ -86,10 +86,14 @@ assert.strictEqual(commit("", 0, 90), null, "an empty box writes nothing");
 // The device parser agrees with all of the above: it reads digits and stops at
 // anything else, so a fraction would land there as 0 whatever we sent. Pin
 // that the two are still describing the same thing.
-const init = readFileSync(
-  join(HERE, "..", "..", "emos", "init", "init.c"), "utf8");
+// emOS's init.c is EchoMuse's, fetched at the pinned commit
+// (tools/emos_ref.json) by tools/fetch_emos_ref.py: missing fails, never skips.
+const initPath = join(HERE, "..", "..", ".emos-ref", "emos", "init", "init.c");
+assert.ok(existsSync(initPath),
+  "emOS's emos/init/init.c is not fetched: run python3 tools/fetch_emos_ref.py");
+const init = readFileSync(initPath, "utf8");
 assert.ok(/console_timeout_secs/.test(init),
-  "emos/init/init.c no longer has console_timeout_secs — the device half of " +
+  "emOS's init.c no longer has console_timeout_secs — the device half of " +
   "this contract moved, so check the box still cannot send it a fraction");
 
 console.log("number_field: all ok");

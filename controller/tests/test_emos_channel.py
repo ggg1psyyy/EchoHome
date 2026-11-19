@@ -7,9 +7,9 @@ EA device is not offered the GA of an older number as an "update".
 """
 
 import re
-from pathlib import Path
 
 import em_emos_update as up
+from _emos_ref import emos_file
 
 
 def _rel(tag, pre=False, draft=False, init=True):
@@ -69,8 +69,8 @@ def test_an_ea_device_is_offered_the_next_ea_and_its_ga_but_nothing_older():
 
 
 def test_the_release_workflow_refuses_what_the_controller_cannot_read():
-    wf = (Path(__file__).resolve().parents[2]
-          / ".github/workflows/emos-release.yml").read_text()
+    # EchoMuse publishes emOS; its release workflow, at the pinned commit.
+    wf = emos_file(".github/workflows/emos-release.yml").read_text()
     pat = re.search(r"grep -Eq '(\^emos-v[^']+)'", wf).group(1)
     for good in ("emos-v0.1", "emos-v0.10", "emos-v1.0.2", "emos-v0.11-ea.1"):
         assert re.fullmatch(pat, good), good

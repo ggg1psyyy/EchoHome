@@ -43,7 +43,7 @@ python3 rig.py detach <serial> && python3 rig.py down
   and label, which is also what a screen reader uses: a control the rig cannot
   find is usually one a keyboard user cannot reach either.
 - **Every UAT Echo on USB.** emOS Echoes are read over their serial console
-  (`emos/tools/emconsole.py --list`), FireOS ones over adb as root with
+  (`.emos-ref/emos/tools/emconsole.py --list`, emOS's, fetched by `tools/fetch_emos_ref.py`), FireOS ones over adb as root with
   Magisk's busybox; `rig.Echo(serial)` picks by whether adb lists the serial.
   Attach each (they get labels `UAT <last4>`); controls, the report and the
   accessibility scan cover every attached Echo.

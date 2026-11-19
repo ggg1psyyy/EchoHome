@@ -7,6 +7,7 @@ forgotten (bitten by em_scenes.py 2026-07-10 and em_oww_models.py
 """
 
 import _sources
+from _emos_ref import emos_file
 import ast
 import re
 from pathlib import Path
@@ -1769,7 +1770,8 @@ def test_the_emos_and_firmware_release_namespaces_cannot_select_each_other():
     assert 'startswith("emos-v")' in chooser and '"init"' in chooser, \
         "the emOS poll must select on an emos-v* tag AND an init asset"
 
-    workflow = (CONTROLLER.parent / ".github" / "workflows" / "emos-release.yml").read_text()
+    # EchoMuse publishes emOS; its release workflow, at the pinned commit.
+    workflow = emos_file(".github/workflows/emos-release.yml").read_text()
     assert "'emos-v*'" in workflow, "the emOS release workflow must fire on emos-v* tags"
     fw_workflow = (CONTROLLER.parent / ".github" / "workflows" / "release.yml").read_text()
     assert "'v*'" in fw_workflow
@@ -1800,128 +1802,6 @@ def test_the_emos_init_is_verified_before_it_is_served():
                        ("_post_provision_emos_image", "em_emos_ota.fetch_payload")):
         fn = _strip_prose(_sources.def_source(name))
         assert want in fn, f"{name} must resolve through {want}"
-
-
-def test_the_busybox_build_can_satisfy_the_gpl_obligation():
-    """
-    busybox is the only GPL-2.0 thing emOS ships, and the obligation is met by
-    publishing source ALONGSIDE the binary — not by a link, which would leave
-    compliance depending on busybox.net's server layout.
-
-    Asserted against code rather than prose: every string checked here is an
-    executable line, because a test that greps for the words would be satisfied
-    by the comment explaining them.
-    """
-    script = (CONTROLLER.parent / "emos" / "tools" / "build-busybox.sh").read_text()
-    body = "\n".join(l for l in script.splitlines()
-                     if l.strip() and not l.lstrip().startswith("#"))
-
-    # The tarball is pinned, and checked on EVERY run rather than only after a
-    # download — a cached or pre-seeded one is no less likely to be wrong.
-    assert "BB_SHA512=" in body, "the busybox source must be pinned by hash"
-    assert "sha512sum -c -" in body, "the pin must actually be checked"
-
-    # Both artifacts reach the output directory, which is what the release
-    # publishes. Without these the binary ships with no corresponding source.
-    assert '"$OUT/busybox-$BB_VER.tar.bz2"' in body, \
-        "the source tarball must be installed into the output directory"
-    assert '"$OUT/busybox-LICENSE"' in body, \
-        "the licence text must be installed into the output directory"
-
-    # And the tarball must actually BE the source of the binary. The build diffs
-    # the tree it compiled against a fresh extraction and refuses on any
-    # modified or missing upstream file — the supplicant build beside this one
-    # patches its sources with inline python, so "we do not patch busybox" has
-    # to be enforced rather than assumed.
-    assert "diff -rq" in body, \
-        "the build must prove the tree it compiled matches the published tarball"
-
-    # The release gate, which fails the publish rather than the build.
-    wf = (CONTROLLER.parent / ".github" / "workflows"
-          / "emos-release.yml").read_text()
-    assert "busybox-LICENSE" in wf and "busybox-$BB_VER.tar.bz2" in wf, \
-        "the release must verify both GPL assets exist before publishing"
-
-
-def test_the_emos_release_workflow_asserts_what_it_publishes():
-    """
-    The last point before the artifact is something people flash. CI checks a
-    branch tip; this checks what is published.
-
-    Read as YAML, not grepped: the old substring check pinned the FORMATTING of a
-    one-item list, so adding an asset broke a test with no opinion about it.
-    """
-    import yaml
-    path = CONTROLLER.parent / ".github" / "workflows" / "emos-release.yml"
-    wf = path.read_text()
-    assert "ARM aarch64" in wf, "the release must assert the init is aarch64"
-    assert "32-bit LSB executable, ARM" in wf, \
-        "the release must assert init32 is a 32-bit ARM binary"
-    assert "statically linked" in wf, "the release must assert the inits are static"
-    # The off-target checks run against the source being published. Each one
-    # drives a parser or an invariant whose failure is silent on hardware.
-    for check in ("ringsim --check", "pwcheck", "tmoutcheck", "wpacheck",
-                  "cmdlinecheck", "dnscheck"):
-        assert check in wf, f"the release must run {check}"
-    # The bundle is what carries everything but the compat init, so a release
-    # that skipped building it would publish an empty-handed payload.
-    assert "make-payload-bundle.py" in wf, \
-        "the release must build the payload bundle"
-    for f in ("init32", "wpa_supplicant", "wpa_cli", "em-wifi", "e2/e2fsck"):
-        assert f in wf, f"{f} must go into the bundle"
-
-    published = set()
-    for job in yaml.safe_load(wf)["jobs"].values():
-        for step in job["steps"]:
-            files = (step.get("with") or {}).get("files")
-            if files:
-                published |= {f.strip() for f in files.split("\n") if f.strip()}
-
-    # Pinned as an exact SET, so adding an asset is a deliberate edit here. The
-    # invariant is that we have the RIGHT to redistribute everything in it: two
-    # inits (one per kernel architecture) and emOS's own userspace, which is
-    # hostap under BSD, libnl-tiny under LGPL, busybox under GPL-2.0 and our own
-    # shell script.
-    #
-    # The two busybox-* assets are the GPL-2.0 OBLIGATION, not extras. §3(a) wants
-    # the corresponding source to accompany the binary, so the verified upstream
-    # tarball and the licence text are published beside it — a link to busybox.net
-    # would leave compliance depending on a third party's server. Dropping either
-    # ships GPL-2.0 object code with no source, which is why they are pinned here
-    # rather than left to the release step. The two e2fsprogs-* assets are the
-    # same obligation for e2fsck (GPL-2.0; NOTICE is e2fsprogs' licence text).
-    #
-    # A BOOT IMAGE MUST NEVER APPEAR. It carries the device's own kernel and
-    # DTBs, so publishing one would redistribute Amazon's code — the image is
-    # assembled on the user's side from the partition they read off their device.
-    assert published == {"emos/build/init", "emos/build/emos-payload.zip",
-                         "emos/build/bb/busybox-*.tar.bz2",
-                         "emos/build/bb/busybox-LICENSE",
-                         "emos/build/e2/e2fsprogs-*.tar.gz",
-                         "emos/build/e2/e2fsprogs-NOTICE"}, (
-        f"the published set changed — got {sorted(published)}. Everything here "
-        f"must be redistributable by us, and a boot image must never be among "
-        f"it. The loose `init` is not redundant: _fetch_latest_emos_release "
-        f"matches it by exact name, so dropping it strands every fielded "
-        f"controller. The busybox and e2fsprogs sources and licences are a "
-        f"GPL-2.0 obligation.")
-    assert not any(".img" in f or "boot" in f.rsplit("/", 1)[-1]
-                   for f in published), (
-        "an image or boot partition must never be a release asset — it carries "
-        "the device's own kernel and DTBs")
-    # `init` keeps that exact name. The controller selects release assets by
-    # exact name, so renaming it strands every controller already in the field
-    # looking for it — which is why the second init was ADDED as `init32`
-    # rather than the pair being renamed to `init-arm64`/`init-arm`.
-    ota = (CONTROLLER / "em_emos_ota.py").read_text()
-    mapping = ota[ota.index("INIT_ASSETS = {"):]
-    mapping = mapping[:mapping.index("}") + 1]
-    assert '"init"' in mapping and '"init32"' in mapping, (
-        f"the arch-to-asset map must name the published assets, got: {mapping}")
-    # init32 is not a published asset any more — it travels inside the bundle,
-    # which the step check above pins.
-    assert "emos/build/init" in published, \
-        "the compat init must still be published loose"
 
 
 def test_the_init_architecture_is_decided_where_the_reference_is():

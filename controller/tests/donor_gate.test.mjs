@@ -17,14 +17,20 @@
 // Kernel headers are synthesised: a real one would put Amazon's code in this
 // repository.
 
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { gzipSync } from "zlib";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(HERE, "..", "static", "dashboard.jsx"), "utf8");
-const initC = readFileSync(join(HERE, "..", "..", "emos", "init", "init.c"), "utf8");
+// emOS's init.c is EchoMuse's, fetched at the pinned commit
+// (tools/emos_ref.json) by tools/fetch_emos_ref.py: missing fails, never skips.
+const initPath = join(HERE, "..", "..", ".emos-ref", "emos", "init", "init.c");
+if (!existsSync(initPath)) {
+  throw new Error("emOS's emos/init/init.c is not fetched: run python3 tools/fetch_emos_ref.py");
+}
+const initC = readFileSync(initPath, "utf8");
 
 function liftFunction(name) {
   const re = new RegExp(`(async )?function ${name}\\(`);

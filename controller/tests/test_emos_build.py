@@ -28,16 +28,14 @@ from pathlib import Path
 import pytest
 
 import em_emos_build as eb
+from _emos_ref import emos_file
 
 
-REPO = Path(__file__).resolve().parents[2]
 
 
 def _load_mkboot():
-    """Import emos/mkboot.py by path — it is outside the controller package."""
-    path = REPO / "emos" / "mkboot.py"
-    if not path.exists():
-        pytest.skip(f"emos/mkboot.py not present at {path}")
+    """Import emOS's mkboot.py (EchoMuse's, at the pinned commit: _emos_ref)."""
+    path = emos_file("emos/mkboot.py")
     spec = importlib.util.spec_from_file_location("_mkboot", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["_mkboot"] = mod
@@ -203,7 +201,7 @@ def test_restamping_replaces_rather_than_appends():
 def test_the_system_stamp_key_is_the_same_string():
     """Two packers, one key — and init.c's parser matches on it exactly."""
     assert eb.SYSTEM_CMDLINE_KEY == _load_mkboot().SYSTEM_CMDLINE_KEY
-    init_c = (REPO / "emos" / "init" / "init.c").read_text()
+    init_c = emos_file("emos/init/init.c").read_text()
     assert f'"{eb.SYSTEM_CMDLINE_KEY}"' in init_c, (
         "init.c does not parse the key the packers write")
 
@@ -876,82 +874,6 @@ def test_em_wifi_rides_in_both_architectures():
     assert both - {"e2fsck"} <= every, (
         "a name that is not in the payload allowlist can never be in a bundle"
     )
-
-
-def test_em_wifi_resolves_its_tools_the_way_init_does():
-    """
-    The script and init must agree about which wpa_cli and wpa_supplicant are
-    in play, and the only way to guarantee that is the same list in the same
-    order. A hardcoded /sbin is what made em-wifi refuse on FireOS 5.
-    """
-    root = Path(__file__).resolve().parents[2]
-    script = (root / "emos" / "device" / "em-wifi").read_text()
-
-    for tool in ("wpa_cli", "wpa_supplicant"):
-        assert f"/sbin/{tool} /system/bin/{tool}" in script, (
-            f"em-wifi must try /sbin/{tool} then /system/bin/{tool}, as "
-            f"init.c's supps[]/clis[] do"
-        )
-    assert "CLI=/sbin/wpa_cli" not in script, "em-wifi hardcodes /sbin again"
-    assert "SUP=/sbin/wpa_supplicant" not in script, "em-wifi hardcodes /sbin again"
-
-    init_c = (root / "emos" / "init" / "init.c").read_text()
-    for tool in ("wpa_cli", "wpa_supplicant"):
-        assert f'"/sbin/{tool}"' in init_c and f'"/system/bin/{tool}"' in init_c, (
-            f"init.c no longer resolves {tool} this way — em-wifi mirrors it"
-        )
-
-
-def test_build_sh_installs_em_wifi_unconditionally():
-    """
-    build.sh is the local build and the controller's packer is compared against
-    it. em-wifi was installed only inside the `if [ -f "$WPA_CLI" ]` branch, so
-    a FireOS 5 build silently produced no console tool.
-    """
-    root = Path(__file__).resolve().parents[2]
-    build = (root / "emos" / "build.sh").read_text()
-
-    install = 'install -m 0755 "$HERE/device/em-wifi" "$WORK/root/sbin/em-wifi"'
-    assert install in build, "build.sh no longer installs em-wifi"
-
-    before = build.split(install)[0]
-    opened = before.count("\nif ") - before.count("\nfi")
-    assert opened == 0, (
-        "em-wifi is installed inside a conditional again — it must ride in "
-        "every image, including one built with no wpa_cli prebuilt"
-    )
-
-
-def test_em_wifi_writes_a_conf_the_wifi_user_can_read():
-    """
-    Amazon's wpa_supplicant drops to the `wifi` user (AID_WIFI, uid 1010) and
-    is what runs on a FireOS 5 image, which carries no /sbin userspace. A
-    root-owned 0600 conf is unreadable to it: it exits, init respawns it every
-    five seconds, and the device sits at boot stage 11 with a perfectly
-    correct conf and the right password.
-
-    Measured on G090LF99207711NF, 2026-09-21 — em-wifi reported the join and
-    the device dropped off the network seconds later. Root ignores
-    permissions, so one mode serves both bases.
-    """
-    root = Path(__file__).resolve().parents[2]
-    script = (root / "emos" / "device" / "em-wifi").read_text()
-
-    assert 'chmod 660 "$CONF"' in script, (
-        "the conf must be group-readable — a FireOS 5 supplicant runs as the "
-        "wifi user and cannot read a 0600 root-owned file"
-    )
-    assert "chown 1010:1010" in script, (
-        "the conf must be owned by AID_WIFI, by NUMBER — there is no "
-        "/etc/passwd on the device for `chown wifi` to resolve against"
-    )
-    # 0600 is legitimate ONLY as the fallback when chown fails. An
-    # unconditional one — a line of its own — is the bug coming back.
-    for line in script.splitlines():
-        assert line.strip() != 'chmod 600 "$CONF"', (
-            "em-wifi sets the conf 0600 unconditionally again; that mode is "
-            "only acceptable after chown has failed"
-        )
 
 
 # ── Donut: LK keeps 199 bytes of cmdline, and the ramdisk rides on initrd= ───

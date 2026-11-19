@@ -34,7 +34,9 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[1] / "emos" / "tools"))
+# emconsole.py is emOS's (EchoMuse's), fetched at the pinned commit by
+# tools/fetch_emos_ref.py into .emos-ref/.
+sys.path.insert(0, str(HERE.parents[1] / ".emos-ref" / "emos" / "tools"))
 from emconsole import Console, list_consoles  # noqa: E402
 
 STATE = Path(os.environ.get("UAT_STATE", Path.home() / ".echomuse-uat"))

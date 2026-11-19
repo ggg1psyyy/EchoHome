@@ -50,3 +50,6 @@ device/tools/speaker_profile/*.wav
 coverage.out
 coverage.json
 *.cover
+
+# emOS reference files for the tests (tools/fetch_emos_ref.py)
+/.emos-ref/
