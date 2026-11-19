@@ -1988,6 +1988,16 @@ including why hashing is worth it when deleting the file defeats it, is in
   when `player@v1` is among the roles. The interop runner's builder went to
   golang:1.26.11 with `-buildvcs=false` (git in the container cannot read
   the checkout's status).
+- 2026-11-19: `announcing` and `announced` (DEVICE_EVENT), the Voice PE's
+  from its media player's on_announcement and on_state. The app waits on
+  them (server.py `_speak_stream`, 10 s to start, 120 s to end) when its
+  reply is Home Assistant's TTS on the satellite's own media player; before
+  them it logged "the announcement did not start in time" on every reply.
+  The Echo sends them on its media player's change into and out of
+  Announcing, in order through one goroutine (OnState runs under the
+  player's lock). A press that stops a ringing timer or cancels a call
+  also ends an HA announcement (`StopAnnouncement`, music underneath
+  carries on), as the Voice PE's.
 
 ## The Echo's ESPHome device (`internal/esphome`, `cmd/esphome.go`)
 

@@ -29,6 +29,7 @@ type fakeEcho struct {
 	// counts the presses it took.
 	music        bool
 	musicPresses int
+	annStops     int // StopAnnouncement calls
 }
 
 func (f *fakeEcho) MicOpen(d func([]byte)) { f.mu.Lock(); f.deliver = d; f.opens++; f.mu.Unlock() }
@@ -43,9 +44,10 @@ func (f *fakeEcho) Play(p []byte) error {
 	}
 	return nil
 }
-func (f *fakeEcho) End()        { f.mu.Lock(); f.ends++; f.mu.Unlock() }
-func (f *fakeEcho) Flush()      { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
-func (f *fakeEcho) Muted() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
+func (f *fakeEcho) End()              { f.mu.Lock(); f.ends++; f.mu.Unlock() }
+func (f *fakeEcho) Flush()            { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
+func (f *fakeEcho) Muted() bool       { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
+func (f *fakeEcho) StopAnnouncement() { f.mu.Lock(); f.annStops++; f.mu.Unlock() }
 func (f *fakeEcho) MusicPress() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -554,5 +556,32 @@ func TestWithNoMusicAPressStartsACall(t *testing.T) {
 	a.expect(CallStart)
 	if echo.count(&echo.musicPresses) != 0 {
 		t.Fatal("counted a music press with no music")
+	}
+}
+
+func TestHomeAssistantsAnnouncementIsReportedToTheApp(t *testing.T) {
+	s, _, _, a := connectApp(t)
+	for _, on := range []bool{true, false} {
+		s.Announcing(on)
+		var ev DeviceEventInfo
+		json.Unmarshal(a.expect(DeviceEvent), &ev)
+		want := map[bool]string{true: "announcing", false: "announced"}[on]
+		if ev.Type != want {
+			t.Fatalf("DEVICE_EVENT %+v, want %s", ev, want)
+		}
+	}
+}
+
+func TestCancellingACallStopsTheAnnouncementToo(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	s.Press()
+	a.expect(CallEnd)
+	waitFor(t, "the announcement stopped", func() bool { return echo.count(&echo.annStops) == 1 })
+	s.Press() // starts a call: no announcement to stop
+	a.expect(CallStart)
+	if echo.count(&echo.annStops) != 1 {
+		t.Fatal("a press that started a call stopped an announcement")
 	}
 }

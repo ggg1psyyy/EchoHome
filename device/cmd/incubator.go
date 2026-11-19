@@ -81,6 +81,11 @@ func (e *echoParts) Flush() {
 }
 func (e *echoParts) Muted() bool      { return e.srv.IsMuted() }
 func (e *echoParts) MusicPress() bool { return musicPress() }
+func (e *echoParts) StopAnnouncement() {
+	if mediaPlayer != nil {
+		mediaPlayer.StopAnnouncement()
+	}
+}
 
 // Show puts the satellite's state on the ring with the scene the controller
 // pushed: its listening ring (listeningAnim) and the rest (incubatorRing).

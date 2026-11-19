@@ -96,7 +96,7 @@ func mediaEntityFor(s *server.Server, spk *speaker.PcmSpeaker) *esphome.MediaPla
 	mediaPlayer = &mediaplayer.Player{
 		Out:     mediaOut{spk},
 		Fetch:   mediaFetch,
-		OnState: func(mediaplayer.State) { go mediaReport() },
+		OnState: func(st mediaplayer.State) { go mediaReport(); announcingSoon(st == mediaplayer.Announcing) },
 		Duck:    duckHold,
 	}
 	wav := func(purpose api.MediaPlayerFormatPurpose) *api.MediaPlayerSupportedFormat {
@@ -231,4 +231,34 @@ func musicPress() bool {
 		return true
 	}
 	return false
+}
+
+// announcingSoon tells the satellite's app when an announcement from Home
+// Assistant begins and ends (the Voice PE's on_announcement and on_state):
+// the app waits on them when Home Assistant speaks its reply here. Called
+// under the player's lock, so it hands each change, in order, to one
+// goroutine that passes it on.
+var (
+	mediaAnnouncing atomic.Bool
+	announceCh      = make(chan bool, 16)
+	announceOnce    sync.Once
+)
+
+func announcingSoon(on bool) {
+	if mediaAnnouncing.Swap(on) == on {
+		return
+	}
+	announceOnce.Do(func() {
+		go func() {
+			for on := range announceCh {
+				if incubatorMgr != nil {
+					incubatorMgr.Announcing(on)
+				}
+			}
+		}()
+	})
+	select {
+	case announceCh <- on:
+	default: // sixteen changes behind: the app's wait times out instead
+	}
 }

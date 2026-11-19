@@ -189,6 +189,19 @@ func (p *Player) Stop() {
 	p.reportLocked()
 }
 
+// StopAnnouncement ends an announcement, the music under it carrying on:
+// the button cancelling a call or stopping a ringing timer quiets what is
+// being announced too, as the Voice PE's does. Nothing without one.
+func (p *Player) StopAnnouncement() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if a := p.ann; a != nil {
+		p.ann = nil
+		a.cancel()
+		p.reportLocked()
+	}
+}
+
 // ended is a session's own end (the stream ran out, or failed).
 func (p *Player) ended(s *session, why error) {
 	p.mu.Lock()

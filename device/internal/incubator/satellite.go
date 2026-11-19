@@ -216,6 +216,14 @@ func (s *Server) Press() {
 	}
 }
 
+// Announcing passes on that an announcement from Home Assistant began
+// (true) or ended here. Without an app connected it goes nowhere.
+func (s *Server) Announcing(on bool) {
+	if sess := s.session(); sess != nil {
+		sess.haAnnouncing(on)
+	}
+}
+
 // SetMuted is the Echo's mute: muted, a call ends and the microphone
 // closes, wake word models or not.
 func (s *Server) SetMuted(muted bool) {

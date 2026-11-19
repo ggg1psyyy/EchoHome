@@ -386,3 +386,22 @@ func firstDiff(a, b []byte) int {
 	}
 	return min(len(a), len(b))
 }
+
+func TestStoppingAnAnnouncementLeavesTheMusic(t *testing.T) {
+	song, ann := pcm(3000, 0), pcm(3000, 9000)
+	base := serve(t, map[string][]byte{"/s.wav": wav(song, 0xFFFFFFFF, wireFmt()), "/n.wav": wav(ann, 0xFFFFFFFF, wireFmt())})
+	p, out, _ := newPlayer(t)
+	p.Play(base + "/s.wav")
+	time.Sleep(30 * time.Millisecond)
+	p.Announce(base + "/n.wav")
+	if p.State() != Announcing {
+		t.Fatal("not announcing")
+	}
+	p.StopAnnouncement()
+	if p.State() != Playing {
+		t.Fatalf("state %v after the announcement was stopped, want the music playing", p.State())
+	}
+	p.StopAnnouncement() // none: nothing
+	p.Stop()
+	noBrokenRules(t, out)
+}

@@ -37,6 +37,10 @@ type Device interface {
 	// it did neither, and the press goes on to start a call. Called without
 	// the session's lock.
 	MusicPress() bool
+	// StopAnnouncement ends what Home Assistant is announcing here (a reply
+	// spoken through the Echo's media player): the button's, as it stops a
+	// ringing timer or cancels a call. Called without the session's lock.
+	StopAnnouncement()
 }
 
 const (
@@ -257,10 +261,12 @@ func (s *session) press() {
 		s.showLocked()
 		s.mu.Unlock()
 		s.w.json(DeviceEvent, DeviceEventInfo{Type: "stop_timer"})
+		s.dev.StopAnnouncement()
 	case s.call != nil:
 		was := s.endLocked("cancelled")
 		s.mu.Unlock()
 		s.cut()
+		s.dev.StopAnnouncement()
 		s.after(was)
 	default:
 		// Music before the mute: a muted Echo still pauses it, as the
@@ -280,6 +286,17 @@ func (s *session) press() {
 		}
 	}
 	s.updateMonitor() // a call pauses it
+}
+
+// haAnnouncing tells the app an announcement Home Assistant plays here began
+// or ended (DEVICE_EVENT announcing, announced): the app waits on them when
+// it has Home Assistant speak its reply on the Echo's media player.
+func (s *session) haAnnouncing(on bool) {
+	typ := "announced"
+	if on {
+		typ = "announcing"
+	}
+	s.w.json(DeviceEvent, DeviceEventInfo{Type: typ})
 }
 
 // setMuted is the Echo's mute. Muted, a call is cancelled and the

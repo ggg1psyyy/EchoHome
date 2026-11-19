@@ -40,7 +40,12 @@ stopped.
   timer, cancels a call, pauses music that is playing (Home Assistant's, or
   the whole Sendspin group), resumes what a tap paused, and otherwise asks.
   Muted, it still stops a timer and pauses music, and asks nothing. Over
-  music, talk with the wake word. **"Stop"** stops a ringing timer too.
+  music, talk with the wake word. A tap that stops a timer or cancels a
+  call also stops what Home Assistant is announcing on the Echo.
+  **"Stop"** stops a ringing timer too.
+- **A Home Assistant voice**: with a Home Assistant TTS entity as the Echo's
+  voice in the app, replies play on the Echo's media player, and the Echo
+  tells the app when each starts and ends.
 - The app's **timers and alarms** ring on the Echo that set them, and its
   **announcements** play on it.
 - **The ring** shows the app's state with your ring scene: listening, the

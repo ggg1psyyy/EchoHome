@@ -185,6 +185,13 @@ func (m *Manager) Press() bool {
 	return true
 }
 
+// Announcing passes on that a Home Assistant announcement began or ended.
+func (m *Manager) Announcing(on bool) {
+	if s := m.server(); s != nil {
+		s.Announcing(on)
+	}
+}
+
 // SetMuted passes on the Echo's mute: a call ends, and the satellite's
 // microphone stays closed until it is unmuted.
 func (m *Manager) SetMuted(muted bool) {
