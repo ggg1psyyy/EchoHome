@@ -56,8 +56,10 @@ in `docker logs echohome-controller`.
 
 ## 3. Run the setup wizard
 
-**Start with the Echo in TWRP recovery**, which is where the wizard's first
-step looks for it:
+**Start with the Echo in TWRP recovery.** Booted normally, the wizard's first
+step can stop at "Authenticating ADB…" with nothing happening on the Echo
+([EchoMuse#1208](https://github.com/wilbowes/EchoMuse/issues/1208)); from
+TWRP it goes straight on:
 
 1. Unplug the Echo.
 2. Hold **mute** down (**+**, volume up, if firebreak installed amonet
