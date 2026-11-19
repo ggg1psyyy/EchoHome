@@ -126,7 +126,18 @@ def test_sendspin_is_gated_on_its_capability_and_its_token_stays_private():
     assert "sendspin" in device_capabilities()
     assert "sendspinCapable" in _device_record()
     jsx = (ROOT / "controller" / "static" / "dashboard.jsx").read_text()
-    assert "disabled={!sendspinCapable}" in jsx
+    assert "disabled={!sendspinCapable || sendspinOwned}" in jsx
+
+
+def test_an_echo_that_owns_sendspin_is_switched_in_home_assistant():
+    """With sendspin_owned the Echo keeps sendspinEnabled/sendspinUnpaired
+    (its own ESPHome switches) and plays with no controller: the push only
+    seeds it, so the dashboard's switches are disabled with the reason."""
+    assert "sendspin_owned" in device_capabilities()
+    assert "sendspin_owned" in (ROOT / "controller" / "em_device_view.py").read_text()
+    assert "sendspinOwned" in _device_record()
+    jsx = (ROOT / "controller" / "static" / "dashboard.jsx").read_text()
+    assert "set on the Echo in Home Assistant" in jsx
     handler = _sources.def_source("_on_sendspin_token")
     assert "log." not in handler and "em_events.push" not in handler, \
         "the sendspin_token handler must hand the token to its waiter and nothing else"

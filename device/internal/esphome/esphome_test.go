@@ -477,3 +477,24 @@ func TestABluetoothProxy(t *testing.T) {
 		t.Fatal("a change of the proxy's flags kept the client")
 	}
 }
+
+// A text sensor is missing until set, sends a change once, and is missing
+// again when cleared (the Sendspin token while the player is off).
+func TestATextSensorIsMissingUntilSet(t *testing.T) {
+	ts := &TextSensor{Desc: &api.ListEntitiesTextSensorResponse{Key: 31}}
+	var sent int
+	ts.bind(func(Entity) { sent++ })
+	if st := ts.State().(*api.TextSensorStateResponse); !st.MissingState || st.Key != 31 {
+		t.Fatalf("unset: %v", st)
+	}
+	ts.Set("SP:0ABC")
+	ts.Set("SP:0ABC")
+	if st := ts.State().(*api.TextSensorStateResponse); st.MissingState || st.State != "SP:0ABC" || sent != 1 {
+		t.Fatalf("set: %v, %d sent", st, sent)
+	}
+	ts.Clear()
+	ts.Clear()
+	if st := ts.State().(*api.TextSensorStateResponse); !st.MissingState || st.State != "" || sent != 2 {
+		t.Fatalf("cleared: %v, %d sent", st, sent)
+	}
+}

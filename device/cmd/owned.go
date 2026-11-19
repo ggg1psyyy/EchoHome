@@ -18,7 +18,8 @@ import (
 // The settings Home Assistant changes on the Echo itself, as switches on its
 // own ESPHome device: the red ring while muted (muteRing), the volume arc for
 // remote changes (remoteVolumeArc), the Voice Incubator app's live listening
-// (incubatorMonitor) and the Bluetooth proxy (bleProxyEnabled). The Echo is
+// (incubatorMonitor), the Bluetooth proxy (bleProxyEnabled) and the Sendspin
+// player (sendspinEnabled, sendspinUnpaired). The Echo is
 // their only owner since EchoHome: kept here (internal/owned), never
 // reported, and a controller push is taken only for one the Echo has no
 // value for yet (an Echo upgraded with no kept value keeps what its old
@@ -30,6 +31,8 @@ const (
 	ownedRemoteVolumeArc = "remoteVolumeArc"
 	ownedMonitor         = "incubatorMonitor"
 	ownedBLEProxy        = "bleProxyEnabled"
+	ownedSendspin        = "sendspinEnabled"
+	ownedSendspinOpen    = "sendspinUnpaired"
 	ownedWakeMic         = "wakeMic" // a number: ownedSettings' Ints
 )
 
@@ -42,6 +45,9 @@ const (
 	esphomeLiveListeningKey   = 23
 	esphomeBLEProxyKey        = 27
 	esphomeWakeMicKey         = 28
+	esphomeSendspinKey        = 29
+	esphomeSendspinOpenKey    = 30
+	esphomeSendspinTokenKey   = 31
 )
 
 var (
@@ -79,6 +85,11 @@ func setupOwned(s *server.Server, muteRingCapable bool) []esphome.Entity {
 		"mdi:ear-hearing", false)
 	cfgSwitch(ownedBLEProxy, esphomeBLEProxyKey, "bluetooth_proxy", "Bluetooth proxy",
 		"mdi:bluetooth", bleProxyOn())
+	cfgSwitch(ownedSendspin, esphomeSendspinKey, "sendspin", "Sendspin player",
+		"mdi:speaker-wireless", sendspinOn())
+	cfgSwitch(ownedSendspinOpen, esphomeSendspinOpenKey, "sendspin_unpaired", "Sendspin: play without pairing",
+		"mdi:lock-open-variant", sendspinUnpairedOn())
+	out = append(out, sendspinTokenEntity())
 	if client.MicUnavailable() == "" {
 		out = append(out, wakeMicEntity())
 	}
@@ -182,7 +193,8 @@ func applyOwnedAtBoot() {
 	if ownedSettings == nil {
 		return
 	}
-	for _, key := range []string{ownedMuteRing, ownedRemoteVolumeArc, ownedMonitor, ownedBLEProxy} {
+	for _, key := range []string{ownedMuteRing, ownedRemoteVolumeArc, ownedMonitor, ownedBLEProxy,
+		ownedSendspin, ownedSendspinOpen} {
 		if v, ok := ownedSettings.Value(key); ok {
 			applyOwned(key, v)
 		}
@@ -220,6 +232,12 @@ func applyOwned(key string, v bool) {
 			applyBleConfig(bleRefs.scanner)
 		}
 		esphomeBLEFollow()
+	case ownedSendspin:
+		config.Get().Apply(config.ConfigMessage{SendspinEnabled: &v})
+		sendspinReapply()
+	case ownedSendspinOpen:
+		config.Get().Apply(config.ConfigMessage{SendspinUnpaired: &v})
+		sendspinReapply()
 	case ownedMonitor:
 		if incubatorMgr != nil {
 			if st := incubatorMgr.Want(); st.Enabled && st.Monitor != v {
@@ -250,6 +268,12 @@ func reconcileOwnedConfig() {
 	if v := ownedSettings.Seed(ownedBLEProxy, bleProxyOn()); v != bleProxyOn() {
 		config.Get().Apply(config.ConfigMessage{BleProxyEnabled: &v})
 	}
+	if v := ownedSettings.Seed(ownedSendspin, sendspinOn()); v != sendspinOn() {
+		config.Get().Apply(config.ConfigMessage{SendspinEnabled: &v})
+	}
+	if v := ownedSettings.Seed(ownedSendspinOpen, sendspinUnpairedOn()); v != sendspinUnpairedOn() {
+		config.Get().Apply(config.ConfigMessage{SendspinUnpaired: &v})
+	}
 	// The controller still pushes wakeMic for firmware from before EchoHome:
 	// here it only seeds an Echo that has no choice of its own yet, so a mic
 	// picked on the dashboard before the upgrade carries over (0SE7).
@@ -259,7 +283,8 @@ func reconcileOwnedConfig() {
 	}
 	showWakeMic(wakeMicNow())
 	for key, now := range map[string]bool{ownedMuteRing: config.Get().MuteRingOn(),
-		ownedRemoteVolumeArc: config.Get().RemoteVolumeArcEnabled(), ownedBLEProxy: bleProxyOn()} {
+		ownedRemoteVolumeArc: config.Get().RemoteVolumeArcEnabled(), ownedBLEProxy: bleProxyOn(),
+		ownedSendspin: sendspinOn(), ownedSendspinOpen: sendspinUnpairedOn()} {
 		if w := ownedSwitch[key]; w != nil {
 			w.Set(now)
 		}
@@ -290,6 +315,18 @@ func esphomeMuteSwitch(bool) {
 func bleProxyOn() bool {
 	snap := config.Get().Snapshot()
 	return snap.BleProxyEnabled != nil && *snap.BleProxyEnabled
+}
+
+// sendspinOn and sendspinUnpairedOn are the Sendspin player's settings in
+// force.
+func sendspinOn() bool {
+	snap := config.Get().Snapshot()
+	return snap.SendspinEnabled != nil && *snap.SendspinEnabled
+}
+
+func sendspinUnpairedOn() bool {
+	snap := config.Get().Snapshot()
+	return snap.SendspinUnpaired != nil && *snap.SendspinUnpaired
 }
 
 // The Echo's own volume, kept in the kept config (config.LastPath) as its

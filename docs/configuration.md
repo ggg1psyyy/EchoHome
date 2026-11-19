@@ -233,16 +233,26 @@ controller only turns the player on and shows its status.
 
 To set it up:
 
-1. Turn on **Sendspin player** for the Echo. Music Assistant finds it on the
-   network within a few seconds, listed under the Echo's name.
-2. Press **Show pairing token** under the switch, then **Copy**.
+1. In Home Assistant, on the Echo's own ESPHome device, turn on **Sendspin
+   player**. Music Assistant finds it on the network within a few seconds,
+   listed under the Echo's name. Where mDNS does not cross your VLANs, add
+   the Echo's address under Music Assistant's Sendspin provider, **Manual IP
+   addresses for discovery**.
+2. Get the pairing token: in the setup tool, **Show pairing token** under
+   Sendspin, then **Copy**; or, with no setup tool, enable the Echo's
+   **Sendspin pairing token** sensor in Home Assistant (a diagnostic entity,
+   disabled by default) and copy its value. Disable it again afterwards: an
+   enabled sensor's value is kept in Home Assistant's history.
 3. In Music Assistant, open the player and pair it with the token.
+
+Echoes on firmware from before 3.0.0 are still switched in the setup tool.
 
 The token pairs the Echo with a server, so treat it like a password. Anyone
 who has it can pair with that Echo. Pairing is remembered on both sides, so it
 is a one-time step per Music Assistant install.
 
-**Play without pairing** skips the token: any server that Music Assistant's
+**Sendspin: play without pairing**, also on the Echo in Home Assistant,
+skips the token: any server that Music Assistant's
 operator approves can play. It is off by default, because without pairing the
 Echo cannot tell a real server from anything else on your network claiming to
 be one.
@@ -259,9 +269,8 @@ Things to know:
   own volume: moving it moves Home Assistant's slider too, and the Echo's
   buttons move both. Music Assistant's mute silences only the synced music;
   the Echo's mute button still mutes the microphone.
-- **It needs the controller.** When the Echo loses its controller (the ring
-  pulses orange) it stops playing and leaves its group, and Music Assistant
-  reconnects it once the link is back.
+- **It does not need the setup tool.** The Echo keeps its Sendspin settings
+  and its pairings, and plays with the setup tool stopped.
 - **The action button pauses the group.** A tap while the group plays pauses
   it, on every speaker, and the next tap resumes it (Sendspin's controller
   role; Music Assistant does the pausing).

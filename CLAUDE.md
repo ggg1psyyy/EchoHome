@@ -152,7 +152,8 @@ updated):
   `leds`, `led_anim`, `buttons`, `aec_hw_ref`, `oww_local_only`,
   `output_chain`, `volume_cue`, `remote_volume_arc`, `response_level`,
   `wake_mic`, `pairing`, `sendspin`, `identify_ring`, `incubator_satellite`,
-  `incubator_mdns`, `incubator_standalone`, `esphome_server`, `esphome_noise`;
+  `incubator_mdns`, `incubator_standalone`, `esphome_server`, `esphome_noise`,
+  `sendspin_owned`;
   with a readable mic `mic`, `incubator_calls`, `incubator_wake`,
   `incubator_ring`, `incubator_monitor`; and `stock_sound`, `ambient_light`,
   `mute_ring_off`, `thermal` where the hardware has them. A UI control whose

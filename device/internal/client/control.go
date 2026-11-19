@@ -1320,7 +1320,10 @@ func capabilities() []string {
 	//
 	// "sendspin": this firmware can be a Sendspin player (internal/sendspin),
 	// switched by sendspinEnabled. Whether it is running, and paired, is the
-	// sendspin status, for the aec_hw_ref reason.
+	// sendspin status, for the aec_hw_ref reason. "sendspin_owned": the Echo
+	// owns sendspinEnabled and sendspinUnpaired (Home Assistant's switches on
+	// its own ESPHome device; a push only seeds them) and its player runs
+	// with no controller.
 	//
 	// "esphome_server": it can serve the ESPHome API itself (config
 	// esphomeServer), so Home Assistant connects to the Echo directly.
@@ -1350,7 +1353,7 @@ func capabilities() []string {
 	caps := []string{"speaker", "leds", "led_anim", "buttons",
 		"aec_hw_ref", "oww_local_only", "output_chain", "volume_cue", "remote_volume_arc",
 		"response_level", "wake_mic", "pairing",
-		"sendspin", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "esphome_noise"}
+		"sendspin", "sendspin_owned", "identify_ring", "incubator_satellite", "incubator_mdns", "incubator_standalone", "esphome_server", "esphome_noise"}
 	if MicUnavailable() == "" {
 		caps = append(caps, "mic", "incubator_calls", "incubator_wake", "incubator_ring", "incubator_monitor")
 	}

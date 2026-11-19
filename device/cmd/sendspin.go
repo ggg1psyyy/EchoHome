@@ -9,6 +9,8 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/bluetooth"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
+	"github.com/wilbowes/EchoMuse/internal/esphome"
+	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
 	"github.com/wilbowes/EchoMuse/internal/sendspin"
 	"github.com/wilbowes/EchoMuse/internal/server"
@@ -16,10 +18,12 @@ import (
 )
 
 // The Sendspin player's lifecycle (internal/sendspin, #89). Off by default,
-// switched by sendspinEnabled on the config push: it listens on a port and
-// advertises over mDNS, so it runs only where someone asked for it. emOS
-// drops inbound connections, so the port is opened in the filter while the
-// player runs and closed when it stops.
+// switched by sendspinEnabled, which the Echo owns (owned.go: Home
+// Assistant's "Sendspin player" switch; a controller push only seeds it):
+// it listens on a port and advertises over mDNS, so it runs only where
+// someone asked for it. It runs with or without a controller. emOS drops
+// inbound connections, so the port is opened in the filter while the player
+// runs and closed when it stops.
 
 // sendspinStore is beside the TLS credentials and state.json, on /data, so it
 // survives OTA slot flips. It holds the device's Sendspin identity: losing it
@@ -31,6 +35,60 @@ var ss struct {
 	c     *sendspin.Client
 	name  string
 	proxy bool // the BLE proxy is on, so the player asks for headroom
+
+	// What applySendspinConfig needs, set once at start-up
+	// (sendspinSetup), so Home Assistant's switch can apply it too.
+	spk      *speaker.PcmSpeaker
+	cc       *client.ControlClient
+	vol      deviceVolume
+	deviceID string
+}
+
+// sendspinTokenSensor is Home Assistant's "Sendspin pairing token" text sensor:
+// the token Music Assistant pairs with, while the player runs. Diagnostic
+// and disabled by default (the setup tool shows it too): anyone who has it
+// can pair with this Echo, and an enabled sensor's state is in HA's history.
+var sendspinTokenSensor *esphome.TextSensor
+
+func sendspinTokenEntity() *esphome.TextSensor {
+	sendspinTokenSensor = &esphome.TextSensor{Desc: &api.ListEntitiesTextSensorResponse{
+		ObjectId: "sendspin_pairing_token", Key: esphomeSendspinTokenKey, Name: "Sendspin pairing token",
+		Icon: "mdi:key", DisabledByDefault: true, EntityCategory: api.EntityCategory_ENTITY_CATEGORY_DIAGNOSTIC}}
+	if c := sendspinPlayer(); c != nil {
+		sendspinTokenSensor.Set(c.PairingToken())
+	}
+	return sendspinTokenSensor
+}
+
+// sendspinShowTokenLocked puts the running player's token on the sensor, or
+// clears it. Called with ss.mu held.
+func sendspinShowTokenLocked() {
+	if sendspinTokenSensor == nil {
+		return
+	}
+	if ss.c != nil {
+		sendspinTokenSensor.Set(ss.c.PairingToken())
+	} else {
+		sendspinTokenSensor.Clear()
+	}
+}
+
+// sendspinSetup keeps what the player is started with, before any config.
+func sendspinSetup(spk *speaker.PcmSpeaker, cc *client.ControlClient, vol deviceVolume, deviceID string) {
+	ss.mu.Lock()
+	ss.spk, ss.cc, ss.vol, ss.deviceID = spk, cc, vol, deviceID
+	ss.mu.Unlock()
+}
+
+// sendspinReapply applies the settings in force, from Home Assistant's
+// switches.
+func sendspinReapply() {
+	ss.mu.Lock()
+	spk, cc, vol, id := ss.spk, ss.cc, ss.vol, ss.deviceID
+	ss.mu.Unlock()
+	if spk != nil {
+		applySendspinConfig(spk, cc, vol, id)
+	}
 }
 
 func sendspinPlayer() *sendspin.Client {
@@ -80,31 +138,17 @@ func sendspinBuffer(proxy bool) time.Duration {
 	return 0
 }
 
-// sendspinLinkDown stops the player when the controller link goes: EchoMuse
-// is one system, and an Echo whose ring says it is disconnected should not
-// be playing music (Wil, 2026-09-30). "restart" asks Music Assistant to
-// redial, and the next config push after the link returns starts it again.
-func sendspinLinkDown(spk *speaker.PcmSpeaker) {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	if ss.c == nil {
-		return
-	}
-	spk.SetMusicSource(nil)
-	ss.c.Stop("restart")
-	ss.c = nil
-	firewall.Close(sendspin.DefaultPort)
-	log.Printf("[sendspin] player stopped: controller link down")
-}
-
-// applySendspinConfig starts, stops or updates the player to match config.
-// A rename restarts it: the name is in the mDNS record and in client/hello,
-// and neither is re-sent on a live connection. It runs only on a config
-// push, so only with the controller link up.
+// applySendspinConfig starts, stops or updates the player to match config:
+// at boot from the kept config and the Echo's own settings, on a config
+// push, and from Home Assistant's switches. A rename restarts it: the name
+// is in the mDNS record and in client/hello, and neither is re-sent on a
+// live connection. The player keeps running when the controller goes (it
+// stopped then until EchoHome); its status reaches the controller only
+// while one is connected.
 func applySendspinConfig(spk *speaker.PcmSpeaker, cc *client.ControlClient, vol deviceVolume, deviceID string) {
 	snap := config.Get().Snapshot()
-	on := snap.SendspinEnabled != nil && *snap.SendspinEnabled
-	unpaired := snap.SendspinUnpaired != nil && *snap.SendspinUnpaired
+	on := sendspinOn()
+	unpaired := sendspinUnpairedOn()
 	name := snap.SendspinName
 	if name == "" {
 		name = "Echo " + tail(deviceID, 4)
@@ -112,6 +156,7 @@ func applySendspinConfig(spk *speaker.PcmSpeaker, cc *client.ControlClient, vol 
 
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
+	defer sendspinShowTokenLocked()
 	if ss.c != nil && (!on || name != ss.name) {
 		spk.SetMusicSource(nil)
 		reason := "user_request"

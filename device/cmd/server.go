@@ -439,7 +439,6 @@ func main() {
 		}
 		// The ring belongs to the link state from here, and the action and
 		// volume buttons go inert, unless a standalone satellite serves.
-		sendspinLinkDown(pcmSpeaker)
 		incubatorLinkDown()
 		lostKind, lostRun = "orange", pulseOrange
 		showLinkLost()
@@ -456,7 +455,6 @@ func main() {
 		// Pending approval is the same condition one step earlier: there is
 		// nothing above this device, so the white pulse owns the ring and the
 		// buttons do nothing (a standalone satellite serving aside).
-		sendspinLinkDown(pcmSpeaker)
 		incubatorLinkDown()
 		lostKind, lostRun = "white", pulseWhite
 		showLinkLost()
@@ -476,7 +474,6 @@ func main() {
 		if lostKind == "refused" {
 			return
 		}
-		sendspinLinkDown(pcmSpeaker)
 		incubatorLinkDown()
 		lostKind, lostRun = "refused", pulseRefused
 		showLinkLost()
@@ -702,6 +699,7 @@ func main() {
 	// own boots as it was set up, not with the firmware's defaults. With no
 	// controller yet, the Echo is what plays the audio, so its own output
 	// chain runs until a controller's ack says otherwise.
+	sendspinSetup(pcmSpeaker, controlClient, s, deviceID)
 	if last, ok := config.LoadLast(config.LastPath); ok {
 		config.Get().Apply(last)
 		applyConfig(last)

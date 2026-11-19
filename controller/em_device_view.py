@@ -236,9 +236,9 @@ def merge_device(row, boot: dict | None = None) -> dict:
         "wakeMicCapable": getattr(live, "wake_mic_capable", False) if live else False,
         "responseLevelCapable": getattr(live, "response_level_capable", False) if live else False,
         "stockSoundCapable": getattr(live, "stock_sound_capable", False) if live else False,
-        # Sendspin player (#89): whether the firmware has one, and its status
-        # (no secrets; the pairing token is its own request).
+        # Sendspin (#89): the player, the Echo's own switches, status (the token is its own request).
         "sendspinCapable": getattr(live, "sendspin_capable", False) if live else False,
+        "sendspinOwned":   "sendspin_owned" in (getattr(live, "capabilities", None) or []) if live else False,
         "sendspin":        getattr(live, "sendspin", None) if live else None,
         # Gates the AEC delay slider, which only means anything on the
         # software tap. Paired with aecRef because the capability says the

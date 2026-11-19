@@ -2107,7 +2107,8 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 stockSoundCapable={device.connected && !!device.stockSoundCapable}
                 wakeMicCapable={!device.connected || !!device.wakeMicCapable}
                 sendspinCapable={!device.connected || !!device.sendspinCapable}
-                sendspinPanel={device.connected && device.sendspinCapable
+                sendspinOwned={device.connected && !!device.sendspinOwned}
+                sendspinPanel={device.connected && device.sendspinCapable && (!device.sendspinOwned || device.sendspin)
                   ? <SendspinPairing deviceId={device.device_id} status={device.sendspin} isAdmin={isAdmin}/>
                   : null}
                 hwEchoRef={device.connected && device.aecRef === 'hw'}
@@ -7631,7 +7632,7 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                             responseLevelCapable = true,
                             stockSoundCapable = false,
                             wakeMicCapable = true,
-                            sendspinCapable = true, sendspinPanel = null,
+                            sendspinCapable = true, sendspinOwned = false, sendspinPanel = null,
                           }) {
   // emosFleet defaults TRUE for the same reason the capability props above do,
   // and for one more: it gates the console password, which is emOS-only, and
@@ -8029,16 +8030,21 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         chips={<ScopeChip tone="device">Device</ScopeChip>}
         desc="Makes the Echo a Sendspin player, so Music Assistant can group it with other speakers and play to all of them in sync. Music Assistant connects to the Echo directly. Music from Home Assistant still takes priority and leaves the group. Early Access."
         scope={scopeEl('sendspin')} dim={secStyle('sendspin')}
-        after={(config.sendspinEnabled ?? false) ? sendspinPanel : null}>
+        after={(sendspinOwned || (config.sendspinEnabled ?? false)) ? sendspinPanel : null}>
+        {/* An Echo that owns them (sendspin_owned) is switched in Home
+            Assistant; the push only seeds it, so the switches here would
+            show a value it may not have. */}
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
           <Toggle label="Sendspin player"
-            sub={sendspinCapable ? 'Music Assistant finds it on the network' : 'needs newer firmware on this Echo'}
-            disabled={!sendspinCapable}
+            sub={!sendspinCapable ? 'needs newer firmware on this Echo'
+              : sendspinOwned ? "set on the Echo in Home Assistant: its Sendspin player switch"
+              : 'Music Assistant finds it on the network'}
+            disabled={!sendspinCapable || sendspinOwned}
             value={config.sendspinEnabled ?? false}
             onChange={v => set('sendspinEnabled', v)}/>
           <Toggle label="Play without pairing"
-            sub="any server Music Assistant approves; less secure"
-            disabled={!sendspinCapable || !(config.sendspinEnabled ?? false)}
+            sub={sendspinOwned ? "set on the Echo in Home Assistant" : "any server Music Assistant approves; less secure"}
+            disabled={!sendspinCapable || sendspinOwned || !(config.sendspinEnabled ?? false)}
             value={config.sendspinUnpaired ?? false}
             onChange={v => set('sendspinUnpaired', v)}/>
         </div>
