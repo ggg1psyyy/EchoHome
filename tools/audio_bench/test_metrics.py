@@ -7,7 +7,7 @@ import metrics as M
 
 
 def _raw(tmp_path, samples):
-    """Write [9, n] int samples (24-bit range) as capture_mics does."""
+    """Write [9, n] int samples (24-bit range) as EchoMuse's capture_mics does."""
     x = np.asarray(samples, dtype=np.int32).T          # [n, 9]
     u = x & 0xFFFFFF
     b = np.stack([u & 0xFF, (u >> 8) & 0xFF, (u >> 16) & 0xFF], axis=-1).astype(np.uint8)

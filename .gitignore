@@ -42,8 +42,6 @@ controller/models/
 tls/
 *.key
 
-# speaker_profile generates its test signals; generate_signals.py is the source
-device/tools/speaker_profile/*.wav
 
 # Coverage artefacts — .coveragerc is checked in, its output is not.
 .coverage

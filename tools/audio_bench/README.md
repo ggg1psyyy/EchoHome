@@ -4,7 +4,7 @@ Replays recorded captures through the listening pipeline and scores them the
 same way every time, so a change can be compared with a stored baseline
 (#892). No Echo is needed to run it.
 
-A capture is what `device/tools/capture_mics` writes: raw S24_3LE, 9 channels
+A capture is what EchoMuse's `device/tools/capture_mics` writes ([wilbowes/EchoMuse](https://github.com/wilbowes/EchoMuse/tree/main/device/tools/capture_mics)): raw S24_3LE, 9 channels
 at 16 kHz (seven microphones, then the playback loopback). Each one goes
 through the firmware's own front end, `device/tools/aec_replay`, built for
 this machine, and the output is scored.

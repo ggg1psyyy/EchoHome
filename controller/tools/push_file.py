@@ -1,9 +1,9 @@
 """Push a local file to a device over the controller shell proxy, resumably.
 
     docker cp controller/tools/push_file.py echomuse-controller:/tmp/
-    docker cp device/build/oww_probe echomuse-controller:/tmp/
+    docker cp device/build/mixednet_probe echomuse-controller:/tmp/
     docker exec echomuse-controller python /tmp/push_file.py \
-        <device_id> /tmp/oww_probe /data/local/tmp/oww_probe [--chmod 755]
+        <device_id> /tmp/mixednet_probe /data/local/tmp/mixednet_probe [--chmod 755]
 
 Why this exists rather than `ota.py`: that pushes the firmware binary through
 the update endpoint, which writes one specific place. This puts an arbitrary

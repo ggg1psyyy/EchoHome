@@ -1,6 +1,6 @@
 """Measures for the audio bench. Pure numpy; the wake scorer is passed in.
 
-A capture is what `capture_mics` writes: raw interleaved S24_3LE, 9 channels
+A capture is what EchoMuse's `capture_mics` writes: raw interleaved S24_3LE, 9 channels
 at 16 kHz. Channels 0-6 are the microphones (6 is the centre one), 7 and 8
 the playback loopback. The front end's output is 16 kHz mono S16.
 """
