@@ -45,7 +45,7 @@ mkdir echohome && cd echohome
 curl -O https://raw.githubusercontent.com/ggg1psyyy/EchoHome/main/controller/docker-compose.deploy.yml
 curl -o .env https://raw.githubusercontent.com/ggg1psyyy/EchoHome/main/controller/.env.example
 # Early Access: pin the release, since :latest moves only with GA releases.
-sed -i 's/echohome-controller:latest/echohome-controller:3.0.0-ea.1/' docker-compose.deploy.yml
+sed -i 's/echohome-controller:latest/echohome-controller:3.0.0-ea.2/' docker-compose.deploy.yml
 docker compose -f docker-compose.deploy.yml up -d
 ```
 
@@ -56,11 +56,27 @@ in `docker logs echohome-controller`.
 
 ## 3. Run the setup wizard
 
-Dashboard → **Provision Device**, with the Echo on USB. The wizard installs emOS
-and the firmware, keeps a copy of the original boot image, and joins your
-WiFi. If a step fails it says why and offers **Download diagnostics**; the
-cable is the Echo's only power, so unplugging reboots it, and **Reconnect**
-is on every step.
+**Start with the Echo in TWRP recovery**, which is where the wizard's first
+step looks for it:
+
+1. Unplug the Echo.
+2. Hold **mute** down (**+**, volume up, if firebreak installed amonet
+   v2.0.0) and keep holding it. The action button gives fastboot, with a
+   green ring, not TWRP.
+3. Plug in the USB cable with the button still held.
+4. Let go once the ring changes: the Echo is in TWRP, and shows up as
+   "Echo" in the browser's USB picker.
+
+**Join the Echo to a WiFi network on the same network (VLAN) as the setup
+tool** at the wizard's WiFi step, even if it will live on another one later.
+Its first connection finds the setup tool by mDNS, and mDNS does not cross
+VLANs. Step 5 moves it afterwards.
+
+Then Dashboard → **Provision Device**, with the Echo on USB. The wizard
+installs emOS and the firmware, keeps a copy of the original boot image, and
+joins the WiFi. If a step fails it says why and offers **Download
+diagnostics**; the cable is the Echo's only power, so unplugging reboots it,
+and **Reconnect** is on every step.
 
 The Echo then finds the setup tool on its own. Approve it in the dashboard
 (**Approve & Add to Fleet**): nothing joins without you.
@@ -90,6 +106,22 @@ The Echo then finds the setup tool on its own. Approve it in the dashboard
    the app's *Wake words* page.
 
 Say a wake word, or tap the action button, and ask.
+
+## 5. Move it to its own network (optional)
+
+Once the Echo answers, move it to the network it will stay on (an IoT VLAN,
+say): device page → **Config** → **WiFi**, scan, pick the network and
+confirm. Allow about two minutes.
+
+- **The Echo must reach the setup tool from there**: TCP 8767 and 8770 to the
+  setup tool's host. The Echo dials the address it last used, so no mDNS is
+  needed. A network that cannot reach the setup tool fails the switch, and the
+  Echo goes back to the previous network by itself.
+- **Home Assistant must reach the Echo**: TCP 6053 (ESPHome) and 6055 (the
+  Voice Incubator app), and 8928 from Music Assistant for Sendspin.
+- **The Echo gets a new address.** Use its DHCP name or a reservation, as in
+  step 4. While the setup tool runs, it announces the Echo at its new address
+  on its own network, so Home Assistant and the Voice Incubator app follow it.
 
 ## Afterwards
 
