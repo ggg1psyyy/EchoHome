@@ -69,10 +69,18 @@ TWRP it goes straight on:
 4. Let go once the ring changes: the Echo is in TWRP, and shows up as
    "Echo" in the browser's USB picker.
 
-**Join the Echo to a WiFi network on the same network (VLAN) as the setup
-tool** at the wizard's WiFi step, even if it will live on another one later.
-Its first connection finds the setup tool by mDNS, and mDNS does not cross
-VLANs. Step 5 moves it afterwards.
+**Echo on another network (VLAN) than the setup tool?** Set the setup
+tool's address first: Dashboard → **Config** → **Advanced** → **Controller
+address**, the setup tool host's IP with ports 8767 and 8770 (the field
+starts with them). The wizard writes the list onto the Echo, which then dials
+the setup tool directly: mDNS, which finds it otherwise, does not cross
+VLANs. Let the Echo's network reach the setup tool's host on TCP 8767 and
+8770, and Home Assistant reach the Echo on TCP 6053 (ESPHome) and 6055 (the
+Voice Incubator app), and Music Assistant on 8928 for Sendspin.
+
+Already provisioned without it, and the Echo never registers? Set the
+address, then run the wizard again from TWRP. The Echo keeps its WiFi, so
+press **Skip** at **Configure WiFi**.
 
 Then Dashboard → **Provision Device**, with the Echo on USB. The wizard
 installs emOS and the firmware, keeps a copy of the original boot image, and
@@ -108,22 +116,6 @@ The Echo then finds the setup tool on its own. Approve it in the dashboard
    the app's *Wake words* page.
 
 Say a wake word, or tap the action button, and ask.
-
-## 5. Move it to its own network (optional)
-
-Once the Echo answers, move it to the network it will stay on (an IoT VLAN,
-say): device page → **Config** → **WiFi**, scan, pick the network and
-confirm. Allow about two minutes.
-
-- **The Echo must reach the setup tool from there**: TCP 8767 and 8770 to the
-  setup tool's host. The Echo dials the address it last used, so no mDNS is
-  needed. A network that cannot reach the setup tool fails the switch, and the
-  Echo goes back to the previous network by itself.
-- **Home Assistant must reach the Echo**: TCP 6053 (ESPHome) and 6055 (the
-  Voice Incubator app), and 8928 from Music Assistant for Sendspin.
-- **The Echo gets a new address.** Use its DHCP name or a reservation, as in
-  step 4. While the setup tool runs, it announces the Echo at its new address
-  on its own network, so Home Assistant and the Voice Incubator app follow it.
 
 ## Afterwards
 
