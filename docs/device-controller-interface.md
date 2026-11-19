@@ -104,7 +104,7 @@ number.
 | `identify_ring` | always | Takes the whole ring for 30s on `identify` |
 | `pairing` | always | Asks to pair when its owner holds the action button 7s with no controller link or one over plain |
 | `sendspin` | always | Can be a Sendspin player for Music Assistant (port 8928, `_sendspin._tcp`); nothing of it crosses the controller |
-| `sendspin_owned` | always | Owns `sendspinEnabled` and `sendspinUnpaired` (HA switches on its own ESPHome device; the push only seeds them) and plays with no controller |
+| `sendspin_owned` | always | Owns `sendspinEnabled`, also an HA switch on its own ESPHome device (refused there until paired), and plays with no controller. A pushed value counts when it differs from the last one pushed: the last change of the two wins. Pairing, the token and `sendspinUnpaired` stay the controller's |
 | `esphome_server` | always | Serves the ESPHome native API on 6053 from boot, always: Home Assistant connects to the Echo directly. Messages generated from aioesphomeapi's descriptors (`tools/esphome_gen`), proven against it (`tools/esphome_interop`) |
 | `esphome_noise` | always | That server is encrypted (Noise, NNpsk0_25519_ChaChaPoly_SHA256) with a key Home Assistant sets; handed out only on `esphome_key_request`. It also takes Home Assistant's time (`GetTimeRequest`), so the Echo has a clock with no controller |
 | `incubator_satellite` | always | Is a Voice Incubator satellite (`internal/incubator`, protocol 2) on TCP 6055, run while `incubator_satellite` enables it |

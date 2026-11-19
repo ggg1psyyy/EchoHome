@@ -1321,9 +1321,10 @@ func capabilities() []string {
 	// "sendspin": this firmware can be a Sendspin player (internal/sendspin),
 	// switched by sendspinEnabled. Whether it is running, and paired, is the
 	// sendspin status, for the aec_hw_ref reason. "sendspin_owned": the Echo
-	// owns sendspinEnabled and sendspinUnpaired (Home Assistant's switches on
-	// its own ESPHome device; a push only seeds them) and its player runs
-	// with no controller.
+	// owns sendspinEnabled, also Home Assistant's switch on its own ESPHome
+	// device (refused until paired), a push counting when it differs from the
+	// last one; its player runs with no controller. Pairing and
+	// sendspinUnpaired stay the controller's.
 	//
 	// "esphome_server": it can serve the ESPHome API itself (config
 	// esphomeServer), so Home Assistant connects to the Echo directly.

@@ -588,7 +588,10 @@ func main() {
 		esphomeFollowName()
 		applySendspinConfig(pcmSpeaker, controlClient, s, deviceID)
 	}
-	controlClient.OnConfigApplied(applyConfig)
+	controlClient.OnConfigApplied(func(msg config.ConfigMessage) {
+		sendspinPushed(msg.SendspinEnabled) // the dashboard's switch, before the Echo's settings go back over the push
+		applyConfig(msg)
+	})
 
 	// Identify (#860): the dashboard asks which Echo this is, and the device
 	// takes the whole ring for its own fixed time.

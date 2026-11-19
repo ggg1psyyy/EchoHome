@@ -235,3 +235,19 @@ func (s *store) setSettings(p playerSettings) {
 }
 
 func (s *store) token() string { return pairingToken(s.id.pub, s.pp) }
+
+// PairedServers is how many servers the store at path holds a pairing with,
+// read without starting a player or writing anything: whether Home
+// Assistant's switch may turn the player on. 0 for no store, or an
+// unreadable one.
+func PairedServers(path string) int {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var f storeFile
+	if json.Unmarshal(b, &f) != nil {
+		return 0
+	}
+	return len(f.Records)
+}

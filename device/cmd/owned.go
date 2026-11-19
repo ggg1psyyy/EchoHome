@@ -11,6 +11,7 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/esphome"
 	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/owned"
+	"github.com/wilbowes/EchoMuse/internal/sendspin"
 	"github.com/wilbowes/EchoMuse/internal/server"
 	"github.com/wilbowes/EchoMuse/pkg/board"
 )
@@ -19,7 +20,7 @@ import (
 // own ESPHome device: the red ring while muted (muteRing), the volume arc for
 // remote changes (remoteVolumeArc), the Voice Incubator app's live listening
 // (incubatorMonitor), the Bluetooth proxy (bleProxyEnabled) and the Sendspin
-// player (sendspinEnabled, sendspinUnpaired). The Echo is
+// player (sendspinEnabled; its pairing stays the setup tool's). The Echo is
 // their only owner since EchoHome: kept here (internal/owned), never
 // reported, and a controller push is taken only for one the Echo has no
 // value for yet (an Echo upgraded with no kept value keeps what its old
@@ -32,8 +33,10 @@ const (
 	ownedMonitor         = "incubatorMonitor"
 	ownedBLEProxy        = "bleProxyEnabled"
 	ownedSendspin        = "sendspinEnabled"
-	ownedSendspinOpen    = "sendspinUnpaired"
-	ownedWakeMic         = "wakeMic" // a number: ownedSettings' Ints
+	// ownedSendspinPushed is the controller's last sendspinEnabled: a push
+	// that differs from it is a change made on the dashboard (sendspinPushed).
+	ownedSendspinPushed = "sendspinEnabledPushed"
+	ownedWakeMic        = "wakeMic" // a number: ownedSettings' Ints
 )
 
 // The entity keys of the Echo's own settings: 20 and up, clear of the
@@ -46,8 +49,8 @@ const (
 	esphomeBLEProxyKey        = 27
 	esphomeWakeMicKey         = 28
 	esphomeSendspinKey        = 29
-	esphomeSendspinOpenKey    = 30
-	esphomeSendspinTokenKey   = 31
+	// 30 and 31 were the Sendspin unpaired switch and token sensor, on a
+	// development build only (2026-11-19): not reused.
 )
 
 var (
@@ -87,9 +90,6 @@ func setupOwned(s *server.Server, muteRingCapable bool) []esphome.Entity {
 		"mdi:bluetooth", bleProxyOn())
 	cfgSwitch(ownedSendspin, esphomeSendspinKey, "sendspin", "Sendspin player",
 		"mdi:speaker-wireless", sendspinOn())
-	cfgSwitch(ownedSendspinOpen, esphomeSendspinOpenKey, "sendspin_unpaired", "Sendspin: play without pairing",
-		"mdi:lock-open-variant", sendspinUnpairedOn())
-	out = append(out, sendspinTokenEntity())
 	if client.MicUnavailable() == "" {
 		out = append(out, wakeMicEntity())
 	}
@@ -194,7 +194,7 @@ func applyOwnedAtBoot() {
 		return
 	}
 	for _, key := range []string{ownedMuteRing, ownedRemoteVolumeArc, ownedMonitor, ownedBLEProxy,
-		ownedSendspin, ownedSendspinOpen} {
+		ownedSendspin} {
 		if v, ok := ownedSettings.Value(key); ok {
 			applyOwned(key, v)
 		}
@@ -207,6 +207,15 @@ func applyOwnedAtBoot() {
 
 // setOwned is Home Assistant's change: kept and in force.
 func setOwned(key string, v bool) {
+	if key == ownedSendspin && v && !sendspinPlayable() {
+		// Pairing is the setup tool's: until it has paired the Echo (or
+		// allowed unpaired servers) a player would only wait for nobody.
+		log.Printf("[settings] Sendspin player not turned on from Home Assistant: not paired with a server (pair it in the setup tool)")
+		if w := ownedSwitch[key]; w != nil {
+			w.Set(sendspinOn()) // HA's switch is not optimistic: no state change, and it shows off again
+		}
+		return
+	}
 	if err := ownedSettings.SetLocal(key, v); err != nil {
 		// Not kept is not done: HA's switch stays where it was.
 		log.Printf("[settings] %s could not be kept: %v", key, err)
@@ -234,9 +243,6 @@ func applyOwned(key string, v bool) {
 		esphomeBLEFollow()
 	case ownedSendspin:
 		config.Get().Apply(config.ConfigMessage{SendspinEnabled: &v})
-		sendspinReapply()
-	case ownedSendspinOpen:
-		config.Get().Apply(config.ConfigMessage{SendspinUnpaired: &v})
 		sendspinReapply()
 	case ownedMonitor:
 		if incubatorMgr != nil {
@@ -271,9 +277,7 @@ func reconcileOwnedConfig() {
 	if v := ownedSettings.Seed(ownedSendspin, sendspinOn()); v != sendspinOn() {
 		config.Get().Apply(config.ConfigMessage{SendspinEnabled: &v})
 	}
-	if v := ownedSettings.Seed(ownedSendspinOpen, sendspinUnpairedOn()); v != sendspinUnpairedOn() {
-		config.Get().Apply(config.ConfigMessage{SendspinUnpaired: &v})
-	}
+
 	// The controller still pushes wakeMic for firmware from before EchoHome:
 	// here it only seeds an Echo that has no choice of its own yet, so a mic
 	// picked on the dashboard before the upgrade carries over (0SE7).
@@ -284,7 +288,7 @@ func reconcileOwnedConfig() {
 	showWakeMic(wakeMicNow())
 	for key, now := range map[string]bool{ownedMuteRing: config.Get().MuteRingOn(),
 		ownedRemoteVolumeArc: config.Get().RemoteVolumeArcEnabled(), ownedBLEProxy: bleProxyOn(),
-		ownedSendspin: sendspinOn(), ownedSendspinOpen: sendspinUnpairedOn()} {
+		ownedSendspin: sendspinOn()} {
 		if w := ownedSwitch[key]; w != nil {
 			w.Set(now)
 		}
@@ -327,6 +331,41 @@ func sendspinOn() bool {
 func sendspinUnpairedOn() bool {
 	snap := config.Get().Snapshot()
 	return snap.SendspinUnpaired != nil && *snap.SendspinUnpaired
+}
+
+// sendspinPlayable says whether a player would have anyone to play for: a
+// server paired with it (in the setup tool), or unpaired servers allowed.
+func sendspinPlayable() bool {
+	if c := sendspinPlayer(); c != nil && c.Status().PairedWith > 0 {
+		return true
+	}
+	return sendspin.PairedServers(sendspinStore) > 0 || sendspinUnpairedOn()
+}
+
+// sendspinPushed takes a controller push's sendspinEnabled before the
+// Echo's own settings are put back over it: the dashboard's switch and Home
+// Assistant's set the same value, the last change winning. The controller
+// sends its value on every connect, so only one that differs from the last
+// it sent is a change; the first one this firmware sees only seeds
+// (reconcileOwnedConfig). The dashboard turns the player on to pair it, so
+// no pairing is needed for this one.
+func sendspinPushed(p *bool) {
+	if ownedSettings == nil || p == nil {
+		return
+	}
+	last, known := ownedSettings.Value(ownedSendspinPushed)
+	if known && last == *p {
+		return
+	}
+	if err := ownedSettings.SetLocal(ownedSendspinPushed, *p); err != nil {
+		log.Printf("[settings] %s could not be kept: %v", ownedSendspinPushed, err)
+		return
+	}
+	if known {
+		if err := ownedSettings.SetLocal(ownedSendspin, *p); err == nil {
+			log.Printf("[settings] %s set to %v from the setup tool", ownedSendspin, *p)
+		}
+	}
 }
 
 // The Echo's own volume, kept in the kept config (config.LastPath) as its

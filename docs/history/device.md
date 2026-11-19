@@ -2033,16 +2033,19 @@ including why hashing is worth it when deleting the file defeats it, is in
   `incubator_state`, so the controller's record across VLANs carries it.
   Ruled out: unicast mDNS to the HA host (a dozen sockets on its UDP 5353;
   Linux hands a unicast datagram to one of them).
-- 2026-11-19: Sendspin is the Echo's own. `sendspinEnabled` and
-  `sendspinUnpaired` are owned settings (switches 29 and 30, "Sendspin
-  player" and "Sendspin: play without pairing"), seeded by a push like the
-  others; the pairing token is a text sensor (31), diagnostic and disabled
-  by default, since an enabled sensor's value lands in HA's recorder. The
-  player no longer stops when the controller link goes (`sendspinLinkDown`,
-  EchoMuse's one-system rule of 2026-09-30, removed): it starts at boot from
-  the kept config and the Echo's settings and runs with none. The controller
-  keeps pushing both keys, as it does wakeMic, so firmware from before it
-  (0SE7 on v2.19) is still switched from the dashboard; `sendspin_owned`
-  disables the dashboard's switches with the reason. Tested on 00LQ with
-  Music Assistant across VLANs by "Manual IP addresses for discovery" in its
+- 2026-11-19: Sendspin plays without the setup tool. `sendspinEnabled` is
+  owned (switch 29, "Sendspin player"), and the player no longer stops when
+  the controller link goes (`sendspinLinkDown`, EchoMuse's one-system rule
+  of 2026-09-30, removed): it starts at boot from the kept config and the
+  Echo's setting. Pairing stays the setup tool's (the owner's choice): the
+  token and `sendspinUnpaired` are there only, and HA's switch refuses to
+  turn on until the Echo holds a pairing (`sendspin.PairedServers`, read off
+  `sendspin.json` without a player) or unpaired access is on. The
+  dashboard's switch sets the same value, since it turns the player on to
+  pair: the controller re-pushes its value on every connect, so a pushed
+  value counts only when it differs from the last pushed (kept as
+  `sendspinEnabledPushed`), and the last change of the two wins. A first
+  version had HA switches for both keys and the token as a text sensor
+  (keys 30, 31, never released, not reused). Tested on 00LQ with Music
+  Assistant across VLANs by "Manual IP addresses for discovery" in its
   Sendspin provider: playback, and the button's pause and resume.

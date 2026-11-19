@@ -110,46 +110,6 @@ func (b *BinarySensor) Set(v bool) {
 	}
 }
 
-// TextSensor is text (ListEntitiesTextSensorResponse), missing until Set.
-type TextSensor struct {
-	base
-	Desc  *api.ListEntitiesTextSensorResponse
-	mu    sync.Mutex
-	value string
-	have  bool
-}
-
-func (t *TextSensor) Key() uint32         { return t.Desc.Key }
-func (t *TextSensor) Info() proto.Message { return t.Desc }
-
-func (t *TextSensor) State() proto.Message {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return &api.TextSensorStateResponse{Key: t.Desc.Key, State: t.value, MissingState: !t.have}
-}
-
-// Set records the text and sends it to subscribed clients if it changed.
-func (t *TextSensor) Set(v string) {
-	t.mu.Lock()
-	same := t.have && t.value == v
-	t.value, t.have = v, true
-	t.mu.Unlock()
-	if !same {
-		t.changed(t)
-	}
-}
-
-// Clear makes it missing again.
-func (t *TextSensor) Clear() {
-	t.mu.Lock()
-	was := t.have
-	t.have, t.value = false, ""
-	t.mu.Unlock()
-	if was {
-		t.changed(t)
-	}
-}
-
 // Event fires typed events (ListEntitiesEventResponse): the action button.
 // It has no state; Server.Fire sends one.
 type Event struct {

@@ -8031,20 +8031,21 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
         desc="Makes the Echo a Sendspin player, so Music Assistant can group it with other speakers and play to all of them in sync. Music Assistant connects to the Echo directly. Music from Home Assistant still takes priority and leaves the group. Early Access."
         scope={scopeEl('sendspin')} dim={secStyle('sendspin')}
         after={(sendspinOwned || (config.sendspinEnabled ?? false)) ? sendspinPanel : null}>
-        {/* An Echo that owns them (sendspin_owned) is switched in Home
-            Assistant; the push only seeds it, so the switches here would
-            show a value it may not have. */}
+        {/* Pairing, the token and unpaired access are set up here only. An
+            Echo with sendspin_owned also has the player's switch in Home
+            Assistant, usable once paired; the last change of the two wins,
+            so this one shows the setup tool's last value. */}
         <div className="em-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-12)', ...inputStyle }}>
           <Toggle label="Sendspin player"
             sub={!sendspinCapable ? 'needs newer firmware on this Echo'
-              : sendspinOwned ? "set on the Echo in Home Assistant: its Sendspin player switch"
+              : sendspinOwned ? 'pair it here; then also switched in Home Assistant, the last change winning'
               : 'Music Assistant finds it on the network'}
-            disabled={!sendspinCapable || sendspinOwned}
+            disabled={!sendspinCapable}
             value={config.sendspinEnabled ?? false}
             onChange={v => set('sendspinEnabled', v)}/>
           <Toggle label="Play without pairing"
-            sub={sendspinOwned ? "set on the Echo in Home Assistant" : "any server Music Assistant approves; less secure"}
-            disabled={!sendspinCapable || sendspinOwned || !(config.sendspinEnabled ?? false)}
+            sub="any server Music Assistant approves; less secure"
+            disabled={!sendspinCapable || !(config.sendspinEnabled ?? false)}
             value={config.sendspinUnpaired ?? false}
             onChange={v => set('sendspinUnpaired', v)}/>
         </div>

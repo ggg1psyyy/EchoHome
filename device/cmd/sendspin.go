@@ -9,8 +9,6 @@ import (
 	"github.com/wilbowes/EchoMuse/internal/bluetooth"
 	"github.com/wilbowes/EchoMuse/internal/client"
 	"github.com/wilbowes/EchoMuse/internal/config"
-	"github.com/wilbowes/EchoMuse/internal/esphome"
-	"github.com/wilbowes/EchoMuse/internal/esphome/api"
 	"github.com/wilbowes/EchoMuse/internal/firewall"
 	"github.com/wilbowes/EchoMuse/internal/sendspin"
 	"github.com/wilbowes/EchoMuse/internal/server"
@@ -19,7 +17,8 @@ import (
 
 // The Sendspin player's lifecycle (internal/sendspin, #89). Off by default,
 // switched by sendspinEnabled, which the Echo owns (owned.go: Home
-// Assistant's "Sendspin player" switch; a controller push only seeds it):
+// Assistant's "Sendspin player" switch and the dashboard's, the last change
+// winning; pairing, the token and unpaired access stay the setup tool's):
 // it listens on a port and advertises over mDNS, so it runs only where
 // someone asked for it. It runs with or without a controller. emOS drops
 // inbound connections, so the port is opened in the filter while the player
@@ -42,35 +41,6 @@ var ss struct {
 	cc       *client.ControlClient
 	vol      deviceVolume
 	deviceID string
-}
-
-// sendspinTokenSensor is Home Assistant's "Sendspin pairing token" text sensor:
-// the token Music Assistant pairs with, while the player runs. Diagnostic
-// and disabled by default (the setup tool shows it too): anyone who has it
-// can pair with this Echo, and an enabled sensor's state is in HA's history.
-var sendspinTokenSensor *esphome.TextSensor
-
-func sendspinTokenEntity() *esphome.TextSensor {
-	sendspinTokenSensor = &esphome.TextSensor{Desc: &api.ListEntitiesTextSensorResponse{
-		ObjectId: "sendspin_pairing_token", Key: esphomeSendspinTokenKey, Name: "Sendspin pairing token",
-		Icon: "mdi:key", DisabledByDefault: true, EntityCategory: api.EntityCategory_ENTITY_CATEGORY_DIAGNOSTIC}}
-	if c := sendspinPlayer(); c != nil {
-		sendspinTokenSensor.Set(c.PairingToken())
-	}
-	return sendspinTokenSensor
-}
-
-// sendspinShowTokenLocked puts the running player's token on the sensor, or
-// clears it. Called with ss.mu held.
-func sendspinShowTokenLocked() {
-	if sendspinTokenSensor == nil {
-		return
-	}
-	if ss.c != nil {
-		sendspinTokenSensor.Set(ss.c.PairingToken())
-	} else {
-		sendspinTokenSensor.Clear()
-	}
 }
 
 // sendspinSetup keeps what the player is started with, before any config.
@@ -156,7 +126,6 @@ func applySendspinConfig(spk *speaker.PcmSpeaker, cc *client.ControlClient, vol 
 
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	defer sendspinShowTokenLocked()
 	if ss.c != nil && (!on || name != ss.name) {
 		spk.SetMusicSource(nil)
 		reason := "user_request"

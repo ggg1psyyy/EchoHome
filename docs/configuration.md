@@ -233,26 +233,28 @@ controller only turns the player on and shows its status.
 
 To set it up:
 
-1. In Home Assistant, on the Echo's own ESPHome device, turn on **Sendspin
-   player**. Music Assistant finds it on the network within a few seconds,
-   listed under the Echo's name. Where mDNS does not cross your VLANs, add
-   the Echo's address under Music Assistant's Sendspin provider, **Manual IP
-   addresses for discovery**.
-2. Get the pairing token: in the setup tool, **Show pairing token** under
-   Sendspin, then **Copy**; or, with no setup tool, enable the Echo's
-   **Sendspin pairing token** sensor in Home Assistant (a diagnostic entity,
-   disabled by default) and copy its value. Disable it again afterwards: an
-   enabled sensor's value is kept in Home Assistant's history.
+**Pairing is done in the setup tool**, once per Echo and Music Assistant:
+
+1. In the setup tool, turn on **Sendspin player** for the Echo. Music
+   Assistant finds it on the network within a few seconds, listed under the
+   Echo's name. Where mDNS does not cross your VLANs, add the Echo's address
+   under Music Assistant's Sendspin provider, **Manual IP addresses for
+   discovery**.
+2. Press **Show pairing token** under the switch, then **Copy**.
 3. In Music Assistant, open the player and pair it with the token.
 
-Echoes on firmware from before 3.0.0 are still switched in the setup tool.
+After that the Echo plays with the setup tool stopped, and its **Sendspin
+player** switch in Home Assistant (on the Echo's own ESPHome device) turns
+the player off and on. That switch refuses to turn on until the Echo is
+paired, or the setup tool allows playing without pairing. The two switches
+set the same thing, and the last change wins; the setup tool's shows the
+value it last set.
 
 The token pairs the Echo with a server, so treat it like a password. Anyone
 who has it can pair with that Echo. Pairing is remembered on both sides, so it
 is a one-time step per Music Assistant install.
 
-**Sendspin: play without pairing**, also on the Echo in Home Assistant,
-skips the token: any server that Music Assistant's
+**Play without pairing**, in the setup tool only, skips the token: any server that Music Assistant's
 operator approves can play. It is off by default, because without pairing the
 Echo cannot tell a real server from anything else on your network claiming to
 be one.

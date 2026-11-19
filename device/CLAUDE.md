@@ -95,18 +95,19 @@ on it and follows a changed IP by it. Messages are generated from aioesphomeapi'
 (`tools/esphome_gen`). **Entity keys are append-only**: media player 1, event
 2, ambient 3, mic muted 4, CPU 5, hottest zone 6, Software Mute 20, mute ring
 21, remote volume arc 22, live listening 23, LED Ring 24, start call 25,
-multi-tap 26, Bluetooth proxy 27, wake word mic 28, Sendspin player 29,
-Sendspin play without pairing 30, Sendspin pairing token 31 (a text sensor,
-diagnostic, disabled by default). **Timers read Go's
+multi-tap 26, Bluetooth proxy 27, wake word mic 28, Sendspin player 29
+(30 and 31 were on a development build only: not reused). **Timers read Go's
 monotonic clock**, never the wall clock HA's time may step.
 
 ### The Echo's own settings (`internal/owned`, `cmd/owned.go`)
 
-What HA changes on the Echo (the switches, Sendspin's included, the wake
-mic select) is **kept on
+What HA changes on the Echo (the switches, the wake mic select) is **kept on
 the Echo** (`settings.json`, values and ints), applied at boot, **never
 reported**; a controller push only seeds a key the Echo has no value of
-(`Seed`, `SeedInt`).
+(`Seed`, `SeedInt`). **Sendspin's player switch is the exception**: the
+dashboard's switch also sets it, a push counting when it differs from the
+last pushed (`sendspinPushed`), and HA may turn it on only once the Echo is
+paired (pairing stays the setup tool's).
 
 ### The kept config (`config.LastPath`)
 
