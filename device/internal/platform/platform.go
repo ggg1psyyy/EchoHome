@@ -1,7 +1,7 @@
 // Package platform answers which base operating system the firmware booted on.
 //
 // The firmware runs on two bases and will for as long as the fleet runs FireOS:
-// Amazon's Android 5.1 userspace, and emOS (see emos/README.md), which replaces
+// Amazon's Android 5.1 userspace, and emOS (see EchoMuse's emos/README.md), which replaces
 // it with our own init on the same kernel. Almost nothing in the firmware needs
 // to care — the hardware is reached through ALSA, i2c, evdev and sysfs either
 // way, which is the whole reason emOS was possible. What DOES need to care is

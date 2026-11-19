@@ -7,9 +7,13 @@
 > FireOS 5, where the wizard offers emOS or FireOS with root. `unlock fireos6`
 > (firebreak's default) leaves it on FireOS 6, where the wizard offers emOS.
 > [firebreak](#unlocking-with-firebreak) moves a Dot between them. The Echo
-> 2nd gen has only `unlock fireos6`, and EchoMuse runs on it as emOS only.
+> 2nd gen has only `unlock fireos6`, and EchoHome runs on it on emOS only.
 
-EchoMuse needs an Echo Dot 2nd gen or an Echo 2nd gen that is already
+[emOS](https://github.com/wilbowes/EchoMuse/tree/main/emos) is EchoMuse's small Linux userspace for the Echo, by Wil
+Bowes and the EchoMuse contributors; EchoHome's wizard installs EchoMuse's
+emOS releases and does not develop emOS.
+
+EchoHome needs an Echo Dot 2nd gen or an Echo 2nd gen that is already
 unlocked and running FireOS 5 (Dot only), or FireOS 6 for emOS. Two separate jobs get you there, and they carry very different
 risk.
 
@@ -38,7 +42,7 @@ It ships with FireOS 6 only.
 > the obstacle. (This corrects an earlier version of this note, which put it
 > down to the TrustZone signature chain.)
 >
-> **The firmware runs on FireOS 5; emOS runs on both.** EchoMuse's own
+> **The firmware runs on FireOS 5; emOS runs on both.** EchoHome's
 > firmware targets the Android userspace, which is 32-bit on either FireOS, so
 > the binary is the same. What differs is emOS's init, which has to match the
 > kernel — 64-bit on FireOS 5, 32-bit on FireOS 6 — and the wizard picks that
@@ -137,8 +141,9 @@ from a device already in that state; it does not run the exploit.
 
 - **emOS** — the current default. Nine steps, all inside TWRP. It escrows your
   boot partition and hands you the file, then replaces that partition with an
-  image built from your own kernel and device trees plus our init. The result
-  runs no Amazon userspace at all. See [`emos/README.md`](../emos/README.md).
+  image built from your own kernel and device trees plus emOS's init. The
+  result runs no Amazon userspace at all. emOS is EchoMuse's: see
+  [its documentation](https://github.com/wilbowes/EchoMuse/tree/main/emos).
 - **FireOS** — thirteen steps, chosen on the wizard's first step (or by
   adding `?flow=fireos` to the dashboard URL).
   Keeps Android and adds root: the SELinux cmdline patch, Magisk, and the
@@ -635,8 +640,9 @@ adb shell "su -c 'cat /tmp/server.log'"
 
 After the wizard, an Echo is in one of two states:
 
-- **emOS:** the boot partition holds emOS (our init and userspace around the
-  Echo's own kernel), EchoMuse starts at boot, and Android never runs. The
+- **emOS:** the boot partition holds emOS (EchoMuse's init and userspace
+  around the Echo's own kernel), EchoHome's firmware starts at boot, and
+  Android never runs. The
   original boot image is saved by the wizard and restores from TWRP in about
   ten seconds.
 - **FireOS with root:** FireOS 5 boots with SELinux permissive and Magisk

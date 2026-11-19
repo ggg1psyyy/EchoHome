@@ -27,7 +27,11 @@ Deeper references:
   assistants); [history/](history/) holds the reasons behind its rules.
 
 Kept from EchoMuse for their hardware facts, with a banner saying what no
-longer applies: [audio-states.md](audio-states.md),
-[led-ring-states.md](led-ring-states.md), [SETUP.md](../SETUP.md), and the
-engineering journal [JOURNAL.md](../JOURNAL.md) (to 2026-10-25).
-[archived/](archived/) holds documents that are no longer current.
+longer applies: [audio-states.md](audio-states.md) and
+[led-ring-states.md](led-ring-states.md).
+
+EchoHome is built on [EchoMuse](https://github.com/wilbowes/EchoMuse) by Wil
+Bowes and the EchoMuse contributors. Its engineering journal, architecture
+reference, archived design documents and UAT runs are EchoMuse's, in its
+repository; so is [emOS](https://github.com/wilbowes/EchoMuse/tree/main/emos),
+the userspace the Echo runs.

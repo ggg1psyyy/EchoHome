@@ -213,6 +213,10 @@ hidden network's name) and type the password
 
 ## emOS
 
+[emOS](https://github.com/wilbowes/EchoMuse/tree/main/emos) is EchoMuse's, by Wil Bowes and the EchoMuse
+contributors; EchoHome installs and updates its releases. Questions about
+emOS itself belong there.
+
 ### emOS or FireOS: which should I pick in the wizard?
 The wizard offers **emOS** first. It replaces Android on the Echo entirely,
 keeping only Amazon's kernel, and it is why the 3.5mm jack behaves properly.

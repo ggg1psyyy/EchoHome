@@ -24,7 +24,8 @@ docker exec -e EM_DEVICE=<device id> echomuse-controller python /tmp/devshell.py
   **Not on the HA add-on**: its API accepts only the ingress gateway, so
   this returns 403 from inside the container. For an emOS device on USB
   serial, serve the binary from the dev box and `busybox wget` it into the
-  inactive slot over `emos/tools/emconsole.py`, check the md5, flip the
+  inactive slot over emOS's `emconsole.py` (EchoMuse's, fetched into `.emos-ref/` by
+  `tools/fetch_emos_ref.py`), check the md5, flip the
   `server` symlink and `busybox killall server`.
 - **pull_so.py** — pull a file off the device (busybox base64 over the
   shell, echo disabled, split end-markers). Writes the decoded file to

@@ -466,7 +466,7 @@ async def _post_provision_emos_image(request: web.Request) -> web.Response:
                     "Could not read the kernel architecture out of that boot "
                     "image, so there is no way to tell which init it needs. "
                     "Check the escrow is the whole boot image, or build an init "
-                    "from emos/ with build.sh and select it by hand.", 400)
+                    "with EchoMuse's emos/build.sh and select it by hand.", 400)
             init_bin, sbin, init_version, err = await em_emos_ota.fetch_payload(arch, parts.get("board"))
             if err is not None:
                 return err

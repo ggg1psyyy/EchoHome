@@ -10,7 +10,9 @@ and an ESPHome device of its own in Home Assistant.**
 [![License: MIT](https://img.shields.io/github/license/ggg1psyyy/EchoHome)](LICENSE)
 
 EchoHome is a fork of [EchoMuse](https://github.com/wilbowes/EchoMuse) by Wil
-Bowes, and keeps its history, its unlock and setup path, and emOS. Where
+Bowes, and keeps its unlock and setup path. The Echo runs
+[emOS](https://github.com/wilbowes/EchoMuse/tree/main/emos), EchoMuse's small Linux userspace, which EchoHome
+installs and updates but does not develop. Where
 EchoMuse runs the voice through a controller, EchoHome puts it on the Echo:
 the controller becomes a setup tool you can stop once your Echoes are set up.
 Not affiliated with or endorsed by Amazon, the Open Home Foundation or the
@@ -97,7 +99,7 @@ The [quickstart](docs/quickstart.md) walks through all four.
 | [Voice Incubator](docs/voice-incubator.md) | The satellite: what works, privacy, troubleshooting. |
 | [Configuration](docs/configuration.md) | The setup tool's options and the Echo's settings. |
 | [Listening and privacy](docs/listening.md) | What the microphone does, in every state. |
-| [emOS](emos/README.md) | The small Linux userspace the Echo runs. |
+| [emOS](https://github.com/wilbowes/EchoMuse/tree/main/emos) | EchoMuse's small Linux userspace, which the Echo runs (in EchoMuse). |
 | [Device ↔ controller protocol](docs/device-controller-interface.md) | The setup link, for porting. |
 | [Boards](docs/boards.md) | Describing a new board's hardware. |
 | [Contributing](CONTRIBUTING.md) | Building from source and tests. |
@@ -127,9 +129,10 @@ the maintainer; its commits carry a `Co-Authored-By: Claude` line.
 ## Licence
 
 [MIT](LICENSE), as EchoMuse. Third-party components keep their own licences,
-listed with their copyright notices in [NOTICE.md](NOTICE.md). emOS releases
-ship busybox (GPL-2.0), with its source attached to each release, and
-wpa_supplicant (BSD).
+listed with their copyright notices in [NOTICE.md](NOTICE.md). emOS, which the
+setup tool installs from EchoMuse's releases, carries its own licences
+(busybox, GPL-2.0, with its source attached to each EchoMuse release;
+wpa_supplicant, BSD): see [EchoMuse](https://github.com/wilbowes/EchoMuse).
 
 Amazon, Echo, Echo Dot, Alexa and FireOS are trademarks of Amazon.com, Inc. or
 its affiliates. EchoHome is an independent project.

@@ -54,7 +54,7 @@ RAMOOPS_CMDLINE = (
 # ELF header bytes. Checked rather than assumed because the failure they
 # prevent is silent and expensive: an init of the wrong architecture flashes
 # fine, and the device then produces no output at all, which is
-# indistinguishable from a kernel that never started. See emos/README.md.
+# indistinguishable from a kernel that never started. See EchoMuse's emos/README.md.
 _ELF_MAGIC = b"\x7fELF"
 _ELF_CLASS32 = 1
 _ELF_CLASS64 = 2
@@ -214,7 +214,7 @@ def build_ramdisk(init_binary: bytes, version: str, build_id: str = "",
     """The gzipped cpio the boot image carries: init, mountpoints, os-release.
 
     The mountpoints have to exist in the ramdisk because there is no devtmpfs
-    and nothing populates anything on its own — see emos/README.md. Everything
+    and nothing populates anything on its own — see EchoMuse's emos/README.md. Everything
     the running system uses beyond this is mounted from the device's own
     /system, which is why no Amazon code is redistributed.
 

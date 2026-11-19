@@ -1885,7 +1885,7 @@ legitimately last on the line. Using it at all is therefore logged.
 A value that is not printable ASCII is **rejected**, not passed on. This is an
 identifier the controller stores, logs and keys rows on, so a plausible-looking
 wrong one is worse than none — `unknown-device` at least says it does not know.
-`emos/init/serialcheck.c` covers both parsers off-target.
+EchoMuse's `emos/init/serialcheck.c` covers both parsers off-target, in emOS's CI.
 
 **`/proc/idme` carries more than the serial**: `board_id`, `product_name`,
 `productid`, `device_type_id`, and per-unit `alscal` and `miccal.0`–`miccal.6`.

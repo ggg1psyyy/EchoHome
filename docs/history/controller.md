@@ -1490,8 +1490,9 @@ of the comparison runs in emOS's init, a static C binary that cannot link a
 crypto library; the count rides the record (`<iterations>:<salt>:<hash>`) so
 raising it later strands nobody. Measured at **0.32s** on the Echo's own A53.
 
-`emos/init/pwcheck.c` includes `init.c` whole and drives the real functions, so
-the two implementations are compared rather than assumed — verified matching at
+emOS's `emos/init/pwcheck.c` (EchoMuse's; compiled at the pinned commit by
+`tests/test_console_pw.py` since 2026-11-19) includes `init.c` whole and drives
+the real functions, so the two implementations are compared rather than assumed — verified matching at
 1, 2, 3 and 100,000 rounds, on x86 and on the device. A drift here refuses a
 password the dashboard just set, and nothing else in either tree would notice.
 

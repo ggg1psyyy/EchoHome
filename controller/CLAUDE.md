@@ -123,7 +123,8 @@ before EchoHome; recordings and wake samples are only ever deleted now
 Knox** — do not harden it. **Provisioning deletes the record**; the full
 effective config is pushed on every connect, so it returns. `em_console_pw`
 hashes before storage (`<iterations>:<salt>:<hash>`), matching init
-(`emos/init/pwcheck.c`). Reads return the `__unchanged__` sentinel; empty
+(EchoMuse's `emos/init/pwcheck.c`, pinned: `tests/test_console_pw.py`
+compiles it). Reads return the `__unchanged__` sentinel; empty
 removes. **An unparseable record means no password**, both ends.
 
 ## Support bundles (`em_support.py`)

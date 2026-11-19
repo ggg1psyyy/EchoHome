@@ -236,7 +236,7 @@ func (a MicArray) NumMics() int {
 // biscuitMics: six edge microphones at r=36mm 60 degrees apart, offset 30
 // degrees from 12 o'clock, a centre one on ch6, and ch7/ch8 a stereo loopback
 // of the playback of which only the right reaches the driver (measured
-// 2026-08-29, SETUP.md's mic array section). Confirmed by tone injection,
+// 2026-08-29, EchoMuse's SETUP.md, its mic array section). Confirmed by tone injection,
 // 2026-05; radar's tap test (2026-10-23) found the same order.
 var biscuitMics = MicArray{
 	Channels: 9,

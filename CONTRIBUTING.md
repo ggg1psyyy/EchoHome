@@ -16,7 +16,10 @@ account names removed.
   the Echo's ESPHome device, the hardware bindings (`device/CLAUDE.md`).
 - `controller/` — the Python setup tool, its add-on and the dashboard
   (`controller/CLAUDE.md`).
-- `emos/` — emOS's init, from EchoMuse, unchanged here.
+- emOS, the Echo's userspace, is [EchoMuse's](https://github.com/wilbowes/EchoMuse/tree/main/emos) and not in
+  this repository; `tools/fetch_emos_ref.py` fetches the few emOS files the
+  tests check EchoHome against, at the commit pinned in
+  `tools/emos_ref.json`.
 
 `CLAUDE.md` holds the project's rules (portability, the device/controller
 compatibility rules, privacy, releases); `docs/history/` holds the reasons
@@ -31,7 +34,7 @@ cd device && ./compile.sh            # → build/server
 cd device && go test ./internal/... ./pkg/...
 cd controller && python -m pytest tests/   # needs: pytest numpy scipy pyyaml
 BABEL_STANDALONE=/tmp/babel.min.js node controller/tests/dashboard_globals.test.mjs
-cd emos/init && cc -O2 -o /tmp/ringsim ringsim.c -lm && /tmp/ringsim --check
+python3 tools/fetch_emos_ref.py      # before the tests: emOS's files, pinned
 ```
 
 `cmd/` builds only with `-tags server`, in the compiler image. CI runs both

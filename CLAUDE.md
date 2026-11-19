@@ -7,9 +7,10 @@ examples, dates) is in `docs/history/root.md` under the same headings; read
 the matching section there before changing that area or a rule.
 
 **Before diagnosing a fault, reopening a decision or changing a default, grep
-`docs/history/` and `JOURNAL.md` for the symptom, setting or function name.**
-The stories behind the rules are no longer loaded; this is how they are found.
-JOURNAL.md is an archive to 2026-10-25, from EchoMuse. **A finding that
+`docs/history/` for the symptom, setting or function name.** The stories
+behind the rules are no longer loaded; this is how they are found. What was
+worked out before EchoHome is EchoMuse's, in its own repository (its
+`JOURNAL.md`, to 2026-10-25); `JOURNAL.md` here only points there. **A finding that
 produces no commit** (a measurement, a cause ruled out, a hardware fact)
 **goes in `docs/history/<area>.md` as a dated bullet under the matching
 heading.**
@@ -33,8 +34,14 @@ Voice Incubator firmware:
   dashboard. It runs as a Home Assistant add-on or a container and can be
   stopped once the Echoes are set up. It has no voice path: it hears nothing
   of the room and sends no audio.
-- **`emos/`** — emOS's init, from upstream. EchoHome does not change or
-  release emOS: the setup tool installs EchoMuse's emOS releases.
+- **emOS** is EchoMuse's ([wilbowes/EchoMuse `emos/`](https://github.com/wilbowes/EchoMuse/tree/main/emos), by Wil
+  Bowes and the EchoMuse contributors) and is not in this repository:
+  EchoHome neither changes nor releases it; the setup tool installs and
+  updates EchoMuse's emOS releases. Where EchoHome's code must agree with
+  emOS, its tests read emOS's files at the commit pinned in
+  `tools/emos_ref.json`, fetched by `tools/fetch_emos_ref.py` (missing
+  fails, never skips). A change to emOS goes to a fork of EchoMuse, never
+  here. Comments citing `emos/...` files mean EchoMuse's.
 
 Removed in EchoHome (2026-11-18), recorded in `docs/history/` and the commit
 log: the controller's Home Assistant voice mode, its wake word and
@@ -239,7 +246,7 @@ cd device && ./compile.sh            # needs the echomuse-compiler image
 cd device && go test ./internal/... ./pkg/...   # cmd/ needs -tags server: vet it in the compiler image
 cd controller && python -m pytest tests/   # needs: pytest numpy scipy pyyaml
 BABEL_STANDALONE=/tmp/babel.min.js node controller/tests/dashboard_globals.test.mjs
-cd emos/init && cc -O2 -o /tmp/ringsim ringsim.c -lm && /tmp/ringsim --check
+python3 tools/fetch_emos_ref.py      # emOS's files the tests check against (EchoMuse's, pinned)
 ```
 
 CI runs both suites, `go vet`, a headless-Chromium walk of every dashboard tab

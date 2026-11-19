@@ -311,9 +311,10 @@ async def fetch_payload(arch: str, board: str | None = None) -> tuple:
     if release is None:
         return None, {}, "", em_http.error(
             "no_emos_release",
-            "No published emOS release with an 'init' asset was found. Build "
-            "one from emos/ with build.sh and select it by hand, or cut an "
-            "emos-v* tag.", 404)
+            "No published emOS release with an 'init' asset was found. emOS "
+            "is EchoMuse's (github.com/wilbowes/EchoMuse): build an init with "
+            "its emos/build.sh and select it by hand, or check the emOS "
+            "release source in Settings.", 404)
 
     version = release["version"]
     bundle_asset = release.get("assets", {}).get(PAYLOAD_ASSET)
@@ -366,8 +367,8 @@ def select_payload(files: dict, arch: str, version: str,
         return None, {}, version, em_http.error(
             "no_init_for_arch",
             f"emOS release {version} carries no '{init_name}', so there is no "
-            f"init for this device's {arch} kernel. Cut a newer emos-v* tag, or "
-            f"build one from emos/ with build.sh and select it by hand.", 404)
+            f"init for this device's {arch} kernel. Use a newer emOS release, or "
+            f"build an init with EchoMuse's emos/build.sh and select it by hand.", 404)
 
     # The manifest proves the bytes arrived intact, not that they are the right
     # kind of binary.
@@ -422,9 +423,10 @@ async def fetch_init(arch: str) -> tuple:
     if release is None:
         return None, "", em_http.error(
             "no_emos_release",
-            "No published emOS release with an 'init' asset was found. Build "
-            "one from emos/ with build.sh and select it by hand, or cut an "
-            "emos-v* tag.", 404)
+            "No published emOS release with an 'init' asset was found. emOS "
+            "is EchoMuse's (github.com/wilbowes/EchoMuse): build an init with "
+            "its emos/build.sh and select it by hand, or check the emOS "
+            "release source in Settings.", 404)
     return await _fetch_one_init(release, arch)
 
 
@@ -445,9 +447,9 @@ async def _fetch_one_init(release: dict, arch: str) -> tuple:
         return None, release["version"], em_http.error(
             "no_init_for_arch",
             f"emOS release {release['version']} carries no '{name}' asset, so "
-            f"there is no init for this device's {arch} kernel. Cut a newer "
-            f"emos-v* tag, or build one from emos/ with build.sh and select it "
-            f"by hand.", 404)
+            f"there is no init for this device's {arch} kernel. Use a newer "
+            f"emOS release, or build an init with EchoMuse's emos/build.sh and "
+            f"select it by hand.", 404)
 
     binary = await em_releases.download(asset["url"], f"{release['version']}-{name}")
     if binary is None:

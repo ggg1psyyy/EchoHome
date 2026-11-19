@@ -2320,7 +2320,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                       </>
                     ) : (
                       <span style={{ fontFamily:"var(--font-mono)", fontSize:'var(--fs-xs)', color:'var(--muted)' }}>
-                        An emos-payload.zip built from emos/.
+                        An emos-payload.zip built with EchoMuse's emos/.
                       </span>
                     )}
                   </div>
@@ -3700,7 +3700,7 @@ function _downloadBytes(bytes, filename) {
 
 // The emOS USB console, over Web Serial.
 //
-// NOT EXERCISED ON HARDWARE — written from what emos/README.md records rather
+// NOT EXERCISED ON HARDWARE — written from what EchoMuse's emos/README.md records rather
 // than from a run.
 //
 // Two rules, both from the same evening:
@@ -7222,7 +7222,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     }
     if (!useLatest && !initBlob) {
       throw new Error('Choose an emOS init binary to build with, or use the '
-        + 'latest release. Build one from emos/ with build.sh if you need a '
+        + "latest release. Build one with EchoMuse's emos/build.sh if you need a "
         + 'specific version.');
     }
     // Send the BOOT IMAGE, not the whole partition. The escrow is a
@@ -7731,7 +7731,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   // ── Steps 7 and 8 — the serial console ────────────────────────────────────
   //
   // NOT EXERCISED ON HARDWARE. Everything below is written from the measured
-  // behaviour recorded in emos/README.md rather than from a run, and it is the
+  // behaviour recorded in EchoMuse's emos/README.md rather than from a run, and it is the
   // part of this flow most likely to need adjusting in front of a device.
 
   async function runRebootAndWatch(c) {
@@ -8643,7 +8643,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                 and the only one where the wrong reaction makes things worse.
                 Told BEFORE the reboot rather than after it goes wrong: this
                 asks somebody to act on their own hardware, so it keeps its
-                length. The ring states are the ones in emos/README.md — the
+                length. The ring states are the ones in EchoMuse's emos/README.md — the
                 orbiting segment is the case that needs a human, because it
                 means PID 1 never ran and nothing on the device will recover
                 itself. */}
