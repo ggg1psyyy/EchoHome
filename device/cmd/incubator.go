@@ -79,7 +79,8 @@ func (e *echoParts) Flush() {
 		incubatorOwnsVoice.Store(false)
 	}
 }
-func (e *echoParts) Muted() bool { return e.srv.IsMuted() }
+func (e *echoParts) Muted() bool      { return e.srv.IsMuted() }
+func (e *echoParts) MusicPress() bool { return musicPress() }
 
 // Show puts the satellite's state on the ring with the scene the controller
 // pushed: its listening ring (listeningAnim) and the rest (incubatorRing).
@@ -387,7 +388,8 @@ const incubatorHoldMs = 750
 // incubatorLocalPress is the action button with no controller, while a
 // standalone satellite serves: a tap is the satellite's press, as the
 // controller passes it on (a ringing timer stops, muted or not; a call is
-// cancelled; else a call starts, unless muted).
+// cancelled; music is paused, or resumed if a press paused it; else a call
+// starts, unless muted).
 func incubatorLocalPress(heldMs int) {
 	if incubatorMgr == nil {
 		return // a tap during start-up

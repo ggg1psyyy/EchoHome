@@ -23,7 +23,7 @@ import struct
 import sys
 
 from aiosendspin.audio.format import AudioFormat
-from aiosendspin.models.types import PairMethod
+from aiosendspin.models.types import MediaCommand, PairMethod
 from aiosendspin.noise.keys import Identity
 from aiosendspin.noise.pairing import PairingAttempt
 try:  # 10.x names it for its version-0 format, which is unchanged
@@ -421,6 +421,75 @@ async def scenario_live_buffer() -> None:
         await server.close()
 
 
+async def scenario_controller() -> None:
+    print("== the button: the player pauses and resumes its group (controller@v1)")
+    server = SendspinServer(asyncio.get_running_loop(), Identity.generate(), "interop-server",
+                            pairing_store=InMemoryServerPairingStore())
+    client = Client("-unpaired")
+    ready = await client.start("/tmp/controller.json")
+    cid = ready["clientId"]
+    try:
+        server.connect_to_client(URL)
+        await until(lambda: (c := server.get_client(cid)) is not None and c.is_connected, 10, "never connected")
+        await server.trust_unpaired(cid)
+        await until(lambda: player_available(server, cid), 15, "never available")
+        sc = server.get_client(cid)
+        if "controller@v1" not in sc.active_role_ids:
+            raise Fail(f"controller role not active: {sc.active_role_ids}")
+        group = sc.group
+        heard: list[str] = []
+        group.add_event_listener(lambda _g, ev: heard.append(type(ev).__name__))
+
+        async def ask(cmd: str) -> dict:
+            n = len(client.events)
+            await client.command(f"command {cmd}")
+            for _ in range(100):
+                for e in client.events[n:]:
+                    if e.get("event") == "command" and e["command"] == cmd:
+                        return e
+                await asyncio.sleep(0.05)
+            raise Fail(f"client never answered command {cmd}")
+
+        # Nothing playing and nothing offered: nothing is asked.
+        r = await ask("pause")
+        if r["sent"] or r["playing"]:
+            raise Fail(f"asked with nothing playing or offered: {r}")
+        # Music Assistant offers play and pause, then plays.
+        group.group_role("controller").set_supported_commands([MediaCommand.PLAY, MediaCommand.PAUSE])
+        st, _ = await stream_start(group)
+        for _ in range(100):
+            r = await ask("pause")
+            if r["sent"]:
+                break
+            await asyncio.sleep(0.1)
+        if not (r["sent"] and r["playing"]):
+            raise Fail(f"pause not sent while playing: {r}")
+        await until(lambda: "ControllerPauseEvent" in heard, 5, f"server heard no pause: {heard}")
+        r = await ask("play")
+        if not r["sent"]:
+            raise Fail(f"play not sent: {r}")
+        await until(lambda: "ControllerPlayEvent" in heard, 5, f"server heard no play: {heard}")
+        # A command the server does not offer is never sent.
+        r = await ask("next")
+        if r["sent"]:
+            raise Fail("sent a command the server does not offer")
+        print(f"   server heard: {[h for h in heard if h.startswith('Controller')]}")
+        st.stop()
+    finally:
+        await client.stop()
+        await server.close()
+
+
+async def stream_start(group):
+    """A stream that keeps the group playing until stopped."""
+    st = group.start_stream()
+    fmt = AudioFormat(sample_rate=RATE, bit_depth=16, channels=1)
+    for k in range(0, RATE, RATE // 50):
+        st.prepare_audio(sawtooth(k, RATE // 50), fmt)
+        await st.commit_audio()
+    return st, None
+
+
 def tones(start: int, n: int, amp: float) -> bytes:
     """Stereo: 1kHz on the left, 440Hz on the right."""
     out = []
@@ -482,7 +551,8 @@ async def scenario_opus() -> None:
 async def main() -> int:
     logging.basicConfig(level=logging.WARNING)
     failed = 0
-    for sc in (scenario_pair_and_play, scenario_unpaired, scenario_live_buffer, scenario_opus):
+    for sc in (scenario_pair_and_play, scenario_unpaired, scenario_live_buffer, scenario_opus,
+               scenario_controller):
         try:
             await sc()
             print("   PASS")

@@ -21,11 +21,14 @@ const (
 	// silent link for this long is a dead one.
 	idleTimeout = 30 * time.Second
 
-	rolePlayer   = "player@v1"
-	actPlayback  = "playback"
-	actPairing   = "pairing"
-	methodPSK    = "pairing_psk"
-	maxReadBytes = 4 << 20
+	rolePlayer = "player@v1"
+	// roleController is the device asking for its group's play and pause
+	// (the button, as the Voice PE's). It plays nothing and needs nothing.
+	roleController = "controller@v1"
+	actPlayback    = "playback"
+	actPairing     = "pairing"
+	methodPSK      = "pairing_psk"
+	maxReadBytes   = 4 << 20
 )
 
 // session is one server's WebSocket. The read loop owns almost everything;
@@ -68,6 +71,7 @@ type session struct {
 	stateSent  bool // a client/state has gone out on this connection
 	stateDue   bool // one is owed, held until the clock converges
 	group      groupUpdate
+	commands   []string // server/state controller.supported_commands
 	lastAudio  time.Time
 }
 
@@ -200,6 +204,21 @@ func (s *session) dispatch(env envelope) error {
 			s.mu.Unlock()
 			s.c.changed()
 		}
+	case "server/state":
+		var st map[string]json.RawMessage
+		if json.Unmarshal(env.Payload, &st) == nil {
+			if raw, ok := st["controller"]; ok {
+				// null clears it (the role deactivated), as does a malformed one.
+				var c *controllerState
+				json.Unmarshal(raw, &c)
+				s.mu.Lock()
+				s.commands = nil
+				if c != nil {
+					s.commands = c.SupportedCommands
+				}
+				s.mu.Unlock()
+			}
+		}
 	case "server/command":
 		var cmd serverCommand
 		if json.Unmarshal(env.Payload, &cmd) == nil && cmd.Player != nil {
@@ -308,9 +327,11 @@ func (s *session) onActivate(a serverActivate) error {
 	if !capable && a.ActiveRoles == nil {
 		roles = nil // persisted roles lapse when playback no longer could happen
 	}
-	if !allowed(s.psk.cat, acts, unpaired) || (len(roles) > 0 && !capable) {
+	// Only the player plays: a controller role alone needs no playback.
+	player := hasRole(roles, rolePlayer)
+	if !allowed(s.psk.cat, acts, unpaired) || (player && !capable) {
 		if s.psk.cat != catLongTerm && !unpaired &&
-			allowed(s.psk.cat, acts, true) && (len(roles) == 0 || allowed(s.psk.cat, withPlayback(acts), true)) {
+			allowed(s.psk.cat, acts, true) && (!player || allowed(s.psk.cat, withPlayback(acts), true)) {
 			log.Printf("[sendspin] %q wants playback without pairing; unpaired access is off", s.name())
 			return s.goodbye("pairing_required")
 		}
@@ -385,8 +406,12 @@ func (s *session) onPairing(p *activatePairing) error {
 func (s *session) playerRole() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, r := range s.roles {
-		if r == rolePlayer {
+	return hasRole(s.roles, rolePlayer)
+}
+
+func hasRole(roles []string, role string) bool {
+	for _, r := range roles {
+		if r == role {
 			return true
 		}
 	}

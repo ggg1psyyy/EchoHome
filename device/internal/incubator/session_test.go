@@ -25,6 +25,10 @@ type fakeEcho struct {
 	block   chan struct{} // when set, Play waits on it
 	rings   []Ring
 	views   []RingView
+	// music: MusicPress finds music to pause or resume; musicPresses
+	// counts the presses it took.
+	music        bool
+	musicPresses int
 }
 
 func (f *fakeEcho) MicOpen(d func([]byte)) { f.mu.Lock(); f.deliver = d; f.opens++; f.mu.Unlock() }
@@ -42,6 +46,14 @@ func (f *fakeEcho) Play(p []byte) error {
 func (f *fakeEcho) End()        { f.mu.Lock(); f.ends++; f.mu.Unlock() }
 func (f *fakeEcho) Flush()      { f.mu.Lock(); f.flushes++; f.mu.Unlock() }
 func (f *fakeEcho) Muted() bool { f.mu.Lock(); defer f.mu.Unlock(); return f.muted }
+func (f *fakeEcho) MusicPress() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.music {
+		f.musicPresses++
+	}
+	return f.music
+}
 func (f *fakeEcho) Show(v RingView) {
 	f.mu.Lock()
 	f.rings = append(f.rings, v.State)
@@ -501,4 +513,46 @@ func TestACutRingsFramesAreNotTheCallsReply(t *testing.T) {
 	waitFor(t, "the command to end", func() bool { return !st.last().InCall })
 	a.send(AudioOut, make([]byte, 4000))
 	waitFor(t, "the reply", func() bool { return echo.periods() > before })
+}
+
+// The Voice PE's order: with music playing a press pauses it (and the next
+// resumes it), muted or not, and starts no call; a call is cancelled first.
+func TestAPressOverMusicPausesItAndStartsNoCall(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	echo.mu.Lock()
+	echo.music = true
+	echo.mu.Unlock()
+	s.Press()
+	a.nothing(200 * time.Millisecond)
+	if echo.count(&echo.musicPresses) != 1 || echo.count(&echo.opens) != 0 {
+		t.Fatalf("music presses %d, microphone opens %d", echo.musicPresses, echo.opens)
+	}
+	echo.mu.Lock()
+	echo.muted = true
+	echo.mu.Unlock()
+	s.Press()
+	waitFor(t, "a muted press paused the music", func() bool { return echo.count(&echo.musicPresses) == 2 })
+}
+
+func TestAPressCancelsACallBeforeItTouchesTheMusic(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	echo.mu.Lock()
+	echo.music = true
+	echo.mu.Unlock()
+	s.Press()
+	a.expect(CallEnd)
+	if echo.count(&echo.musicPresses) != 0 {
+		t.Fatal("the press went to the music, not the call")
+	}
+}
+
+func TestWithNoMusicAPressStartsACall(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	s.Press()
+	a.expect(CallStart)
+	if echo.count(&echo.musicPresses) != 0 {
+		t.Fatal("counted a music press with no music")
+	}
 }

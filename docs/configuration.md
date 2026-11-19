@@ -262,6 +262,9 @@ Things to know:
 - **It needs the controller.** When the Echo loses its controller (the ring
   pulses orange) it stops playing and leaves its group, and Music Assistant
   reconnects it once the link is back.
+- **The action button pauses the group.** A tap while the group plays pauses
+  it, on every speaker, and the next tap resumes it (Sendspin's controller
+  role; Music Assistant does the pausing).
 - **Mono.** The Echo asks for one channel, which is what its speaker plays.
 - The player listens on port **8928** and advertises itself over mDNS as
   `_sendspin._tcp`. The connection is encrypted.

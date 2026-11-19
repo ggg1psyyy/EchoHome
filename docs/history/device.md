@@ -1974,6 +1974,20 @@ including why hashing is worth it when deleting the file defeats it, is in
   double and rounding once (`msf_math.h`, by `-include`, vendored sources
   untouched): all 963 table entries equal the reference under 2.41, 2.39
   and 2.36, and the test fails on 2.36 without it.
+- 2026-11-19: the button over music, as the Voice PE's centre button
+  (firmware-voice-incubator `devices/voice-pe.yaml`, one gesture, a click
+  under 1 s): intercom, ringing timer, call, then music playing → pause
+  (`media_player.pause` on the Sendspin group), music the button paused →
+  play, then a call unless muted. So over music a press never starts a call
+  there either; the wake word does. The Echo pauses HA's media player or
+  its Sendspin group (`controller@v1`, now in `supported_roles`;
+  `client/command` only for a command the server lists in `server/state`,
+  only while the Echo holds `player@v1`), proven against aiosendspin 10.2.1
+  and 9.1.1 (`tools/sendspin_interop`, "the button"). The controller role
+  needs no playback rights: the activation check now asks for them only
+  when `player@v1` is among the roles. The interop runner's builder went to
+  golang:1.26.11 with `-buildvcs=false` (git in the container cannot read
+  the checkout's status).
 
 ## The Echo's ESPHome device (`internal/esphome`, `cmd/esphome.go`)
 

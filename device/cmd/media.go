@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -188,3 +189,46 @@ func mediaReport() {
 // mediaStreamEnded takes the speaker's voice end report for an
 // announcement; false leaves it to the others.
 func mediaStreamEnded() bool { return mediaPlayer != nil && mediaPlayer.StreamEnded() }
+
+// buttonPaused is which music a press last paused ("media": Home
+// Assistant's media player, "sendspin": the Sendspin group), for the next
+// press to resume; "" when none.
+var buttonPaused struct {
+	sync.Mutex
+	source string
+}
+
+// musicPress is the action button's music step, the Voice PE's (its
+// center button, firmware-voice-incubator voice-pe.yaml): music playing
+// here is paused, HA's media player or the whole Sendspin group (Music
+// Assistant pauses the group); with none playing, a press resumes what a
+// press paused. False when it did neither: the press starts a call.
+func musicPress() bool {
+	buttonPaused.Lock()
+	defer buttonPaused.Unlock()
+	mp := mediaPlayer
+	if mp != nil && mp.State() == mediaplayer.Playing {
+		mp.Pause()
+		buttonPaused.source = "media"
+		log.Println("[media] the button paused the music")
+		return true
+	}
+	ss := sendspinPlayer()
+	if ss != nil && ss.GroupPlaying() && ss.Command("pause") {
+		buttonPaused.source = "sendspin"
+		log.Println("[sendspin] the button paused the group")
+		return true
+	}
+	was := buttonPaused.source
+	buttonPaused.source = ""
+	switch {
+	case was == "media" && mp != nil && mp.State() == mediaplayer.Paused:
+		mp.Resume()
+		log.Println("[media] the button resumed the music")
+		return true
+	case was == "sendspin" && ss != nil && ss.Command("play"):
+		log.Println("[sendspin] the button resumed the group")
+		return true
+	}
+	return false
+}

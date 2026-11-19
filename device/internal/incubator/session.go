@@ -32,6 +32,11 @@ type Device interface {
 	// flashes). Called under the session's lock, in order: it must not
 	// block or call back.
 	Show(v RingView)
+	// MusicPress is the button's music step, the Voice PE's: music playing
+	// is paused, and the next press resumes what a press paused. False when
+	// it did neither, and the press goes on to start a call. Called without
+	// the session's lock.
+	MusicPress() bool
 }
 
 const (
@@ -257,10 +262,17 @@ func (s *session) press() {
 		s.mu.Unlock()
 		s.cut()
 		s.after(was)
-	case muted:
-		s.mu.Unlock()
 	default:
-		started := s.startLocked(CallStartInfo{WakeWord: WakeManual}, nil, s.wake.heard.Load())
+		// Music before the mute: a muted Echo still pauses it, as the
+		// Voice PE does. Only a call needs the microphone.
+		s.mu.Unlock()
+		if s.dev.MusicPress() || muted {
+			break
+		}
+		s.mu.Lock()
+		// Looked again: the lock was let go for the music.
+		started := !s.closed && !s.timerRings && s.call == nil &&
+			s.startLocked(CallStartInfo{WakeWord: WakeManual}, nil, s.wake.heard.Load())
 		s.mu.Unlock()
 		if started {
 			log.Printf("[incubator] call started (manual)")

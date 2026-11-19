@@ -389,7 +389,7 @@ func (c *Client) SyncDiag() (SyncDiag, bool) {
 func (c *Client) hello() clientHello {
 	return clientHello{
 		Name:           c.cfg.Name,
-		SupportedRoles: []string{rolePlayer},
+		SupportedRoles: []string{rolePlayer, roleController},
 		DeviceInfo: &deviceInfo{
 			ProductName:     c.cfg.Product,
 			Manufacturer:    "EchoMuse",
@@ -510,6 +510,48 @@ type Status struct {
 	DelayMs    int         `json:"delayMs"`
 	Unpaired   bool        `json:"unpairedAccess"`
 	Player     playerStats `json:"player"`
+}
+
+// GroupPlaying says whether the device plays in a group that is playing: the
+// admitted server holds its player role and last said "playing".
+func (c *Client) GroupPlaying() bool {
+	c.mu.Lock()
+	s := c.admitted
+	c.mu.Unlock()
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return hasRole(s.roles, rolePlayer) && s.group.PlaybackState == "playing"
+}
+
+// Command asks the admitted server to run a controller command ("pause",
+// "play") on the device's group, as the Voice PE's button does. Sent only
+// while the device plays in that group (its player role) and the server
+// lists the command (server/state); reports whether it went out.
+func (c *Client) Command(cmd string) bool {
+	c.mu.Lock()
+	s := c.admitted
+	c.mu.Unlock()
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	ok := hasRole(s.roles, rolePlayer) && hasRole(s.roles, roleController)
+	if ok {
+		ok = false
+		for _, x := range s.commands {
+			if x == cmd {
+				ok = true
+			}
+		}
+	}
+	s.mu.Unlock()
+	if !ok {
+		return false
+	}
+	return s.send("client/command", clientCommand{Controller: &controllerCommand{Command: cmd}}) == nil
 }
 
 func (c *Client) Status() Status {

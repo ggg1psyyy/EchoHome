@@ -77,7 +77,7 @@ func main() {
 	cur.Store(c)
 
 	// stdin carries commands from run.sh: "external on|off", "volume N",
-	// "buffer N", "relink", "quit".
+	// "buffer N", "command X", "relink", "quit".
 	quit := make(chan struct{})
 	go func() {
 		sc := bufio.NewScanner(os.Stdin)
@@ -109,6 +109,14 @@ func main() {
 				var v int
 				if _, err := fmt.Sscanf(sc.Text(), "volume %d", &v); err == nil {
 					cur.Load().SetVolume(v)
+					continue
+				}
+				// "command X": the button asking the group to "pause" or "play".
+				var cmd string
+				if _, err := fmt.Sscanf(sc.Text(), "command %s", &cmd); err == nil {
+					c := cur.Load()
+					playing := c.GroupPlaying()
+					emit(map[string]any{"event": "command", "command": cmd, "playing": playing, "sent": c.Command(cmd)})
 					continue
 				}
 				// "buffer N": the BLE proxy asking for N ms of headroom.

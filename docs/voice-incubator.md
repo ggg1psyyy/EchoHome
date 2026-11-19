@@ -36,9 +36,11 @@ stopped.
 
 - A wake word, then a question or a command; questions the app asks back
   ("Which room?") are answered without the wake word.
-- **The action button**: a tap asks, a tap during a call cancels it, and a
-  tap stops a ringing timer, even while muted. **"Stop"** stops a ringing
-  timer too.
+- **The action button**, in the Voice PE's order: a tap stops a ringing
+  timer, cancels a call, pauses music that is playing (Home Assistant's, or
+  the whole Sendspin group), resumes what a tap paused, and otherwise asks.
+  Muted, it still stops a timer and pauses music, and asks nothing. Over
+  music, talk with the wake word. **"Stop"** stops a ringing timer too.
 - The app's **timers and alarms** ring on the Echo that set them, and its
   **announcements** play on it.
 - **The ring** shows the app's state with your ring scene: listening, the

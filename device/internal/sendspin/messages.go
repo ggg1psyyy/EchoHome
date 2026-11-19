@@ -158,6 +158,21 @@ func (r streamRoles) covers(role string) bool {
 	return false
 }
 
+// controllerState is server/state's controller object: what the device may
+// ask of its group (controller@v1). Only supported_commands is read.
+type controllerState struct {
+	SupportedCommands []string `json:"supported_commands"`
+}
+
+// controllerCommand is client/command's controller object.
+type controllerCommand struct {
+	Command string `json:"command"`
+}
+
+type clientCommand struct {
+	Controller *controllerCommand `json:"controller"`
+}
+
 type groupUpdate struct {
 	PlaybackState string `json:"playback_state"`
 	GroupID       string `json:"group_id"`

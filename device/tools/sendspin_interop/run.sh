@@ -14,7 +14,7 @@ out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 
 docker run --rm -v "$dev/..:/src" -v "$out:/out" -w /src/device -e CGO_ENABLED=1 \
-  golang:1.24 go build -o /out/interop ./tools/sendspin_interop
+  golang:1.26.11 go build -buildvcs=false -o /out/interop ./tools/sendspin_interop
 cp "$here/server.py" "$out/"
 status=0
 [ $# -gt 0 ] || set -- 10.2.1 9.1.1
