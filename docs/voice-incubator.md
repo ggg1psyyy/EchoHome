@@ -42,7 +42,8 @@ stopped.
   Muted, it still stops a timer and pauses music, and asks nothing. Over
   music, talk with the wake word. A tap that stops a timer or cancels a
   call also stops what Home Assistant is announcing on the Echo.
-  **"Stop"** stops a ringing timer too.
+  **"Stop"**, said alone, stops a ringing timer, and said while the Echo
+  answers it ends the answer, as a tap does. It is listened for only then.
 - **A Home Assistant voice**: with a Home Assistant TTS entity as the Echo's
   voice in the app, replies play on the Echo's media player, and the Echo
   tells the app when each starts and ends.
@@ -114,5 +115,6 @@ state above, questions back, mute, music ducked through the answer, live
 listening on and off, a dropped link, a cold boot with the setup tool
 stopped. The three wake words cost the Echo a few percent of its CPU.
 
-Not tested: speaker identification, several Echoes hearing the same wake
+Not tested: "stop" over an answer, a Home Assistant voice, pausing a
+Sendspin group with the button, speaker identification, several Echoes hearing the same wake
 word, the app on another machine than Home Assistant.

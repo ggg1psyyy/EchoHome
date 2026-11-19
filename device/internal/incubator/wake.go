@@ -102,6 +102,12 @@ type wake struct {
 	found   []mixednet.Detection
 
 	stage staged // the reading goroutine's
+
+	// stopWant is whether "stop" should run (set by showLocked, under the
+	// session's lock); the worker applies it before each chunk, under detMu,
+	// so the two locks are never held together. stopArmed is the worker's.
+	stopWant  atomic.Bool
+	stopArmed bool
 }
 
 func newWake() *wake {
@@ -113,12 +119,13 @@ func newWake() *wake {
 		ring:  make([]byte, 0, prerollBytes+4096),
 		found: make([]mixednet.Detection, 0, mixednet.MaxModelSlots),
 	}
-	// HELLO says no stop_word, so the app pushes "stop" only for a ringing
-	// timer and clears it after (server.py _ring, _after_ring), expecting it
-	// to run while loaded: armed throughout. Heard outside a call it starts
-	// one (wake_word "stop"), which the app reads as stopping the ring; in a
-	// call it is ignored, as any wake word is.
-	w.det.SetStopArmed(true)
+	// HELLO says stop_word: the app pushes "stop" with the wake words and
+	// it stays, run only while armed (stopWant): while the answer is said
+	// and while a timer rings, as the Voice PE's listen_for_stop. In a call
+	// it ends the call, as the button does; outside one (a ringing timer)
+	// it starts one (wake_word "stop"), which the app reads as stopping the
+	// ring. An app from before stop_word pushes it only for a ring, which
+	// arms it.
 	return w
 }
 
@@ -187,6 +194,10 @@ func (s *session) chunk(h heard) {
 	}
 
 	w.detMu.Lock()
+	if want := w.stopWant.Load(); want != w.stopArmed {
+		w.stopArmed = want
+		w.det.SetStopArmed(want)
+	}
 	if w.det.Models() == 0 || w.fe == nil {
 		w.detMu.Unlock()
 		return
@@ -221,6 +232,19 @@ func (s *session) chunk(h heard) {
 func (s *session) wakeHeard(d mixednet.Detection, n uint64) {
 	muted := s.dev.Muted()
 	s.mu.Lock()
+	if d.ID == mixednet.StopModelID && !s.closed && s.call != nil {
+		// Said over the answer: the call ends, as by the button, and what it
+		// is saying with it (the Voice PE's on_stop_word).
+		was := s.endLocked("cancelled")
+		s.mu.Unlock()
+		log.Printf("[incubator] \"stop\" heard in a call (average %d, max %d, cutoff %d): cancelled",
+			d.Average, d.Highest, d.Cutoff)
+		s.cut()
+		s.dev.StopAnnouncement()
+		s.after(was)
+		s.updateMonitor()
+		return
+	}
 	if s.closed || s.call != nil || muted {
 		s.mu.Unlock()
 		why := "in a call"

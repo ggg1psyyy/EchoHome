@@ -161,6 +161,8 @@ type shownKey struct {
 // showLocked hands the ring its state if it, night mode, or the timers it
 // shows changed. s.mu held.
 func (s *session) showLocked() {
+	// Every change of state comes here: "stop" follows it too.
+	s.wake.stopWant.Store(s.timerRings || (s.call != nil && s.call.responding))
 	r := s.ringLocked()
 	if s.flashing && (r == RingOff || r == RingTimers) {
 		return // the outcome flash stays over what is under it, for its length

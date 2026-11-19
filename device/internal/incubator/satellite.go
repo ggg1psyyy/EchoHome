@@ -192,7 +192,8 @@ func (s *Server) hello() HelloInfo {
 		h.WakeModels = &none
 		h.FeatureSize = mixednet.StreamFeatureSize
 		h.MaxPool = true
-		h.Listen = true // a HANGUP with listen opens the answer's call
+		h.Listen = true   // a HANGUP with listen opens the answer's call
+		h.StopWord = true // "stop" stays loaded, run only while armed (wake.go)
 		h.Monitor = s.cfg.Monitor
 		// Its second capture while monitored (AUDIO_MONITOR_AEC) is what the
 		// app enrolls a voice and records wake word samples from, and it asks

@@ -1998,6 +1998,18 @@ including why hashing is worth it when deleting the file defeats it, is in
   player's lock). A press that stops a ringing timer or cancels a call
   also ends an HA announcement (`StopAnnouncement`, music underneath
   carries on), as the Voice PE's.
+- 2026-11-19: HELLO `stop_word`. The app then pushes "stop" with the wake
+  words and it stays (server.py `_kept_stop`); the satellite runs it only
+  while armed, which on the Voice PE is `responding` until the call ends,
+  or a timer ringing (voice-pe.yaml `listen_for_stop`). Heard in a call it
+  ends it as the button does (`on_stop_word`: cancel, and stop an HA
+  announcement); outside one (a ring) it starts a call "stop" as before.
+  The arming is computed in `showLocked` (every state change passes there)
+  into an atomic the wake worker applies under `detMu` before each chunk,
+  so the session lock and the detector's are never held together. A
+  disarmed model is skipped by the detector; "stop" takes the fourth of
+  `ModelSlots` (4) beside the app's three wake words. Before this, "stop"
+  ran armed throughout but was loaded only for a ring.
 
 ## The Echo's ESPHome device (`internal/esphome`, `cmd/esphome.go`)
 

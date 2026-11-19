@@ -133,8 +133,8 @@ func TestHelloSaysWhatTheWakeWordStackRuns(t *testing.T) {
 			t.Errorf("HELLO %s = %v, want %v", k, h[k], v)
 		}
 	}
-	if _, ok := h["stop_word"]; ok {
-		t.Error("HELLO says stop_word, which is not armed yet")
+	if h["stop_word"] != true {
+		t.Error("HELLO does not say stop_word: \"stop\" would be pushed only for a ring")
 	}
 }
 
@@ -383,19 +383,49 @@ func TestAManualCallTakesNothingFromBeforeThePress(t *testing.T) {
 	}
 }
 
-// Without stop_word in HELLO the app pushes "stop" for a ringing timer and
-// expects it to run while loaded; heard, it starts a call the app reads as
-// "stop the ring". (Any blob will do for the id: okay_nabu's, on its speech.)
-func TestAPushedStopModelRunsWhileLoaded(t *testing.T) {
+// "stop" stays loaded (HELLO stop_word) and runs only while armed: while a
+// timer rings and while the answer is said (the Voice PE's listen_for_stop).
+// Heard while a timer rings it starts a call the app reads as "stop the
+// ring". (Any blob will do for the id: okay_nabu's, on its speech.)
+func TestStopRunsOnlyWhileArmed(t *testing.T) {
 	s, echo, _, a := connectApp(t)
 	blob := nabuBlob(t)
 	if r := a.push(header(mixednet.StopModelID, blob), blob); !r.OK {
 		t.Fatalf("%+v", r)
 	}
 	say(t, s, echo, nabuSpeech(t))
+	a.nothing(200 * time.Millisecond) // idle: not armed
+	a.send(Event, []byte(`{"type":"timer_ringing"}`))
+	waitFor(t, "armed by the ring", func() bool { return s.session().wake.stopWant.Load() })
+	say(t, s, echo, nabuSpeech(t))
 	var cs CallStartInfo
 	json.Unmarshal(a.expect(CallStart), &cs)
 	if cs.WakeWord != WakeStop {
 		t.Fatalf("CALL_START wake_word %q, want stop", cs.WakeWord)
 	}
+}
+
+func TestStopSaidOverTheAnswerCancelsTheCall(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	blob := nabuBlob(t)
+	if r := a.push(header(mixednet.StopModelID, blob), blob); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	s.Press()
+	a.expect(CallStart)
+	if s.session().wake.stopWant.Load() {
+		t.Fatal("armed while the command is still being said")
+	}
+	a.send(Event, []byte(`{"type":"responding"}`))
+	waitFor(t, "armed by the answer", func() bool { return s.session().wake.stopWant.Load() })
+	say(t, s, echo, nabuSpeech(t))
+	var ce CallEndInfo
+	json.Unmarshal(a.expect(CallEnd), &ce)
+	if ce.Reason != "cancelled" {
+		t.Fatalf("CALL_END %+v", ce)
+	}
+	if echo.count(&echo.annStops) != 1 {
+		t.Fatal("an announcement Home Assistant was saying was left playing")
+	}
+	waitFor(t, "disarmed with the call", func() bool { return !s.session().wake.stopWant.Load() })
 }
