@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0-ea.3 (Early Access)
+
+A new icon, and it offers firmware v3.0.0-ea.3, whose intercom no longer rings on the Echo that asked for it. The database is unchanged (still v33).
+
+### Changed
+
+- **The icon**: an Echo Dot in a house, for the add-on and the dashboard's tab.
+
 ## 3.0.0-ea.2 (Early Access)
 
 Sendspin is paired here and then runs on the Echo without the setup tool, each Echo gets a DHCP name, and EchoHome is the name everywhere. Pair with firmware v3.0.0-ea.2, which this setup tool offers.
