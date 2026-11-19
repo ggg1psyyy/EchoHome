@@ -196,7 +196,16 @@ func mediaStreamEnded() bool { return mediaPlayer != nil && mediaPlayer.StreamEn
 var buttonPaused struct {
 	sync.Mutex
 	source string
+	// resumed and resumedAt: what a press last resumed, and when. Until its
+	// music is heard again (a Sendspin stream takes a second or two to
+	// restart) a press pauses it again rather than starting a call.
+	resumed   string
+	resumedAt time.Time
 }
+
+// resumeSettle is how long a resumed source counts as playing before its
+// music is heard.
+const resumeSettle = 5 * time.Second
 
 // musicPress is the action button's music step, the Voice PE's (its
 // center button, firmware-voice-incubator voice-pe.yaml): music playing
@@ -207,13 +216,25 @@ func musicPress() bool {
 	buttonPaused.Lock()
 	defer buttonPaused.Unlock()
 	mp := mediaPlayer
+	ss := sendspinPlayer()
+	settling := time.Since(buttonPaused.resumedAt) < resumeSettle
+	switch {
+	case settling && buttonPaused.resumed == "media" && mp != nil && mp.State() != mediaplayer.Playing:
+		mp.Pause()
+		buttonPaused.source, buttonPaused.resumed = "media", ""
+		log.Println("[media] the button paused the music again, before it was heard")
+		return true
+	case settling && buttonPaused.resumed == "sendspin" && ss != nil && !ss.GroupPlaying() && ss.Command("pause"):
+		buttonPaused.source, buttonPaused.resumed = "sendspin", ""
+		log.Println("[sendspin] the button paused the group again, before it was heard")
+		return true
+	}
 	if mp != nil && mp.State() == mediaplayer.Playing {
 		mp.Pause()
 		buttonPaused.source = "media"
 		log.Println("[media] the button paused the music")
 		return true
 	}
-	ss := sendspinPlayer()
 	if ss != nil && ss.GroupPlaying() && ss.Command("pause") {
 		buttonPaused.source = "sendspin"
 		log.Println("[sendspin] the button paused the group")
@@ -224,9 +245,11 @@ func musicPress() bool {
 	switch {
 	case was == "media" && mp != nil && mp.State() == mediaplayer.Paused:
 		mp.Resume()
+		buttonPaused.resumed, buttonPaused.resumedAt = "media", time.Now()
 		log.Println("[media] the button resumed the music")
 		return true
 	case was == "sendspin" && ss != nil && ss.Command("play"):
+		buttonPaused.resumed, buttonPaused.resumedAt = "sendspin", time.Now()
 		log.Println("[sendspin] the button resumed the group")
 		return true
 	}
