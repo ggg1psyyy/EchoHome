@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.0.0-ea.2 (Early Access)
+
+Sendspin is paired here and then runs on the Echo without the setup tool, each Echo gets a DHCP name, and EchoHome is the name everywhere. Pair with firmware v3.0.0-ea.2, which this setup tool offers.
+
+**The database is unchanged (still v33).** A `log_levels` option naming `echomuse.*` loggers matches nothing now: the loggers are `echohome.*`.
+
+### New
+
+- **Each Echo gives DHCP a name**: its label as a host name plus the last four characters of its serial (`living-room-00lq`). A rename whose name another Echo already has is refused.
+- **Sendspin**: the switch, pairing and play without pairing stay here. Echoes on firmware 3.0.0-ea.2 also have a Sendspin player switch in Home Assistant; the two set the same thing, the last change winning.
+- **Each Echo's ESPHome record is announced across VLANs** by the setup tool, as its satellite's already was, with the Echo's own MAC.
+- The privacy line says when an Echo is in an intercom.
+
+### Changed
+
+- **EchoHome by name**: the dashboard, the downloads, the add-on's log, the setup tool's network name for new installs, and the container in the compose files.
+- **emOS only**: an Echo on FireOS is shown as unsupported and gets no firmware update; the wizard installs emOS.
+
 ## 3.0.0-ea.1 (Early Access)
 
 The first EchoHome release: the controller becomes a setup tool. Each Echo is now a Voice Incubator satellite and an ESPHome device of its own, and works with the add-on stopped. Pair with firmware v3.0.0-ea.1, which this controller offers; emOS still comes from EchoMuse.
