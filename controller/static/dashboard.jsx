@@ -4707,8 +4707,10 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
             + ', which is amonet v1\'s partition table under a v2 unlock. Installing v2 '
             + 'should have restored the original table, and on this Echo it has not. '
             + 'Nothing has been read or written. Reflashing FireOS will not change it. '
-            + 'See the EchoMuse FAQ: https://github.com/wilbowes/EchoMuse/blob/main/docs/faq.md'
-            + '#the-wizard-stops-at-escrow-boot-image-and-mentions-boot_a_x' };
+            + 'Some owners got past it by installing amonet v2 again, as a zip from TWRP; '
+            + 'that rewrites the partition table and the bootloader and has not been tried '
+            + 'here, so ask on amonet\'s XDA thread first, quoting this message: '
+            + 'https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-dot-2nd-gen-2016-biscuit.4761416/' };
         }
         return { ok: false, target, names, reason:
           `/dev/block/other-boot does not exist, but the by-name map carries `

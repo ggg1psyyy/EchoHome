@@ -3,7 +3,7 @@
 
 The controller installs only assets whose signature verifies against a key in
 controller/em_release_sig.py (once one is there). This is the one command run
-per firmware or emOS release, on a machine that holds the private key. Never
+per firmware release, on a machine that holds the private key. Never
 run it on a machine that holds the repo's push credentials alone; the key and
 the GitHub login are meant to be two separate things to steal.
 
@@ -28,10 +28,11 @@ import em_release_sig  # noqa: E402
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
-REPO = "wilbowes/EchoMuse"
-# What the controller downloads and installs: firmware, the loose emOS init,
-# and the emOS bundle (init32 and the rest travel inside it).
-INSTALLABLE = ("server", "init", "emos-payload.zip")
+# EchoHome's firmware only: emOS is EchoMuse's, released and signed (or not)
+# there, and this tool never acts on another project's releases.
+REPO = "ggg1psyyy/EchoHome"
+# What the controller downloads from EchoHome's releases and installs.
+INSTALLABLE = ("server",)
 
 
 def gh(*args: str, cwd: str | None = None) -> str:

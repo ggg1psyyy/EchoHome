@@ -353,7 +353,8 @@ for (const fn of ["runEscrowBoot"]) {
   const v = classifyBootTarget(lines);
   check("mixed v1/v2 table is refused", v.ok === false, JSON.stringify(v));
   check("mixed v1/v2 refusal names the state", /amonet v1's partition table under a v2 unlock/.test(v.reason), v.reason);
-  check("mixed v1/v2 refusal links the FAQ", /docs\/faq\.md#the-wizard-stops-at-escrow-boot-image/.test(v.reason), v.reason);
+  check("mixed v1/v2 refusal says where to ask: amonet's thread, not EchoMuse",
+        /xdaforums\.com\//.test(v.reason) && !/EchoMuse/.test(v.reason), v.reason);
   check("mixed v1/v2 refusal shows both resolutions",
         /boot_a_x → \/dev\/block\/mmcblk0p10/.test(v.reason)
         && /boot_a → \/dev\/block\/mmcblk0p17/.test(v.reason), v.reason);

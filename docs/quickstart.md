@@ -16,6 +16,11 @@ target works (`unlock fireos6`, the default, or `unlock fireos5`); the
 [rooting guide](https://github.com/wilbowes/EchoMuse/blob/main/docs/rooting.md) (EchoMuse's) explains the choice. **You do this at your own
 risk.**
 
+firebreak and the rooting guide are EchoMuse's, credited and linked here.
+**Questions about EchoHome, the setup tool or anything after the unlock go to
+[EchoHome's issues](https://github.com/ggg1psyyy/EchoHome/issues)**, not to
+EchoMuse.
+
 ## 2. Install the setup tool
 
 <details open>
@@ -57,9 +62,8 @@ in `docker logs echohome-controller`.
 ## 3. Run the setup wizard
 
 **Start with the Echo in TWRP recovery.** Booted normally, the wizard's first
-step can stop at "Authenticating ADB…" with nothing happening on the Echo
-([EchoMuse#1208](https://github.com/wilbowes/EchoMuse/issues/1208)); from
-TWRP it goes straight on:
+step can stop at "Authenticating ADB…" with nothing happening on the Echo;
+from TWRP it goes straight on:
 
 1. Unplug the Echo.
 2. Hold **mute** down (**+**, volume up, if firebreak installed amonet

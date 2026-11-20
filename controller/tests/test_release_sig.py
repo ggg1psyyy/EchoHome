@@ -74,7 +74,8 @@ def test_the_signing_tool_signs_what_the_controller_verifies(tmp_path):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
     import sign_release
     assert sign_release.public_b64(KEY) == PUB
-    assert set(sign_release.INSTALLABLE) == {"server", "init", "emos-payload.zip"}
+    assert set(sign_release.INSTALLABLE) == {"server"}
+    assert sign_release.REPO == "ggg1psyyy/EchoHome"
 
 
 # --- download(): the one path firmware and emOS inits come through ---------
