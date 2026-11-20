@@ -20,7 +20,7 @@ bounded `lock_mic` turns, the Bluetooth connection stack) is gone.
 FireOS 5 (API 22) needs the custom compiler image; plain Go cross-compilation won't work.
 
 ```bash
-git submodule update --init                       # GoTinyAlsa: the wilbowes fork, NOT upstream Binozo
+git submodule update --init                       # GoTinyAlsa: ggg1psyyy's fork of Binozo's
 cd device && docker build -t echomuse-compiler compiler/
 ./compile.sh                                      # → build/server
 go test ./internal/... ./pkg/...                  # host, pure-Go logic only
@@ -28,10 +28,11 @@ go test ./internal/... ./pkg/...                  # host, pure-Go logic only
 
 - `cmd/` is `//go:build server`: vet it in the compiler image (`go vet -tags
   server ./cmd/...`, as CI's device-firmware-build job does).
-- **GoTinyAlsa stays on the fork** until upstream has its playback fix
-  (WriteFrames blocks signals around `pcm_write`, #707). It also carries
-  `GetAudioStreamChunked` (fork #4, #1139). **Merge fork PRs with a merge
-  commit, never squash**.
+- **GoTinyAlsa is `ggg1psyyy/GoTinyAlsa`**, a fork of `Binozo/GoTinyAlsa`'s
+  master (which has the playback fix, #707, and the leak and frame fixes)
+  plus one commit, Wil Bowes's `GetAudioStreamChunked` (#1139), which the
+  Dot 3's microphone needs. Not offered upstream: it is his work. Track
+  upstream's master; keep his authorship on that commit.
 - **The compiler base (`compiler/Dockerfile`: NDK 21.4.7075529, with Go
   1.26.11 swapped in, sha256-checked) is pinned by DIGEST and must stay so**;
   **moving the pin, or its Go, needs a real device in the loop**.

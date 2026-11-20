@@ -7,6 +7,16 @@ that area.
 
 ## Building the device binary
 
+- 2026-11-20: GoTinyAlsa moves from wilbowes's fork to `ggg1psyyy/GoTinyAlsa`,
+  a fork of `Binozo/GoTinyAlsa`. Upstream's master had taken three of the
+  fork's four changes (the defer leak #1, frame storage #2, the whole-buffer
+  write #3, the playback fix); compared by content, the fork before
+  `GetAudioStreamChunked` differed from it only in one comment. That commit,
+  Wil Bowes's, sits on upstream's master (5e1a2df) as 2c7122c, his
+  authorship kept, and is not offered upstream (his work, not EchoHome's).
+  The code equals the old pin 990b29c but for that comment; the firmware
+  builds against it.
+
 The Echo Dot runs FireOS 5 (API 22). Standard Go cross-compilation won't work — a custom Docker build environment is required.
 
 **One-time setup:**
