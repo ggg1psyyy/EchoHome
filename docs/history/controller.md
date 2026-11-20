@@ -52,6 +52,13 @@ Key env vars in `.env` (see `.env.example` for the full list):
 
 ### Home Assistant add-on
 
+- 2026-11-20: a changed `panel_icon` (mdi:hockey-puck, 3.0.0-ea.5) does not
+  reach the sidebar on update. Supervisor had the new icon; Home Assistant's
+  `hassio/addon_panel.py` reconciles only panels new to it (`wanted -
+  registered`), so an existing panel keeps its old icon until it is
+  registered again: **Show in sidebar** off and on, or a Home Assistant
+  restart. A browser reload does nothing.
+
 The controller also ships as a Home Assistant Supervisor add-on
 (`controller/config.yaml` + `repository.yaml` at the repo root, from #122).
 Supervisor clones the **default branch**, so add-on files only take effect
