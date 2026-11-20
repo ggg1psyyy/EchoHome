@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0-ea.5 (Early Access)
+
+While the setup tool runs, a Home Assistant notification says when an Echo has a firmware or emOS update. The database is unchanged (still v33).
+
+**This version asks for access to Home Assistant's API** (`homeassistant_api`), used only to raise and clear that one notification.
+
+### New
+
+- **Update notifications in Home Assistant**: one notification (the bell) naming the new versions and the Echoes they are for, with a link to the dashboard; cleared once all are up to date. Dismissed, it comes back only for a newer release. None while the add-on is stopped, or with release checks off.
+
 ## 3.0.0-ea.4 (Early Access)
 
 The sidebar's icon is a puck, as an Echo Dot is, and the wizard's refusal of an amonet v1 partition table under a v2 unlock now says what owners tried and where to ask. It offers firmware v3.0.0-ea.4. The database is unchanged (still v33).
