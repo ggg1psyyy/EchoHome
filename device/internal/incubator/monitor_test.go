@@ -126,6 +126,7 @@ func TestATapAnswersTheIntercomAndTheNextEndsIt(t *testing.T) {
 	s.Press()
 	waitFor(t, "the microphone", func() bool { return echo.count(&echo.opens) == 1 })
 	waitFor(t, "reported", func() bool { return st.last().Monitored })
+	waitFor(t, "the audio gate", func() bool { return s.session().mon.on.Load() }) // after the report
 	chunk := bytes.Repeat([]byte{7, 8}, chunkBytes/2)
 	echo.speak(chunk)
 	if got := a.next(AudioMonitor); !bytes.Equal(got, chunk) {
@@ -194,9 +195,13 @@ func TestTheAppEndingTheIntercomClosesTheMicrophone(t *testing.T) {
 }
 
 func TestMonitoringStreamsTheMicrophoneAndSaysSoFirst(t *testing.T) {
-	_, echo, st, a, _ := connectMonitorApp(t, true)
+	s, echo, st, a, _ := connectMonitorApp(t, true)
 	monitorOn(a, true)
 	waitFor(t, "the microphone", func() bool { return echo.count(&echo.opens) == 1 })
+	// The microphone opens before the report and audio passes only after it
+	// (updateMonitor): a chunk spoken in between is dropped, rightly. Wait
+	// for the gate, or the test races it (CI, 8ecc9a3).
+	waitFor(t, "monitoring", func() bool { return s.session().mon.on.Load() })
 	chunk := bytes.Repeat([]byte{5, 6}, chunkBytes/2)
 	echo.speak(chunk)
 	got := a.next(AudioMonitor)
@@ -282,6 +287,7 @@ func TestACallPausesMonitoringAndItResumesAfter(t *testing.T) {
 	}
 	a.send(Hangup, []byte(`{"reason":"done"}`))
 	waitFor(t, "monitoring again", func() bool { return st.last().Monitored })
+	waitFor(t, "the audio gate", func() bool { return s.session().mon.on.Load() }) // after the report
 	echo.speak(chunk)
 	a.next(AudioMonitor, WakeReport, AudioIn)
 }
