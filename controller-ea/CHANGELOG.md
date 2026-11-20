@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.0-ea.4 (Early Access)
+
+The sidebar's icon is a puck, as an Echo Dot is, and the wizard's refusal of an amonet v1 partition table under a v2 unlock now says what owners tried and where to ask. It offers firmware v3.0.0-ea.4. The database is unchanged (still v33).
+
+### Changed
+
+- **The sidebar icon**: `mdi:hockey-puck`, in place of EchoMuse's microphone.
+- **The wizard's amonet v1/v2 refusal** says what got other owners past it, that it rewrites the partition table and the bootloader, and to ask on amonet's XDA thread first.
+
 ## 3.0.0-ea.3 (Early Access)
 
 A new icon, and it offers firmware v3.0.0-ea.3, whose intercom no longer rings on the Echo that asked for it. The database is unchanged (still v33).
