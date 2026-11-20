@@ -158,12 +158,13 @@ jobs:
       # shipped was never quite what CI examined. (One layer IS added at
       # release — see the version stamp below — and it contains no files.)
       #
-      # It also removes the window this replaced. Building on the tag left a
-      # gap in which controller/config.yaml pinned an image the registry did
-      # not have, and a Home Assistant install in that window failed with
-      # "unknown error": 2.19.0, and again on 2.20.1 where it measured 13m24s
-      # between the pin landing on main and the image existing. Reusing the
-      # published layers takes seconds.
+      # It also shortened the window this replaced, without closing it.
+      # Building on the tag left a gap in which controller/config.yaml pinned
+      # an image the registry did not have, and a Home Assistant install in
+      # that window failed with "unknown error": 2.19.0, and again on 2.20.1
+      # where it measured 13m24s between the pin landing on main and the
+      # image existing. The version commit's own build still ran on main, so
+      # 3.0.0-ea.5 hit it too; publish-main below closes it.
       - name: Check the image exists for this commit
         run: |
           src="ghcr.io/${{ github.repository_owner }}/echohome-controller:${{ steps.version.outputs.sha }}"
@@ -307,3 +308,59 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "0"
+
+  # ── Only now does main have it ─────────────────────────────────────────
+  #
+  # Home Assistant reads the add-on's `version:` from main. A version commit
+  # on main before its image exists is an update Supervisor offers and cannot
+  # pull ("unknown error", a 404 on the image): 2.19.0, 2.20.1 (13m24s), and
+  # 3.0.0-ea.5 on 2026-11-20, where promoting instead of rebuilding had only
+  # shortened the window, since the build of the version commit itself still
+  # ran on main. So a release's version commit goes to a release/** branch,
+  # is built there (controller-build.yml) and tagged, and main is moved here,
+  # after the image is published: a fast-forward, the only push this
+  # repository's rules allow on main anyway.
+  #
+  # A tag on a commit main already has (the old order) moves nothing and
+  # says so. A main that moved on meanwhile is not merged into: the run
+  # fails, the image stays published, and main is brought up by hand.
+  publish-main:
+    needs: build-and-push
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write       # the fast-forward of main, nothing else
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward main to the release
+        run: |
+          git fetch -q origin main
+          if git merge-base --is-ancestor HEAD origin/main; then
+            echo "::warning::main already has $GITHUB_REF_NAME's commit: it was visible to Home Assistant before its image existed. Release from a release/** branch."
+          elif git merge-base --is-ancestor origin/main HEAD; then
+            git push origin HEAD:refs/heads/main
+            echo "main fast-forwarded to $(git rev-parse --short HEAD): Home Assistant now offers $GITHUB_REF_NAME"
+          else
+            echo "::error::main has moved on and does not lead to $GITHUB_REF_NAME's commit. The image is published; merge the release into main by hand."
+            exit 1
+          fi
+
+      # A release branch only carries the version commit until main has it;
+      # then the tag is the record. Deleted only once its tip is on main, so
+      # a failed fast-forward above (this step does not run) leaves it to fix
+      # from. Any such branch, not just this tag's: a tag names no branch.
+      - name: Delete release branches main now has
+        run: |
+          git fetch -q origin main
+          git ls-remote --heads origin 'refs/heads/release/*' | while read -r sha ref; do
+            if git cat-file -e "$sha" 2>/dev/null || git fetch -q origin "$ref"; then
+              if git merge-base --is-ancestor "$sha" origin/main; then
+                git push -q origin --delete "$ref" && echo "deleted ${ref#refs/heads/} (on main)"
+              else
+                echo "kept ${ref#refs/heads/}: not on main"
+              fi
+            fi
+          done

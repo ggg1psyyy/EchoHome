@@ -190,9 +190,17 @@ deletes `#` heading lines from the notes):
   `controller-release.yml` → `ghcr.io/ggg1psyyy/echohome-controller`
   (amd64 + arm64). No GitHub Release: the annotation is the only copy of the
   notes. The release workflow **re-tags `:sha-<short>`, it does not build**,
-  and refuses a commit whose `Controller Build (main)` failed: merge → green
-  build on the merge commit → tag. If the tag raced the build, `gh run rerun
-  <id>`; never re-cut the tag.
+  and refuses a commit whose `Controller Build (main)` failed. **The version
+  commit never goes to main first**: Home Assistant reads `version:` from
+  main and would offer an image that does not exist yet (3.0.0-ea.5). Push
+  it to `release/<version>` (branched from main), wait for its green
+  Controller Build, tag it; the release publishes the image and then
+  fast-forwards main (`publish-main`) and deletes the branch. The branch is main plus the version
+  commit only (code reaches main first, and nothing is pushed to main until
+  the release is through, or the fast-forward fails; the workflow token may
+  not move main over workflow changes). That push starts no runs on main:
+  the commit's CI and build are the branch's. If the tag raced the build,
+  `gh run rerun <id>`; never re-cut the tag.
 - **emOS** is EchoMuse's (`emos-v*` there). EchoHome tags none.
 
 `config.yaml`'s `version:` pins the pulled image; the release refuses a

@@ -25,7 +25,10 @@ name: Controller Build (main)
 
 on:
   push:
-    branches: [main]
+    # release/**: a release's version commit is built there, before main has
+    # it, so Home Assistant never sees a version whose image does not exist
+    # yet (controller-release.yml fast-forwards main once it is published).
+    branches: [main, 'release/**']
     paths:
       - 'controller/**'
       # An EA release-prep commit touches only the channel (its notes live

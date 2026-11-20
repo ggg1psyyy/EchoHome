@@ -146,6 +146,16 @@ The two halves version independently, so any pairing can occur in the field. Two
 
 ## Versioning / releases
 
+- 2026-11-20, setup tool 3.0.0-ea.5: Home Assistant offered the update at
+  09:06 UTC and Supervisor failed with "unknown error", a 404 on
+  `echohome-controller:3.0.0-ea.5`: the version commit had been pushed to
+  main, the release run was still going. Promoting instead of rebuilding had
+  shortened the window (2.19.0; 2.20.1, 13m24s) without closing it, because
+  the version commit's own build still ran on main. Now it is pushed to
+  `release/<version>`, built and CI'd there, tagged, and the release's
+  `publish-main` job fast-forwards main after the image exists (main's rules
+  allow fast-forwards only, so a moved main fails the job, nothing is merged).
+
 Device firmware and controller are versioned independently here; emOS is versioned and released by EchoMuse, not here:
 
 - **Device**: plain `v*` tags (e.g. `v2.7.6`) → `release.yml` → GitHub Release with the `server` binary asset. The tag is embedded in the binary and compared against `firmware_ver` by OTA — don't change this scheme. **Early Access firmware is `vX.Y.Z-ea.N`, published as a GitHub prerelease** (2026-09-26). Every GA controller since 2.22.0 skips prereleases, so EA firmware cannot reach the GA fleet; a GA controller build (plain `X.Y.Z`) also skips anything named `-ea.N` in case the flag is ever missing, and EA and dev controllers offer both (`version.offers_ea_firmware`, `choose_firmware_release`). "Update available" is `version.firmware_update`, by version rather than string: `2.17.0-ea.1 < 2.17.0-ea.2 < 2.17.0 < 2.17.0-3-g…`, so a device ahead of the offered release is never offered it (the string rule offered EA firmware a GA "downgrade"). A device version that is not a version at all (a timestamped dev build) keeps the old any-difference rule.

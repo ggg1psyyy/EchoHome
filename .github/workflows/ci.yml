@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']   # release/**: a release's version commit, before main has it
   pull_request:
 
 # Read-only unless a job asks for more. The repository's default token is
