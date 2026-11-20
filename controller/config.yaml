@@ -34,6 +34,10 @@ arch:
 host_network: true
 ingress: true
 ingress_port: 8768
+# Home Assistant's API through the Supervisor (SUPERVISOR_TOKEN): only to raise
+# and clear one persistent notification while an Echo has a firmware or emOS
+# update (em_ha_notify). Nothing else of Home Assistant is read or changed.
+homeassistant_api: true
 # Admin-only sidebar entry. This is Supervisor's default, set explicitly
 # because the dashboard authenticates whoever Home Assistant forwards
 # (em_ingressauth) and proxies a root shell to every device — so a change to

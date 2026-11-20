@@ -25,6 +25,7 @@
  "em_esphome_mdns.py": 93.0,
  "em_events.py": 99.0,
  "em_firmware.py": 89.0,
+ "em_ha_notify.py": 85.0,
  "em_health.py": 99.0,
  "em_hostip.py": 92.0,
  "em_http.py": 99.0,

@@ -43,6 +43,7 @@ import em_device_view
 import em_process_stats
 import em_reconcile
 from version import VERSION as CONTROLLER_VERSION
+import em_ha_notify
 import em_releases
 import em_state
 import em_auth as auth
@@ -1832,6 +1833,7 @@ async def main():
     log.info(f"Dashboard + API listening on http://{SERVER_HOST}:{API_PORT}")
 
     release_task       = asyncio.create_task(em_releases.poll_loop())
+    ha_notify_task     = em_tasks.spawn(em_ha_notify.run(), name="ha_notify")
     session_prune_task = asyncio.create_task(api.session_prune_loop())
     loop_lag_task      = asyncio.create_task(event_loop_lag_monitor())
 
@@ -1907,10 +1909,8 @@ async def main():
 
     finally:
         await em_incubator.stop_all()
-        release_task.cancel()
-        session_prune_task.cancel()
-        loop_lag_task.cancel()
-        mdns_task.cancel()
+        for task in (release_task, ha_notify_task, session_prune_task, loop_lag_task, mdns_task):
+            task.cancel()
         await azc.async_unregister_service(info)
         await azc.async_close()
         await runner.cleanup()

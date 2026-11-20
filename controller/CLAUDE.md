@@ -41,7 +41,9 @@ nothing (2026-11-18).
   `schema`, `translations/en.yaml`, `em_start.OPTION_ENV_VARS`) or listed with
   its reason in `test_deploy.FIXED_IN_THE_ADDON`;
   `test_every_env_var_reaches_the_addon_or_states_why_not` checks both ways.
-  OIDC sign-in (`OIDC_*`, #868) is container-only. An option removed from the
+  OIDC sign-in (`OIDC_*`, #868) is container-only; the Home Assistant update
+  notification (`em_ha_notify`, `homeassistant_api`) is add-on-only, through
+  the Supervisor. An option removed from the
   schema is logged by Supervisor as unknown for installs that still have it,
   and the add-on starts.
 - **`config.yaml`'s `version:` pins the pulled image**
@@ -219,6 +221,7 @@ Board notes (radar #1017, donut) are in `docs/history/controller.md`.
 | `em_incubator.py`, `em_incubator_proto.py` | The Echo's satellite: asked to listen, announced over mDNS; the protocol module also serves `tools/incubator_interop_check.py` |
 | `em_listen.py` | `resolve` — the only source for privacy statements |
 | `em_releases.py`, `em_firmware.py`, `em_df.py` | Release sources and caches, free space |
+| `em_ha_notify.py` | One HA persistent notification while an Echo has an update (add-on only); raised again only when the versions on offer change |
 | `em_device_config.py`, `em_config_types.py`, `em_config_sections.py` | Pushes, types, scoping, `RETIRED` |
 | `em_boards.py` | Board → HA model. **Biscuit's model string never changes** |
 | `em_dbwriter.py` | **No coroutine calls `db.*`** (`tests/test_db_off_loop.py`) |

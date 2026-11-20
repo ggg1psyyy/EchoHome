@@ -407,6 +407,19 @@ Re-enabling takes effect without a restart. Turning it off does not disable
 the **Check now** button on the Updates tab: that is a deliberate request, so
 it still asks GitHub when you press it.
 
+### Update notifications in Home Assistant (add-on)
+While the add-on runs and an Echo has a firmware or emOS update, the setup
+tool raises one notification in Home Assistant (the bell in the sidebar): the
+new versions, which Echoes they are for, and a link to the dashboard. It goes
+away once every Echo is up to date. Dismissed, it comes back only for a newer
+release. With the add-on stopped there is none: the Echoes never look for
+updates themselves.
+
+This is why the add-on asks for access to Home Assistant's API
+(`homeassistant_api`); it uses it for nothing else. The standalone container
+has no Supervisor and raises no notification. An `update_check_interval` of
+`0` turns it off with the release checks.
+
 ### What never leaves
 
 - **Anything the Echo hears.** The setup tool receives no audio. An Echo's

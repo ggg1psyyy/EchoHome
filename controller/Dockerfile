@@ -112,6 +112,7 @@ COPY em_http.py .
 COPY em_events.py .
 COPY em_shell.py .
 COPY em_releases.py .
+COPY em_ha_notify.py .
 COPY em_release_sig.py .
 COPY em_payloads.py .
 COPY em_ota.py .
