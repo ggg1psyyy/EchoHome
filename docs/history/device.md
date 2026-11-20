@@ -595,6 +595,19 @@ above the rest). Its TDM is 4ch S32_LE at 16kHz on two tlv320aic3101, and:
   scorer band 26-29 dB on ch1 against C95's 18-25. Data and scripts:
   `/root/em-diag/donut-barge-2026-11-19` (local).
 
+- **2026-11-20, the aligner needs no faster follow once the reads are
+  fixed.** With this change on 41C8 the echoref made 0 moves and 0
+  re-centres across a 3 m barge session; the '200 ppm' loopback drift, the
+  16 ms slips and the stale locks were all the stale reads. A branch that
+  followed slips in one search, gated moves on a correlation margin and
+  re-centred on the arrival gap was dropped. Kept on a local branch
+  (`fix/echoref-stale-lock`): dropping a lock whose Takes come back late
+  three times running. Rig sweep (30 s of silence losing N periods, then
+  speech): same as main for N <= 8; N = 10-20 gets a good reference 1.28 s
+  into speech against 3.52 s; N = 26 (past the ±500 ms wide search) recovers
+  in neither. Worth a PR only if `[mic] loopback stall` lines show periods
+  lost in the field.
+
 - **`MicMutes`** are the board's ADC mutes; the donut has only ADC_A and ADC_B
   fitted.
 
