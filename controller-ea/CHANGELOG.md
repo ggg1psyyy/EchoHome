@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.0-ea.6 (Early Access)
+
+The wizard's first step no longer hangs on a normally booted Echo, and the link to the Echoes uses the cipher a Dot 2 runs fastest. It offers firmware v3.0.0-ea.5. The database is unchanged (still v33).
+
+### Fixed
+
+- **The wizard's first step on a normally booted Echo**: it crashed or waited forever at "Authenticating ADB…". The browser now keeps an ADB key, and after 20 s the step stops and says to start the Echo in TWRP (EchoMuse #1225, by Wil Bowes).
+
+### Improved
+
+- **Device-link TLS lets the Echo choose its cipher**: a Dot 2 gets ChaCha20, about three times faster on its CPU than AES (EchoMuse #1213).
+
 ## 3.0.0-ea.5 (Early Access)
 
 While the setup tool runs, a Home Assistant notification says when an Echo has a firmware or emOS update. The database is unchanged (still v33).
