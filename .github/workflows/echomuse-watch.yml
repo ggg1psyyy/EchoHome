@@ -1,0 +1,83 @@
+name: EchoMuse watch
+
+# Once a day: EchoMuse's new commits on main, listed in one issue here with a
+# hint of which may apply (tools/echomuse_watch.py). Reads EchoMuse, writes
+# only issues of this repository; never pushes, never touches EchoMuse.
+#
+# State is the issue: its body ends in the last commit looked at. An open
+# issue gets a comment per batch and its marker moved; with none open, the
+# next batch opens a new one, starting where the last (closed) one ended.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: echomuse-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: List EchoMuse's new commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          label=echomuse-watch
+          gh label create "$label" --color c5def5 \
+            --description "New EchoMuse commits to review" --force >/dev/null
+
+          git fetch --quiet https://github.com/wilbowes/EchoMuse main
+          head="$(git rev-parse FETCH_HEAD)"
+
+          # The newest issue, open or closed, holds where we left off.
+          gh issue list --label "$label" --state all --limit 1 \
+            --json number,state,body > issue.json
+          python3 -c 'import json; d=json.load(open("issue.json")); print((d[0]["body"] if d else ""))' > body.md
+          number="$(python3 -c 'import json; d=json.load(open("issue.json")); print(d[0]["number"] if d else "")')"
+          state="$(python3 -c 'import json; d=json.load(open("issue.json")); print(d[0]["state"] if d else "")')"
+          since="$(python3 tools/echomuse_watch.py last body.md)"
+          git cat-file -e "$since^{commit}" 2>/dev/null || git fetch --quiet https://github.com/wilbowes/EchoMuse "$since" || true
+
+          python3 tools/echomuse_watch.py report "$since" "$head" > report.md
+          if [ ! -s report.md ]; then
+            echo "nothing new since ${since:0:9}"
+            exit 0
+          fi
+
+          if [ "$state" = "OPEN" ]; then
+            gh issue comment "$number" --body-file report.md
+            # Move the marker in the body to the newest commit looked at.
+            python3 - "$head" <<'EOF'
+          import re, sys
+          body = open("body.md").read()
+          new = re.sub(r"echomuse-watch last=[0-9a-f]+", "echomuse-watch last=" + sys.argv[1], body)
+          if new == body:
+              new = body.rstrip() + "\n\n<!-- echomuse-watch last=" + sys.argv[1] + " -->\n"
+          open("body.md", "w").write(new)
+          EOF
+            gh issue edit "$number" --body-file body.md
+            echo "commented on #$number"
+          else
+            {
+              echo "New commits in [EchoMuse](https://github.com/wilbowes/EchoMuse) that may matter here. Close this issue once they are reviewed; the next ones open a new one."
+              echo
+              cat report.md
+            } > new.md
+            gh issue create --title "EchoMuse: new commits to review" \
+              --label "$label" --body-file new.md
+          fi
