@@ -107,7 +107,7 @@ check("secure adbd with a known key connects", client.banner === "biscuit");
 check("authenticate is given a credential store",
   scenario.seen.credentialStore instanceof FakeStore);
 check("the store keeps the browser key under one name",
-  scenario.seen.credentialStore.name === "EchoMuse");
+  scenario.seen.credentialStore.name === "EchoHome");
 
 // FireOS that does not know the key: a bounded wait and a reason, not a hang.
 scenario.acceptsKey = false;

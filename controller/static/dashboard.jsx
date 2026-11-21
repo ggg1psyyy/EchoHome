@@ -2497,7 +2497,7 @@ const _ADB = (() => {
       // every visit. adb 2.1.0 requires a store: without one, any adbd that
       // asks for a key (FireOS with ro.adb.secure=1) crashed the step on
       // credentialStore.iterateKeys(). TWRP never asks, which hid it.
-      credentialStore: new credMod.default('EchoMuse'),
+      credentialStore: new credMod.default('EchoHome'),
     };
     logFn('ADB library loaded.');
     return _mods;
