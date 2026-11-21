@@ -30,9 +30,10 @@ go test ./internal/... ./pkg/...                  # host, pure-Go logic only
   server ./cmd/...`, as CI's device-firmware-build job does).
 - **GoTinyAlsa is `ggg1psyyy/GoTinyAlsa`**, a fork of `Binozo/GoTinyAlsa`'s
   master (which has the playback fix, #707, and the leak and frame fixes)
-  plus one commit, Wil Bowes's `GetAudioStreamChunked` (#1139), which the
-  Dot 3's microphone needs. Not offered upstream: it is his work. Track
-  upstream's master; keep his authorship on that commit.
+  plus Wil Bowes's two `GetAudioStreamChunked` commits: a period at a time
+  (#1139) and a period behind the hardware pointer (AvailMin, #1238). Every
+  board's microphones read through it. Not offered upstream: it is his work.
+  Track upstream's master; keep his authorship on those commits.
 - **The compiler base (`compiler/Dockerfile`: NDK 21.4.7075529, with Go
   1.26.11 swapped in, sha256-checked) is pinned by DIGEST and must stay so**;
   **moving the pin, or its Go, needs a real device in the loop**.
@@ -57,8 +58,11 @@ raw frame (the board's MicArray) → the wake mic (beamformer unlocked) + fixed 
   the microphone** (`OpenCallMic`/`CloseCallMic`), sends nothing anywhere
   else, and survives a lost link. **Never reorder the AEC, echoref or
   beamformer steps**; a wake word that suddenly scores low is the first sign.
-- **Batches are 160ms (2560 samples)**: `GetAudioStream` reads the whole ALSA
-  buffer (512 × 5).
+- **Batches are 160ms (2560 samples)**, read one 512-frame period at a time
+  a period behind the hardware pointer (`GetAudioStreamChunked`, AvailMin two
+  periods, #1238): reading the whole ring at once took up to 128ms of stale
+  audio when the driver said ready early. The beamformer analyses every
+  period of a batch (#1237).
 - **AEC** (`internal/aec/`, vendored SpeexDSP-1.2.1), **on by default**:
   - **Its FFT is pffft** (`src/pffft/`, byte-identical by `vendor.sh`).
   - **Hardware reference (#385)**: ch8 is an in-frame loopback of our

@@ -7,6 +7,18 @@ that area.
 
 ## Building the device binary
 
+- 2026-11-21: EchoMuse's fixes since EchoHome split off (2026-11-17,
+  c953097), taken as Wil's commits (cherry-pick -x): the capture read a
+  period behind the hardware pointer (#1238, with GoTinyAlsa's AvailMin
+  commit d2ab078 on our fork), the beamformer over every period (#1237),
+  the Dot 3's AEC (#1229, #1231, #1245), voicing (#1230) and fitted ADCs
+  (#1232), the radar's idle mute and volume floor (#1228, #1227), and the
+  setup tool's TLS cipher order (#1213). Not taken: the voice path EchoHome
+  removed (speech gate #1226, barge #1223, beam lock #1131, announcements
+  #1236) and the multi-microphone barge scoring (#1240), which leans on the
+  removed scorer; #1245's ReplyTaps went with it. Dot 3 and radar changes
+  are as measured on EchoMuse's hardware; EchoHome has neither board.
+
 - 2026-11-20: GoTinyAlsa moves from wilbowes's fork to `ggg1psyyy/GoTinyAlsa`,
   a fork of `Binozo/GoTinyAlsa`. Upstream's master had taken three of the
   fork's four changes (the defer leak #1, frame storage #2, the whole-buffer
