@@ -39,6 +39,11 @@ go test ./internal/... ./pkg/...                  # host, pure-Go logic only
   **moving the pin, or its Go, needs a real device in the loop**.
 - `compile.sh` embeds the version via `-ldflags "-X .../client.Version=..."`;
   dirty trees get `YYYYMMDD-HHMM-dev`.
+- **Every build is stripped (`-s -w`)**: `compile.sh`, `release.yml` and CI
+  alike (`tests/test_firmware_stripped.py`), and release and CI fail a binary
+  over 15 MiB. Home Assistant's ingress takes at most 16 MiB per request, so
+  an unstripped 18.5 MB build could not be uploaded through the dashboard.
+  Panics keep file:line (`.gopclntab` stays).
 - **Release**: a `v*` tag runs `release.yml`. **Tag with `git tag -a
   --cleanup=verbatim`** — the annotation is the release body the dashboard
   shows beside an update.

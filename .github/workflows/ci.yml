@@ -662,7 +662,7 @@ jobs:
             -v "$PWD/device":/sdk \
             -v "$PWD/GoTinyAlsa":/GoTinyAlsa \
             echomuse-compiler \
-            -c "cd /sdk && go vet -tags server ./cmd/... && go build -tags server -o build/server ./cmd/"
+            -c "cd /sdk && go vet -tags server ./cmd/... && go build -tags server -ldflags '-s -w' -o build/server ./cmd/"
       - name: Check it is an ARM binary
         # A build that silently produced a host binary would pass the step
         # above and ship something the hardware cannot run.
@@ -670,6 +670,18 @@ jobs:
           file device/build/server
           file device/build/server | grep -q "ARM" || {
             echo "::error::firmware is not an ARM binary"; exit 1; }
+      - name: Check it is stripped and within budget
+        # As release.yml: an upload through Home Assistant's ingress stops at
+        # 16 MiB (Supervisor's MAX_CLIENT_SIZE), so growth is caught here,
+        # on the PR, rather than at a release or a failed dashboard upload.
+        run: |
+          file device/build/server | grep -q ", stripped" || {
+            echo "::error::firmware is not stripped (-s -w)"; exit 1; }
+          size=$(stat -c %s device/build/server)
+          echo "firmware: $size bytes"
+          if [ "$size" -gt 15728640 ]; then
+            echo "::error::firmware is $size bytes, over the 15 MiB budget (ingress uploads stop at 16 MiB)"; exit 1
+          fi
 
   device-vet:
     name: Device go vet

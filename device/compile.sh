@@ -27,7 +27,7 @@ SUPPRESS="-Wno-deprecated-declarations -Wno-null-dereference"
 BUILD_UNIX=$(date +%s)
 BUILD_CMD="cd /sdk && mkdir -p build && go build \
     -tags \"server ${EM_EXTRA_TAGS}\" \
-    -ldflags \"-X github.com/wilbowes/EchoMuse/internal/client.Version=${VERSION} \
+    -ldflags \"-s -w -X github.com/wilbowes/EchoMuse/internal/client.Version=${VERSION} \
                -X github.com/wilbowes/EchoMuse/internal/client.BuildUnix=${BUILD_UNIX}\" \
     -o build/server ./cmd/"
 

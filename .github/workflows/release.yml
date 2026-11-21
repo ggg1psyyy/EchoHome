@@ -66,7 +66,7 @@ jobs:
             echomuse-compiler \
             -c "cd /sdk && mkdir -p build && go build \
               -tags server \
-              -ldflags \"-X github.com/wilbowes/EchoMuse/internal/client.Version=$GITHUB_REF_NAME \
+              -ldflags \"-s -w -X github.com/wilbowes/EchoMuse/internal/client.Version=$GITHUB_REF_NAME \
                          -X github.com/wilbowes/EchoMuse/internal/client.BuildUnix=$(date +%s)\" \
               -o build/server \
               ./cmd/"
@@ -87,6 +87,16 @@ jobs:
             exit 1
           fi
           echo "binary carries $GITHUB_REF_NAME"
+          # Stripped (-s -w) and within budget: Home Assistant's ingress takes
+          # at most 16 MiB per request (Supervisor's MAX_CLIENT_SIZE), and an
+          # unstripped 18.5 MB build could not be uploaded through the
+          # dashboard (2026-11-21). Panics keep their file:line (.gopclntab).
+          file device/build/server | grep -q ", stripped" || {
+            echo "::error::firmware is not stripped (-s -w)"; exit 1; }
+          size=$(stat -c %s device/build/server)
+          if [ "$size" -gt 15728640 ]; then
+            echo "::error::firmware is $size bytes, over the 15 MiB budget (ingress uploads stop at 16 MiB)"; exit 1
+          fi
 
       # Provenance: a signed statement, logged in Sigstore's public ledger,
       # that THIS workflow at THIS commit built THIS binary. Check one with

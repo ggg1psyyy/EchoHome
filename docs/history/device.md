@@ -7,6 +7,13 @@ that area.
 
 ## Building the device binary
 
+- 2026-11-21: an upload of the test firmware to 00LQ failed with "Deploy
+  failed" and nothing in the setup tool's log: Supervisor's ingress refuses a
+  request over 16 MiB (`MAX_CLIENT_SIZE = 1024**2 * 16`), and every EchoHome
+  build was 18.4-18.5 MB (EchoMuse's 13.8 MB, so it never met it). 4.9 MB of
+  that was DWARF and symbol tables: `-s -w` makes it 13.0 MB. Release and CI
+  now check stripped and at most 15 MiB; a chunked upload stays to do.
+
 - 2026-11-21: EchoMuse's fixes since EchoHome split off (2026-11-17,
   c953097), taken as Wil's commits (cherry-pick -x): the capture read a
   period behind the hardware pointer (#1238, with GoTinyAlsa's AvailMin
