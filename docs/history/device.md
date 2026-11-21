@@ -7,6 +7,11 @@ that area.
 
 ## Building the device binary
 
+- 2026-11-21: the EchoMuse imports (#1238 capture, #1237 beamformer and the
+  rest) on 00LQ as v3.0.0-ea.4-18-gbcda775, stripped (13.0 MB, uploaded
+  through the dashboard): wake word, calls, "stop", mute and the rest as
+  before, on the centre mic and on an edge mic. 0SE7 not yet.
+
 - 2026-11-21: an upload of the test firmware to 00LQ failed with "Deploy
   failed" and nothing in the setup tool's log: Supervisor's ingress refuses a
   request over 16 MiB (`MAX_CLIENT_SIZE = 1024**2 * 16`), and every EchoHome
