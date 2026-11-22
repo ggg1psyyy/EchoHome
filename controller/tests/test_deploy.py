@@ -26,6 +26,29 @@ def test_dockerfile_copies_every_controller_module():
     )
 
 
+DOCKERFILE_MAX_INSTRUCTIONS = 120
+
+
+def test_the_dockerfile_stays_clear_of_the_layer_limit():
+    """
+    One COPY per module is kept on purpose: what goes into the image stays
+    readable line by line. Each is a layer, and the builder refuses an image
+    past 127 ("max depth exceeded"), which is how EchoMuse's #1251 failed
+    before #1252 went to one `COPY em_*.py version.py ./`. At 120 this fails
+    first, with room left: fold the COPY lines into a glob then (#1252), and
+    keep the module check above meaningful (match against the glob).
+    """
+    lines = (CONTROLLER / "Dockerfile").read_text().replace("\\\n", " ").splitlines()
+    keywords = ("FROM", "RUN", "COPY", "ADD", "ENV", "WORKDIR", "ARG", "LABEL",
+                "EXPOSE", "CMD", "ENTRYPOINT", "USER", "VOLUME", "HEALTHCHECK",
+                "SHELL", "STOPSIGNAL", "ONBUILD")
+    n = sum(1 for l in lines if l.split(maxsplit=1)[:1] and l.split(maxsplit=1)[0].upper() in keywords)
+    assert n <= DOCKERFILE_MAX_INSTRUCTIONS, (
+        f"controller/Dockerfile has {n} instructions, over "
+        f"{DOCKERFILE_MAX_INSTRUCTIONS}: the builder stops at 127 layers. Fold "
+        f"the per-module COPY lines into one glob (EchoMuse #1252).")
+
+
 def test_ci_runs_every_dashboard_test():
     """
     The dashboard job lists its tests by hand, so a new one that nobody adds to
