@@ -13,7 +13,11 @@
    "monitor": true,
    "monitor_aec": true,
    "name": "echomuse-0123456789ab",
-   "protocol": 2,
+   "output_sample_rates": [
+    16000,
+    48000
+   ],
+   "protocol": 3,
    "stop_word": true,
    "wake_format": "mixednet"
   },
@@ -31,13 +35,17 @@
    "monitor_aec": true,
    "name": "echomuse-0123456789ab",
    "output_buffer_bytes": 131072,
+   "output_sample_rates": [
+    16000,
+    48000
+   ],
    "preroll_ms": 1500,
-   "protocol": 2,
+   "protocol": 3,
    "sample_rate": 16000,
    "stop_word": true,
    "wake_format": "mixednet"
   },
-  "length": 353,
+  "length": 389,
   "type": "HELLO"
  },
  {
@@ -54,7 +62,11 @@
    "monitor": false,
    "monitor_aec": false,
    "name": "echomuse-bare",
-   "protocol": 2,
+   "output_sample_rates": [
+    16000,
+    48000
+   ],
+   "protocol": 3,
    "stop_word": false,
    "wake_format": null
   },
@@ -63,11 +75,15 @@
    "channels": 1,
    "mac": "02:ec:00:00:00:00",
    "name": "echomuse-bare",
+   "output_sample_rates": [
+    16000,
+    48000
+   ],
    "preroll_ms": 0,
-   "protocol": 2,
+   "protocol": 3,
    "sample_rate": 16000
   },
-  "length": 132,
+  "length": 168,
   "type": "HELLO"
  },
  {

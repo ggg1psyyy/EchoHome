@@ -22,12 +22,18 @@ import (
 const (
 	// Protocol is the version this package speaks. HELLO always says it: the
 	// app reads a HELLO without one as protocol 1, a Voice PE with a second
-	// capture and mixednet wake words, which an Echo is not.
-	Protocol = 2
+	// capture and mixednet wake words, which an Echo is not. Protocol 3 added
+	// HELLO's output_sample_rates and CONFIG (AUDIO_OUT at 48 kHz).
+	Protocol = 3
 	// MaxPayload is the largest payload a frame carries.
 	MaxPayload = 4096
-	// SampleRate, mono S16LE, in both directions.
+	// SampleRate, mono S16LE, in both directions -- AUDIO_OUT too unless the
+	// app chose OutputRate (CONFIG).
 	SampleRate = 16000
+	// OutputRate is the speaker's own rate, which AUDIO_OUT may come in
+	// (protocol 3): played as it comes, not upsampled from 16 kHz, so a reply
+	// keeps what lies above 8 kHz.
+	OutputRate = 48000
 	// BytesPerSecond of audio.
 	BytesPerSecond = SampleRate * 2
 	// DefaultPort is where a satellite listens unless configured otherwise.
@@ -61,6 +67,7 @@ const (
 	Event       Message = 0x12
 	Hangup      Message = 0x13
 	Monitor     Message = 0x14
+	Configure   Message = 0x15 // CONFIG (protocol 3)
 	ModelStart  Message = 0x20
 	ModelData   Message = 0x21
 	ModelEnd    Message = 0x22
@@ -72,7 +79,7 @@ func (m Message) FromSatellite() bool { return m >= Hello && m <= AudioMonitorAE
 
 // FromApp reports whether m is sent by the app.
 func (m Message) FromApp() bool {
-	return (m >= AudioOut && m <= Monitor) || (m >= ModelStart && m <= ModelClear)
+	return (m >= AudioOut && m <= Configure) || (m >= ModelStart && m <= ModelClear)
 }
 
 // Binary reports whether m's payload is raw bytes (audio, or a model blob's
@@ -207,6 +214,14 @@ type HelloInfo struct {
 	Listen         bool   `json:"listen,omitempty"`
 	Monitor        bool   `json:"monitor,omitempty"`
 	Intercom       bool   `json:"intercom,omitempty"`
+	// OutputSampleRates are the rates AUDIO_OUT may come in (protocol 3).
+	OutputSampleRates []int `json:"output_sample_rates,omitempty"`
+}
+
+// ConfigInfo is CONFIG, from the app once after HELLO and before any audio:
+// AUDIO_OUT at OutputSampleRate from then on, for this connection.
+type ConfigInfo struct {
+	OutputSampleRate int `json:"output_sample_rate"`
 }
 
 // MarshalJSON always says Protocol, whatever the struct holds: a zero
@@ -220,7 +235,8 @@ func (h HelloInfo) MarshalJSON() ([]byte, error) {
 // NewHello is a HELLO with what every satellite of this protocol says:
 // version, name, MAC and the only audio format. Capabilities start false.
 func NewHello(name, mac string) HelloInfo {
-	return HelloInfo{Protocol: Protocol, Name: name, MAC: mac, SampleRate: SampleRate, Channels: 1, BitsPerSample: 16}
+	return HelloInfo{Protocol: Protocol, Name: name, MAC: mac, SampleRate: SampleRate, Channels: 1, BitsPerSample: 16,
+		OutputSampleRates: []int{SampleRate, OutputRate}}
 }
 
 // CallStartInfo is CALL_START.

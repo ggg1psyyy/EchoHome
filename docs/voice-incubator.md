@@ -81,8 +81,10 @@ stopped.
   keeps working with the switch off: calls send one capture, and the app
   identifies speakers on it.
 
-Replies are 16 kHz audio, so they sound
-slightly duller than music.
+Replies come at the speaker's own 48 kHz from an app that speaks protocol 3
+(0.3.4 and later): the Echo offers it in its HELLO and plays them as they
+come. An older app sends 16 kHz, which the Echo upsamples, and replies then
+sound slightly duller than music.
 
 ## Privacy
 

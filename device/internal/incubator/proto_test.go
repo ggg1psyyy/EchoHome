@@ -106,7 +106,7 @@ func equalInts(a, b []int) bool {
 func TestEveryMessageHasOneDirection(t *testing.T) {
 	sat := []Message{Hello, CallStart, AudioIn, CallEnd, Status, PlaybackDrained, ModelResult, AudioInAEC,
 		DeviceEvent, AudioMonitor, WakeReport, AudioMonitorAEC}
-	app := []Message{AudioOut, AudioOutEnd, Event, Hangup, Monitor, ModelStart, ModelData, ModelEnd, ModelClear}
+	app := []Message{AudioOut, AudioOutEnd, Event, Hangup, Monitor, Configure, ModelStart, ModelData, ModelEnd, ModelClear}
 	for _, m := range sat {
 		if !m.FromSatellite() || m.FromApp() {
 			t.Errorf("%#x", m)
@@ -117,9 +117,9 @@ func TestEveryMessageHasOneDirection(t *testing.T) {
 			t.Errorf("%#x", m)
 		}
 	}
-	for _, m := range []Message{0x00, 0x0D, 0x0F, 0x15, 0x1F, 0x24, 0xFF} {
+	for _, m := range []Message{0x00, 0x0D, 0x0F, 0x16, 0x1F, 0x24, 0xFF} {
 		if m.FromSatellite() || m.FromApp() {
-			t.Errorf("%#x is not a message of protocol 2", m)
+			t.Errorf("%#x is not a message of protocol 3", m)
 		}
 	}
 }
@@ -141,15 +141,19 @@ func TestDecodeTakesObjectsAndIgnoresUnknownFields(t *testing.T) {
 
 // ── HELLO ────────────────────────────────────────────────────────────────
 
-func TestHelloAlwaysSaysProtocol2AndOmitsWhatIsFalse(t *testing.T) {
+func TestHelloAlwaysSaysProtocol3AndOmitsWhatIsFalse(t *testing.T) {
 	b, err := json.Marshal(NewHello("echomuse-x", "02:ec:00:00:00:01"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var m map[string]any
 	json.Unmarshal(b, &m)
-	if m["protocol"] != float64(2) {
+	if m["protocol"] != float64(3) {
 		t.Errorf("protocol %v: the app reads a missing one as 1, a Voice PE", m["protocol"])
+	}
+	// Protocol 3: AUDIO_OUT at 16 kHz, or at the speaker's own 48 kHz.
+	if rates, _ := m["output_sample_rates"].([]any); len(rates) != 2 || rates[0] != float64(16000) || rates[1] != float64(48000) {
+		t.Errorf("output_sample_rates %v", m["output_sample_rates"])
 	}
 	for _, k := range []string{"aec", "monitor_aec", "wake_format", "max_pool", "stop_word", "listen", "monitor", "intercom", "model_slots"} {
 		if _, ok := m[k]; ok {
@@ -222,16 +226,22 @@ func TestTheAppReadsWhatGoSends(t *testing.T) {
 		t.Fatalf("the app read %d frames: %+v", len(view), view)
 	}
 	full, bare := view[0].Hello, view[1].Hello
-	for k, want := range map[string]any{"protocol": 2.0, "model": "echo-dot-2", "firmware": "v9.9.9",
+	for k, want := range map[string]any{"protocol": 3.0, "model": "echo-dot-2", "firmware": "v9.9.9",
 		"wake_format": "mixednet", "model_slots": 6.0, "max_pool": true, "stop_word": true, "listen": true,
 		"aec": false, "monitor": true, "monitor_aec": true, "intercom": false} {
 		if full[k] != want {
 			t.Errorf("the app read %s = %v from the full HELLO, want %v", k, full[k], want)
 		}
 	}
-	for k, want := range map[string]any{"protocol": 2.0, "aec": false, "monitor_aec": false, "wake_format": nil, "model": nil, "listen": false} {
+	for k, want := range map[string]any{"protocol": 3.0, "aec": false, "monitor_aec": false, "wake_format": nil, "model": nil, "listen": false} {
 		if bare[k] != want {
 			t.Errorf("the app read %s = %v from a bare HELLO, want %v", k, bare[k], want)
+		}
+	}
+	// The app's own Hello.parse sees the 48 kHz option, so it sends CONFIG.
+	for _, h := range []map[string]any{full, bare} {
+		if rates, _ := h["output_sample_rates"].([]any); len(rates) != 2 || rates[1] != float64(48000) {
+			t.Errorf("the app read output_sample_rates = %v", h["output_sample_rates"])
 		}
 	}
 }
@@ -252,14 +262,14 @@ func TestGoStillSendsWhatTheAppRead(t *testing.T) {
 	}
 }
 
-func TestAZeroHelloStillSaysProtocol2(t *testing.T) {
+func TestAZeroHelloStillSaysProtocol3(t *testing.T) {
 	b, _ := json.Marshal(HelloInfo{})
-	if !bytes.Contains(b, []byte(`"protocol":2`)) {
+	if !bytes.Contains(b, []byte(`"protocol":3`)) {
 		t.Errorf("%s", b)
 	}
 	var b2 bytes.Buffer
 	WriteJSON(&b2, Hello, &HelloInfo{Name: "x"}) // through a pointer too
-	if !bytes.Contains(b2.Bytes(), []byte(`"protocol":2`)) {
+	if !bytes.Contains(b2.Bytes(), []byte(`"protocol":3`)) {
 		t.Errorf("%s", b2.Bytes())
 	}
 }
@@ -274,6 +284,7 @@ func TestGoReadsWhatTheAppSends(t *testing.T) {
 	var hangups []HangupInfo
 	var events []EventInfo
 	var start ModelStartInfo
+	var config ConfigInfo
 	for {
 		m, p, err := r.Read()
 		if err == io.EOF {
@@ -286,7 +297,8 @@ func TestGoReadsWhatTheAppSends(t *testing.T) {
 			t.Errorf("%#x from the app", m)
 		}
 		types = append(types, map[Message]string{AudioOut: "out", AudioOutEnd: "end", Event: "event", Hangup: "hangup",
-			Monitor: "monitor", ModelClear: "clear", ModelStart: "start", ModelData: "data", ModelEnd: "mend"}[m])
+			Monitor: "monitor", ModelClear: "clear", ModelStart: "start", ModelData: "data", ModelEnd: "mend",
+			Configure: "config"}[m])
 		if m.Binary() {
 			continue
 		}
@@ -307,15 +319,22 @@ func TestGoReadsWhatTheAppSends(t *testing.T) {
 			if err := Decode(m, p, &start); err != nil {
 				t.Fatal(err)
 			}
+		case Configure:
+			if err := Decode(m, p, &config); err != nil {
+				t.Fatal(err)
+			}
 		default:
 			if err := Decode(m, p, &struct{}{}); err != nil {
 				t.Errorf("%#x: %v", m, err)
 			}
 		}
 	}
-	want := "out out end event event event hangup hangup monitor monitor clear start data mend event"
+	want := "out out end event event event hangup hangup monitor monitor clear start data mend event config"
 	if got := strings.Join(types, " "); got != want {
 		t.Errorf("frames %q\nwant   %q", got, want)
+	}
+	if config.OutputSampleRate != OutputRate {
+		t.Errorf("CONFIG as the app sends it: %+v", config)
 	}
 	if len(hangups) != 2 || !hangups[0].Listen || hangups[1].Listen || hangups[1].Reason != "not_recognized" {
 		t.Errorf("hangups %+v", hangups)

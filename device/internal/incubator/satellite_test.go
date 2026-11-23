@@ -90,7 +90,7 @@ func TestTheSatelliteSaysHelloFirstWithItsIdentity(t *testing.T) {
 	c, r := dial(t, s.Port())
 	defer c.Close()
 	h := readHello(t, r)
-	for k, want := range map[string]any{"protocol": 2.0, "name": "echomuse-0123456789ab", "mac": "02:ec:01:23:45:67",
+	for k, want := range map[string]any{"protocol": 3.0, "name": "echomuse-0123456789ab", "mac": "02:ec:01:23:45:67",
 		"model": "echo-dot-2", "firmware": "v9", "sample_rate": 16000.0} {
 		if h[k] != want {
 			t.Errorf("%s = %v, want %v", k, h[k], want)

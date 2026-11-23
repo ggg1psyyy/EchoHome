@@ -1,6 +1,8 @@
 """Interop vectors for internal/incubator against the Voice Incubator app's
-own protocol module (voice_incubator/protocol.py), at the commit
-tools/mixednet_ref/build.sh checks out and sha256-checks.
+own protocol module (voice_incubator/protocol.py), at voice-incubator
+3597763 (protocol 3: output_sample_rates and CONFIG), sha256-checked below.
+Its own pin: tools/mixednet_ref/build.sh's app commit is for the mixednet
+models and stays where they were made.
 
     python3 -I gen.py <voice-incubator checkout> <go_frames.bin> <testdata dir>
 
@@ -17,7 +19,7 @@ from pathlib import Path
 
 app, go_frames, out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 proto_path = app / "voice_incubator" / "protocol.py"
-SHA = "bbcb4f1bc1b971a4a5ae4fbedb3079d093237c00352ba4a9a1246fe648689624"  # the pinned protocol.py
+SHA = "48cd8d689f78d03d1febea71b49c35ae4d66c41653808422b1137dfda7096141"  # the pinned protocol.py (3597763)
 got = hashlib.sha256(proto_path.read_bytes()).hexdigest()
 if got != SHA:
     sys.exit(f"protocol.py is not the pinned one: {got}")
@@ -63,6 +65,7 @@ frames = b"".join([
     p.encode(p.Message.MODEL_DATA, pcm),
     p.encode_json(p.Message.MODEL_END, {"id": "okay_nabu"}),
     p.encode_json(p.Message.EVENT, {"type": "night", "data": {"on": True}, "unknown_field": 1}),
+    p.encode_json(p.Message.CONFIG, {"output_sample_rate": p.OUTPUT_RATE}),
 ])
 (out / "interop_app_frames.bin").write_bytes(frames)
 print(f"{len(view)} Go frames read by the app; app frames {len(frames)} bytes")

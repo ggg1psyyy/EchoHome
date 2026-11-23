@@ -107,7 +107,7 @@ number.
 | `sendspin_owned` | always | Owns `sendspinEnabled`, also an HA switch on its own ESPHome device (refused there until paired), and plays with no controller. A pushed value counts when it differs from the last one pushed: the last change of the two wins. Pairing, the token and `sendspinUnpaired` stay the controller's |
 | `esphome_server` | always | Serves the ESPHome native API on 6053 from boot, always: Home Assistant connects to the Echo directly. Messages generated from aioesphomeapi's descriptors (`tools/esphome_gen`), proven against it (`tools/esphome_interop`) |
 | `esphome_noise` | always | That server is encrypted (Noise, NNpsk0_25519_ChaChaPoly_SHA256) with a key Home Assistant sets; handed out only on `esphome_key_request`. It also takes Home Assistant's time (`GetTimeRequest`), so the Echo has a clock with no controller |
-| `incubator_satellite` | always | Is a Voice Incubator satellite (`internal/incubator`, protocol 2) on TCP 6055, run while `incubator_satellite` enables it |
+| `incubator_satellite` | always | Is a Voice Incubator satellite (`internal/incubator`, protocol 3) on TCP 6055, run while `incubator_satellite` enables it |
 | `incubator_standalone` | always | That satellite outlives the controller: saved on the Echo (`incubator.json`) and started from it at boot |
 | `incubator_mdns` | always | The satellite announces itself (`_voice-incubator._tcp`) while it listens; the controller announces it as well, at the Echo's address, for networks where mDNS does not cross VLANs |
 | `mic` | with a readable microphone | The board's capture works. Without it the Echo is speaker-only and `listen_state` is `degraded` |

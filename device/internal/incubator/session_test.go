@@ -601,3 +601,44 @@ func TestWithNoAppAPressStillGoesToTheMusic(t *testing.T) {
 		t.Fatal("the press did not reach the music")
 	}
 }
+
+// Protocol 3: after CONFIG at 48 kHz, AUDIO_OUT is the speaker's own rate and
+// is played as it comes -- not upsampled, no filter tail at its end.
+func TestAt48kHzAReplyIsPlayedAsItComes(t *testing.T) {
+	s, echo, _, a := connectApp(t)
+	a.send(Configure, []byte(`{"output_sample_rate":48000}`))
+	in := make([]byte, 2*PeriodBytes+1000) // two whole periods and a part
+	for i := range in {
+		in[i] = byte(i * 13)
+	}
+	for i := 0; i < len(in); i += 1000 {
+		a.send(AudioOut, in[i:min(i+1000, len(in))])
+	}
+	a.send(AudioOutEnd, nil)
+	waitFor(t, "the reply's periods", func() bool { return echo.periods() == 3 && echo.count(&echo.ends) == 1 })
+	echo.mu.Lock()
+	got := bytes.Join(echo.played, nil)
+	echo.mu.Unlock()
+	if !bytes.Equal(got[:len(in)], in) {
+		t.Fatal("the 48 kHz reply was not played byte for byte")
+	}
+	if !bytes.Equal(got[len(in):], make([]byte, len(got)-len(in))) {
+		t.Fatal("the last period is not padded with silence")
+	}
+	s.Drained()
+	a.expect(PlaybackDrained)
+}
+
+// A rate HELLO did not offer is refused: replies stay at 16 kHz, upsampled,
+// rather than played at the wrong speed.
+func TestAnUnofferedRateKeeps16kHz(t *testing.T) {
+	_, echo, _, a := connectApp(t)
+	a.send(Configure, []byte(`{"output_sample_rate":44100}`))
+	in := make([]byte, 16000) // half a second at 16 kHz
+	for i := 0; i < len(in); i += 4000 {
+		a.send(AudioOut, in[i:i+4000])
+	}
+	a.send(AudioOutEnd, nil)
+	// As at 16 kHz: 8000 samples in, 24000 out plus the filter's tail.
+	waitFor(t, "the reply's periods", func() bool { return echo.periods() == 12 && echo.count(&echo.ends) == 1 })
+}

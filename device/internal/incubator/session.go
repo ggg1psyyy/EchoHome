@@ -210,6 +210,7 @@ type session struct {
 
 	// playback: the reading goroutine's, and a new call's (endStreamHere)
 	playMu    sync.Mutex
+	outRate   int // AUDIO_OUT's rate (CONFIG); 0 is SampleRate
 	up        Upsampler
 	pending   []byte // 48 kHz bytes short of a period
 	periods   int
@@ -497,6 +498,12 @@ func (s *session) handle(m Message, p []byte) error {
 		defer s.updateMonitor()
 	}
 	switch m {
+	case Configure:
+		var c ConfigInfo
+		if err := Decode(m, p, &c); err != nil {
+			return err
+		}
+		s.configure(c)
 	case Monitor:
 		s.monitorFrame(p)
 	case AudioOut:
@@ -636,7 +643,11 @@ func (s *session) audio(p []byte) error {
 	if s.periods == 0 && len(s.pending) == 0 {
 		s.playStart = time.Now()
 	}
-	s.pending = s.up.Process(s.pending, p)
+	if s.outRate == OutputRate {
+		s.pending = append(s.pending, p...) // the speaker's own rate already
+	} else {
+		s.pending = s.up.Process(s.pending, p)
+	}
 	for len(s.pending) >= PeriodBytes {
 		if err := s.dev.Play(s.pending[:PeriodBytes]); err != nil {
 			return err
@@ -645,6 +656,24 @@ func (s *session) audio(p []byte) error {
 		s.pending = append(s.pending[:0], s.pending[PeriodBytes:]...)
 	}
 	return nil
+}
+
+// configure is CONFIG: AUDIO_OUT's rate for this connection. A rate HELLO
+// did not offer is refused and replies stay at SampleRate (logged), rather
+// than played at the wrong speed.
+func (s *session) configure(c ConfigInfo) {
+	s.playMu.Lock()
+	defer s.playMu.Unlock()
+	switch c.OutputSampleRate {
+	case SampleRate:
+		s.outRate = 0
+	case OutputRate:
+		s.outRate = OutputRate
+	default:
+		log.Printf("[incubator] CONFIG output_sample_rate %d not offered; AUDIO_OUT stays at %d Hz", c.OutputSampleRate, SampleRate)
+		return
+	}
+	log.Printf("[incubator] AUDIO_OUT at %d Hz", c.OutputSampleRate)
 }
 
 // staleCall says whether the call in progress still waits for its own
@@ -693,7 +722,9 @@ func (s *session) streamEnd() {
 		return
 	}
 	s.playMu.Lock()
-	s.pending = s.up.Flush(s.pending)
+	if s.outRate != OutputRate {
+		s.pending = s.up.Flush(s.pending)
+	}
 	for len(s.pending) > 0 {
 		period := make([]byte, PeriodBytes)
 		n := copy(period, s.pending)

@@ -1497,6 +1497,15 @@ including why hashing is worth it when deleting the file defeats it, is in
 
 ## The Voice Incubator satellite (`internal/incubator`)
 
+- 2026-11-23: protocol 3. The app (voice-incubator 6e3aa08, in 0.3.4) sends
+  AUDIO_OUT at 48 kHz to a satellite whose HELLO lists it in
+  `output_sample_rates`, after a CONFIG; the Echo now offers 16000 and
+  48000 and plays a 48 kHz reply as it comes, past the Upsampler. Firmware
+  for the Voice PE with it (firmware-voice-incubator 3db3ccd, named in the
+  app's commit) was not public, so this follows the app's protocol.py; the
+  interop vectors are regenerated against it (3597763), the app's own
+  Hello.parse reading our rates and its own CONFIG read by our codec.
+
 - **2026-11-17, the Voice Incubator's wake word stack on an Echo (00LQ,
   emOS, v2.19.0), by `tools/mixednet_probe`.** Front end
   (`internal/microfeatures`) plus one `okay_nabu` stream (`internal/mixednet`),
