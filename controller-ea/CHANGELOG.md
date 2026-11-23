@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0-ea.7 (Early Access)
+
+The Echo's shell opens again in a dashboard reached through Home Assistant's local address. It offers firmware v3.0.0-ea.6. The database is unchanged (still v33).
+
+### Fixed
+
+- **The shell refused to open (401) through Home Assistant's ingress** when another app had left a `session` cookie on Home Assistant's address: the setup tool read that cookie before the dashboard's own token. The token is now checked first.
+
 ## 3.0.0-ea.6 (Early Access)
 
 The wizard's first step no longer hangs on a normally booted Echo, and the link to the Echoes uses the cipher a Dot 2 runs fastest. It offers firmware v3.0.0-ea.5. The database is unchanged (still v33).
