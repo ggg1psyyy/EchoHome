@@ -385,24 +385,23 @@ async def ws_resolve_session(request: web.Request) -> Optional[dict]:
     """
     Resolve auth for a WebSocket upgrade request.
 
-    WebSocket clients cannot set the Authorization header in-browser,
-    so this checks only the session cookie. API clients using a token
-    can pass it as a query parameter: ?token=<token>.
+    WebSocket clients cannot set the Authorization header in-browser, so
+    the dashboard passes its token as ?token=<token>; the session cookie
+    is the fallback. The query token is tried first and each candidate is
+    checked: under ingress every app shares Home Assistant's origin, and a
+    "session" cookie another app set there reached us and, read first,
+    refused the dashboard's valid token (the shell, 2026-11-23).
 
     Returns user dict or None.
     """
-    # Check cookie first
-    token = request.cookies.get(AUTH_COOKIE, "").strip()
-
-    # Fall back to query param (for non-browser clients / xterm.js)
-    if not token:
-        token = request.rel_url.query.get("token", "").strip()
-
-    if not token:
-        return None
-
     loop = asyncio.get_event_loop()
-    session = await loop.run_in_executor(None, db.get_session, token)
+    session = None
+    for token in (request.rel_url.query.get("token", "").strip(),
+                  request.cookies.get(AUTH_COOKIE, "").strip()):
+        if token:
+            session = await loop.run_in_executor(None, db.get_session, token)
+            if session is not None:
+                break
     if session is None:
         return None
 

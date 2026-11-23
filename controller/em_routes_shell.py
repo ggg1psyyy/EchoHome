@@ -26,7 +26,7 @@ async def _ws_shell(request: web.Request) -> web.WebSocketResponse:
     """
     WS /api/devices/{id}/shell — interactive shell terminal for dashboard.
 
-    Auth is handled via ws_resolve_session (checks cookie then ?token= query
+    Auth is handled via ws_resolve_session (checks ?token= then the cookie
     param) because browser WebSocket clients cannot set custom headers.
     Do NOT add @auth.require_admin here — _extract_token doesn't read query
     params and would reject every connection before this function runs.
