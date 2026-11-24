@@ -101,7 +101,10 @@ Every key belongs to one of the sections in `em_config_sections.py`;
 `get_effective_device_config` = fleet overlaid with the device's overridden
 sections. Guarded by `tests/test_config_sections.py`: the partition is total;
 `dashboard.jsx`'s `CONFIG_SECTIONS` mirrors it; `STATE_KEYS` are never
-scoped; an unknown stored section id is dropped (`normalise`). Writes push the
+scoped; an unknown stored section id is dropped (`normalise`). **`DEVICE_KEYS`
+(`sshEnabled`, `sshAuthorizedKeys`) are never fleet-inherited**: a device
+without its own value gets `DEVICE_KEY_DEFAULTS` (off), the fleet POST strips
+them, and `POST /api/devices/{id}/ssh` is their only writer. Writes push the
 **effective** config via `apply_live_config`. **Every key has a type in
 `em_config_types.KINDS`**: POSTs refuse `bad_config_value`; pushes filter
 (`drop_invalid`, used by both full-config pushes, which also drops

@@ -44,6 +44,8 @@ KINDS: dict[str, str] = {
     "startupVolume": INT,
     "owwOnDevice": STR,
     "owwMinFrames": INT,
+    "sshEnabled": BOOL,
+    "sshAuthorizedKeys": STR,
     "duckDb": FLOAT,
     "responseLevel": STR,
     "wakeMic": INT,

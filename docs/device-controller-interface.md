@@ -117,6 +117,7 @@ number.
 | `incubator_monitor` | with `mic` | Lets the app listen live outside a call (its Test page) while HA's "live listening" switch is on; reported as `monitored` |
 | `ambient_light` | only if the sensor is readable | Reports light readings |
 | `thermal` | only if the kernel exposes a thermal zone | `cpuTempC` and `maxTempC` on `stats` |
+| `ssh` | only if the image carries `/sbin/tinysshd` (emOS) | The config keys `sshEnabled` and `sshAuthorizedKeys` (Ed25519 only) are written for emOS's init, which runs SSH itself so it works when the firmware does not. The `stats` report carries `ssh`: `{listening, hostKey}`, read from the kernel's socket table and the host key, never from the setting; `null` without the capability |
 
 Retired with the controller's voice path, and announced only by firmware from
 before EchoHome: `oww_shadow`, `oww_trigger`, `button_hold`, `audio_mix`,

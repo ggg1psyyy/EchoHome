@@ -157,7 +157,8 @@ updated):
   `sendspin_owned`;
   with a readable mic `mic`, `incubator_calls`, `incubator_wake`,
   `incubator_ring`, `incubator_monitor`; and `stock_sound`, `ambient_light`,
-  `mute_ring_off`, `thermal` where the hardware has them. A UI control whose
+  `mute_ring_off`, `thermal` where the hardware has them, and `ssh` where the
+  emOS image carries tinysshd. A UI control whose
   feature is missing is **disabled with the reason**.
 - **Both ways**: the `ack` carries the controller's `features`
   (`ble_adverts_data`, `listen_session` — both only for firmware from before

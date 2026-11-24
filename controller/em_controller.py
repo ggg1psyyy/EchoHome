@@ -953,6 +953,7 @@ async def _on_stats(device: Device, msg: dict) -> None:
         # allowlist: it is a state, not a metric, and
         # the hourly rollup averages numbers.
         "aecRef":        msg.get("aecRef"),
+        "ssh":           msg.get("ssh"),  # {listening, hostKey}; a state
     }
     # Fold into the persistent hourly rollup (CPU/RAM/storage/
     # RSSI trends) — one cheap upsert per ~30s report. The

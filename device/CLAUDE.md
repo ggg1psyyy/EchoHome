@@ -262,6 +262,18 @@ All in `/data/local/etc/echomuse/` (a path emOS shares: never rename it):
 `esphome.key`, `esphome.mac`, `sendspin.json`, `controller.json`, `ca.pem`, `token`,
 `console.pw`, `console.timeout`, `wifi_pending`, `aec_echo_path.v3.bin`.
 
+## emOS SSH (2026-11-11)
+
+Per Echo, off by default. **init runs it, never the firmware** (`ssh_main`:
+accept on 22, tinysshd per connection), so it is the way in when the server
+will not start. The firmware writes `config.SSHDir/{enabled,authorized_keys}`
+from `sshEnabled`/`sshAuthorizedKeys` (pointers, change-only writes, keys
+before the flag) and reports `ssh` on stats from `/proc/net/tcp`, never the
+setting. **Ed25519 only, options refused** (`ParseSSHKeys`, vectors shared
+with the controller in `config/testdata/ssh_keys.json`). Keys are copied to
+`/run/ssh` because tinysshd refuses /data's modes. busybox stays free of
+listening daemons. EchoMuse's `emos/init/sshcheck.c` covers init's half.
+
 ## cgo dependency
 
 SpeexDSP C source (AEC) is vendored in `device/internal/aec/`. **Go's build
