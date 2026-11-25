@@ -25,6 +25,18 @@ EchoMuse repurposes Amazon Echo Dot Gen 2 (FireOS 5 / Android 5.1, codename "bis
   assistant-written PRs, issues and comments; the Voice Incubator change
   (telling the app a satellite's address, so it works across VLANs) is
   prepared in the owner's fork and posted by the owner.
+- 2026-11-25: a general mDNS proxy for other VLANs (an HA app or
+  integration fetching each listed host's records by unicast query, RFC
+  6762 §5.5, and republishing them) does not work, so it was dropped.
+  Unicast queries to 5353 from HA's VLAN got nothing: an ESPHome device
+  answered ICMP port unreachable to a query from a random port and stayed
+  silent to one from 5353 with QU (its responder hears only the group), and
+  an Echo stayed silent to both (emOS admits only sport 5353; the
+  firmware's grandcat responder did not answer). Ping and ARP cannot stand
+  in: ARP does not cross a routed VLAN. What remains is a presence on the
+  IoT VLAN (the router's mDNS repeater, or a VLAN interface for HA) or a
+  per-protocol probe (the Voice Incubator HELLO, as in the app PR); the
+  owner kept things as they are.
 - 2026-11-19: the rename reaches what people and apps see (the owner's
   call; 00LQ the only install). Now EchoHome: the Sendspin player's
   manufacturer and mDNS instance (`echohome-<serial>`, product the board
