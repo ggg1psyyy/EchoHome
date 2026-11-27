@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0-ea.8 (Early Access)
+
+SSH into an Echo running emOS, switched on per Echo. It offers firmware v3.0.0-ea.7 and emOS v0.12-ea.2. The database is unchanged (still v33).
+
+### New
+
+- **SSH on emOS, per Echo**: under the Echo's USB console settings, a switch and its Ed25519 public keys; the panel shows whether the Echo is listening on port 22 and its host key fingerprint. emOS's init runs the SSH server itself, so it is a way in even when the firmware does not start. Off by default, never set for the whole fleet. Needs emOS v0.12-ea.2, installed by this setup tool's emOS update, and firmware v3.0.0-ea.7 (EchoMuse #1168, by Wil Bowes).
+
 ## 3.0.0-ea.7 (Early Access)
 
 The Echo's shell opens again in a dashboard reached through Home Assistant's local address. It offers firmware v3.0.0-ea.6. The database is unchanged (still v33).
